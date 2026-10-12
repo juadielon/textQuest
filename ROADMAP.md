@@ -38,7 +38,7 @@ container and a small test are in place. The game is not implemented.
 
 ### 3. Repeatable adventures and sharing
 
-**Status:** In progress — first step awaiting review:
+**Status:** In progress — versioned settings and share words implemented:
 [issue #3](https://github.com/juadielon/textQuest/issues/3)
 
 **Outcome:** A shared game code recreates the same starting adventure. The
@@ -46,7 +46,7 @@ creator's personal progress stays in their own save.
 
 **Depends on:** Milestone 2.
 
-The first step adds versioned adventure settings (seed, length and genre) and
+The first step provides versioned adventure settings (seed, length and genre) and
 two-word share words such as `silverlantern`, with unit tests. Share words are
 not yet shown in the browser, and adventures are not generated from them yet.
 
