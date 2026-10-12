@@ -115,7 +115,7 @@ The parser returns structured actions or clear errors using only discovered
 names supplied by its caller. It handles the planned verbs and common short
 forms without changing state. A pure play module runs those actions against a
 world with turn counting, hints and undo, following the winnability checker's
-rules. Suggestions, checkpoints and the browser screen are not implemented.
+rules. Suggestions and checkpoints are not implemented.
 
 ### 6. Saves
 
@@ -128,12 +128,20 @@ or import save files. Invalid files and storage errors are reported clearly.
 
 ### 7. Browser game
 
-**Status:** Planned
+**Status:** In progress — a play screen
+([issue #44](https://github.com/juadielon/textQuest/issues/44)) is built but not yet
+reachable from the page.
 
 **Outcome:** A responsive, accessible browser app brings together adventure
 creation, play, clues, inventory, sharing and saves.
 
 **Depends on:** Milestones 2–6.
+
+`renderPlayScreen` generates a world and plays typed commands with a response
+log, inventory, found clues, help, hint, undo and an ending. It works by
+keyboard, announces responses to screen readers and fits narrow and wide
+screens. Connecting it to the start screen, content-pack names and prose,
+and saves remain planned.
 
 ### 8. Release checks and hosting guide
 
