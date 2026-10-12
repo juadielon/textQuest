@@ -3,9 +3,9 @@
 textQuest is a planned text adventure game. It will build adventures from
 authored stories and game rules, without using an LLM while you play.
 
-This repository includes a Docker-run browser placeholder and the rules for
-repeatable adventure settings and share words. The game itself is not
-implemented.
+This repository includes a Docker-run browser placeholder, the rules for
+repeatable adventure settings and share words, and a world model with a
+winnability checker. The game itself is not implemented.
 
 ## Adventure settings and share words
 
@@ -25,6 +25,34 @@ does not create stories.
   message.
 - Version 1 must always give the same results. Changes that would alter them
   need a new version with its own word lists.
+
+## World model and winnability
+
+[Issue #12](https://github.com/juadielon/textQuest/issues/12) adds plain
+TypeScript data for places, directed exits, items, clues, puzzle steps and a
+goal. `AdventureWorld.version` describes this data format, separately from
+the seed and content version used by share words. Puzzle conditions, effects
+and the goal live in `solution`, separate from discoverable world data.
+Future hints and suggestions must not expose this field directly.
+
+`checkWinnability(world)` searches routes from the starting place without
+changing the world. It returns `winnable` and `unreachableStepIds`, including
+optional steps that cannot be completed even when the goal is reachable.
+Invalid references, empty or repeated IDs, unsupported world versions and
+unknown effects throw a `RangeError` rather than reporting a valid adventure.
+It accepts typed world data, not untrusted save files.
+
+Version 1 progress only grows: entering a place collects its items and clues;
+steps can require held items, visited places, completed steps and revealed
+clues. All conditions must hold. Steps happen at their named place, once,
+and can unlock directed exits, give items or reveal clues. The goal requires
+being at its named place with its conditions met. Items are not consumed,
+and choices cannot remove progress or exclude other steps in this version.
+
+The checker keeps each route's progress separate, including on one-way
+paths. Its exhaustive search is intended for small worlds; many independent
+routes can create a large number of states. Tests use hand-built data only.
+There is no generated story, player command handling or playable adventure.
 
 ## Project documents
 
