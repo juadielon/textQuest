@@ -1,5 +1,5 @@
 // Repeatable random numbers for adventure generation. The same seed always
-// gives the same sequence, using only 32-bit integer maths, so results do not
+// gives the same sequence, using exact integer maths, so results do not
 // depend on the browser, time, locale or Math.random().
 
 export interface SeededRandom {
@@ -31,8 +31,15 @@ export function createSeededRandom(seed: number): SeededRandom {
     if (!Number.isInteger(count) || count < 1 || count > 0xffffffff) {
       throw new RangeError('Choose from at least one option.');
     }
-    // Both numbers are below 2^32, so the product is exact in a double.
-    return Math.floor((nextUint32() * count) / 2 ** 32);
+    // Split into 16-bit halves to keep every intermediate integer exact in a double.
+    const value = nextUint32();
+    const valueLow = value & 0xffff;
+    const valueHigh = value >>> 16;
+    const countLow = count & 0xffff;
+    const countHigh = count >>> 16;
+    const middle = valueHigh * countLow + valueLow * countHigh
+      + Math.floor((valueLow * countLow) / 0x10000);
+    return valueHigh * countHigh + Math.floor(middle / 0x10000);
   }
 
   return { nextUint32, pickIndex };
