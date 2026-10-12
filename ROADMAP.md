@@ -82,8 +82,8 @@ Unit tests check the authored plans against the world model and winnability
 checker. This is not seed-based generation or a playable adventure.
 The science fiction pack ([issue #33](https://github.com/juadielon/textQuest/issues/33))
 follows the same format and checks. The cosy mystery pack
-([issue #32](https://github.com/juadielon/textQuest/issues/32)) is implemented
-on a branch, awaiting review. Generation and command handling remain planned.
+([issue #32](https://github.com/juadielon/textQuest/issues/32)) follows the same
+format. Generation and command handling remain planned.
 The current rules only add progress; mutually exclusive
 choices will need later rules and their own checks.
 
