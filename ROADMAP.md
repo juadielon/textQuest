@@ -13,7 +13,8 @@ all development tools must run in Docker.
 
 ### 1. Project rules and overview
 
-**Status:** In progress — issue #1
+**Status:** Implemented on a branch; awaiting review —
+[issue #1](https://github.com/juadielon/textQuest/issues/1).
 
 **Outcome:** Contributors can understand the project, plan work through
 issues, make small Conventional Commits and prepare focused pull requests.
@@ -103,3 +104,7 @@ Each milestone should have a clear result and its own issues. Link real issues
 and pull requests when they exist. Update a milestone when its scope or
 verified progress changes. Do not mark it complete until its outcome has been
 checked.
+
+Open a focused pull request after each completed logical step, rather than
+one pull request for the whole milestone or game. Keep steps awaiting review
+distinct from work that has been merged.

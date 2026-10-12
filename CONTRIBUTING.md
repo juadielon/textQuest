@@ -100,8 +100,15 @@ Use the pull request template. A good pull request:
 - Says what remains unfinished rather than implying the whole roadmap is
   complete.
 
-Do not publish a pull request or push a branch without authorisation from the
-repository owner.
+Push the branch and open a pull request when each logical step is complete
+and its checks pass. This is the agreed project workflow; do not wait until
+the whole game is finished. Keep later features in separate branches and
+pull requests. Fixes needed for the same review belong in its existing pull
+request.
+
+If a step depends on an unmerged pull request, base it on that branch and
+target that branch so reviewers see only the new step. State the dependency
+clearly. Do not merge pull requests automatically; leave them for approval.
 
 ## Writing
 

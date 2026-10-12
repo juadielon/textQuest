@@ -7,6 +7,8 @@ What changed, and why?
 Link the issue this pull request works on. Use `Closes #123` only if it
 completes the issue.
 
+If this depends on another pull request, link it and explain the order.
+
 ## Type of change
 
 - [ ] Bug fix

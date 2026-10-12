@@ -19,3 +19,7 @@
   existing player saves.
 - Include related tests and documentation with a change. Do not combine
   unrelated work or put the whole game into one pull request.
+- Push and open a separate pull request after each completed logical step
+  passes its checks. Use the repository template and link its issue. Do not
+  accumulate later features into an existing pull request or merge without
+  approval. Make dependencies clear and keep dependent diffs focused.
