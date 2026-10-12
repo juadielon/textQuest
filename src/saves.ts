@@ -103,8 +103,11 @@ function readName(value: unknown): string {
   if (typeof value !== 'string') {
     throw damaged('the adventure name is missing.');
   }
+  if (controlCharacterPattern.test(value)) {
+    throw damaged(`the adventure name must be 1 to ${MAX_SAVE_NAME_LENGTH} characters on one line.`);
+  }
   const name = value.trim();
-  if (name === '' || name.length > MAX_SAVE_NAME_LENGTH || controlCharacterPattern.test(name)) {
+  if (name === '' || name.length > MAX_SAVE_NAME_LENGTH) {
     throw damaged(`the adventure name must be 1 to ${MAX_SAVE_NAME_LENGTH} characters on one line.`);
   }
   return name;
@@ -199,13 +202,19 @@ export function validateSave(value: unknown): AdventureSave {
     );
   }
 
+  const createdAt = readTime(value.createdAt, 'created');
+  const updatedAt = readTime(value.updatedAt, 'updated');
+  if (updatedAt < createdAt) {
+    throw damaged('the updated time is earlier than the created time.');
+  }
+
   return {
     formatVersion: saveFormatVersion,
     name: readName(value.name),
     settings: readSettings(value.settings),
     commands: readCommands(value.commands),
-    createdAt: readTime(value.createdAt, 'created'),
-    updatedAt: readTime(value.updatedAt, 'updated'),
+    createdAt,
+    updatedAt,
   };
 }
 

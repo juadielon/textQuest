@@ -114,6 +114,19 @@ describe('save format', () => {
     expect(problemOf(() => sampleSave('two\nlines'))).toBe('malformed');
   });
 
+  it.each(['\n', '\r', '\u2028', '\u2029'])(
+    'rejects %j at either end of an imported name',
+    (character) => {
+      for (const name of [`${character}Trip`, `Trip${character}`]) {
+        expect(problemOf(() => sampleSave(name))).toBe('malformed');
+        expect(problemOf(() => importSaveFile(JSON.stringify({
+          ...sampleSave(),
+          name,
+        })))).toBe('malformed');
+      }
+    },
+  );
+
   it('round-trips through export and import', () => {
     const save = sampleSave();
     expect(importSaveFile(exportSaveFile(save))).toEqual(save);
@@ -181,6 +194,11 @@ describe('importing untrusted save files', () => {
     ['a missing time', JSON.stringify({ ...good(), createdAt: undefined })],
     ['a time with no zone', JSON.stringify({ ...good(), updatedAt: '2026-10-12T04:00:00.000' })],
     ['an impossible date', JSON.stringify({ ...good(), createdAt: '2026-02-31T04:00:00.000Z' })],
+    ['an update time before the creation time', JSON.stringify({
+      ...good(),
+      createdAt: '2026-10-12T05:00:00.000Z',
+      updatedAt: '2026-10-12T04:00:00.000Z',
+    })],
   ])('rejects a file with %s', (_label, text) => {
     expect(problemOf(() => importSaveFile(text))).toBe('malformed');
     expect(messageOf(() => importSaveFile(text))).toMatch(/^This save file is damaged or isn't a textQuest save: /);
