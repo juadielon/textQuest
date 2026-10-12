@@ -12,12 +12,22 @@ export type Direction =
   | 'northeast' | 'northwest' | 'southeast' | 'southwest'
   | 'up' | 'down' | 'in' | 'out';
 
-/** A parsed request; the play module must check whether it can be carried out. */
+/** A parsed request; target actions retain the entity kind and need execution checks. */
 export type CommandAction =
   | { readonly kind: 'move'; readonly direction: Direction }
   | { readonly kind: 'look' | 'inventory' | 'hint' | 'undo' | 'help' }
-  | { readonly kind: 'move' | 'examine' | 'take' | 'talk' | 'choose'; readonly targetId: string }
-  | { readonly kind: 'use'; readonly itemId: string; readonly targetId?: string };
+  | {
+    readonly kind: 'move' | 'examine' | 'take' | 'talk' | 'choose';
+    readonly targetId: string;
+    readonly targetKind: CommandTarget['kind'];
+  }
+  | { readonly kind: 'use'; readonly itemId: string }
+  | {
+    readonly kind: 'use';
+    readonly itemId: string;
+    readonly targetId: string;
+    readonly targetKind: CommandTarget['kind'];
+  };
 
 /** An action, a plain-language error, or discovered options for an ambiguous name. */
 export type CommandResult =
@@ -173,7 +183,7 @@ export function parseCommand(input: string, targets: readonly CommandTarget[]): 
       const separators = words.flatMap((word, index) => word === 'on' ? [index] : []);
       const candidates = new Map<string, { item: CommandTarget; target?: CommandTarget }>();
       for (const item of matchingTargets(rest, targets).filter((target) => target.kind === 'item')) {
-        candidates.set(JSON.stringify([item.id]), { item });
+        candidates.set(JSON.stringify([item.kind, item.id]), { item });
       }
       for (const index of separators) {
         const items = matchingTargets(words.slice(0, index).join(' '), targets)
@@ -181,7 +191,7 @@ export function parseCommand(input: string, targets: readonly CommandTarget[]): 
         const matches = matchingTargets(words.slice(index + 1).join(' '), targets);
         for (const item of items) {
           for (const target of matches) {
-            candidates.set(JSON.stringify([item.id, target.id]), { item, target });
+            candidates.set(JSON.stringify([item.kind, item.id, target.kind, target.id]), { item, target });
           }
         }
       }
@@ -189,15 +199,19 @@ export function parseCommand(input: string, targets: readonly CommandTarget[]): 
       if (parses.length === 1) {
         const { item, target } = parses[0];
         return action(target
-          ? { kind: 'use', itemId: item.id, targetId: target.id }
+          ? { kind: 'use', itemId: item.id, targetId: target.id, targetKind: target.kind }
           : { kind: 'use', itemId: item.id });
       }
       if (parses.length > 1) {
-        const sameItem = parses.every(({ item }) => item.id === parses[0].item.id);
-        const sameTarget = parses.every(({ target }) => target?.id === parses[0].target?.id);
+        const sameItem = parses.every(({ item }) =>
+          item.kind === parses[0].item.kind && item.id === parses[0].item.id,
+        );
+        const sameTarget = parses.every(({ target }) =>
+          target?.kind === parses[0].target?.kind && target?.id === parses[0].target?.id,
+        );
         const options = [...new Map(parses.map(({ item, target }) => {
           const option = sameItem ? target ?? item : item;
-          return [option.id, option] as const;
+          return [JSON.stringify([option.kind, option.id]), option] as const;
         })).values()];
         const names = options.map((target) => target.name).join(', ');
         const descriptions = parses.map(({ item, target }) =>
@@ -231,11 +245,13 @@ export function parseCommand(input: string, targets: readonly CommandTarget[]): 
         return action({ kind: 'use', itemId: item.id });
       }
       const target = findTarget(words.slice(separator + 1).join(' '), targets);
-      return 'ok' in target ? target : action({ kind: 'use', itemId: item.id, targetId: target.id });
+      return 'ok' in target ? target : action({
+        kind: 'use', itemId: item.id, targetId: target.id, targetKind: target.kind,
+      });
     }
     default:
       return error('unknown-command', 'That command is not supported. Type help for commands.');
   }
   const target = findTarget(name, targets, kinds);
-  return 'ok' in target ? target : action({ kind, targetId: target.id });
+  return 'ok' in target ? target : action({ kind, targetId: target.id, targetKind: target.kind });
 }

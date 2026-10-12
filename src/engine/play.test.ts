@@ -129,23 +129,24 @@ describe('discoveredTargets', () => {
   it('lists only things the player has found, with kind-prefixed IDs', () => {
     const world = sampleWorld();
     expect(discoveredTargets(world, startPlay(world))).toEqual([
-      { id: 'place:entry', name: 'entry', kind: 'place' },
-      { id: 'place:study', name: 'study', kind: 'place' },
-      { id: 'exit:to-study', name: 'to study', kind: 'exit' },
-      { id: 'exit:door', name: 'door', kind: 'exit' },
-      { id: 'item:pebble', name: 'pebble', kind: 'item' },
+      { id: 'entry', name: 'entry', kind: 'place' },
+      { id: 'study', name: 'study', kind: 'place' },
+      { id: 'to-study', name: 'to study', kind: 'exit' },
+      { id: 'door', name: 'door', kind: 'exit' },
+      { id: 'pebble', name: 'pebble', kind: 'item' },
     ]);
   });
 
   it('never lists hidden places, items elsewhere, unfound clues or solution data', () => {
     const world = sampleWorld();
-    const ids = discoveredTargets(world, startPlay(world)).map(({ id }) => id);
+    const keyOf = ({ kind, id }: { kind: string; id: string }) => `${kind}:${id}`;
+    const ids = discoveredTargets(world, startPlay(world)).map(keyOf);
     for (const hidden of ['place:finish', 'item:token', 'item:key', 'clue:note', 'clue:answer',
       'open-door', 'find-key', 'read-note']) {
       expect(ids).not.toContain(hidden);
     }
     const later = replayCommands(world, ['go study', 'take token']);
-    expect(discoveredTargets(world, later).map(({ id }) => id)).toEqual([
+    expect(discoveredTargets(world, later).map(keyOf)).toEqual([
       'place:entry', 'place:study', 'exit:to-entry', 'item:token', 'clue:note', 'clue:answer',
     ]);
   });
@@ -172,27 +173,27 @@ describe('runAction responses', () => {
       message: 'You are at the entry. You can see the pebble. Ways out: '
         + 'the to study to the study, the door (locked).',
     });
-    expect(runAction(world, start, { kind: 'examine', targetId: 'exit:door' }).message)
+    expect(runAction(world, start, { kind: 'examine', targetId: 'door', targetKind: 'exit' }).message)
       .toBe('The door is locked.');
-    expect(runAction(world, start, { kind: 'examine', targetId: 'exit:to-study' }).message)
+    expect(runAction(world, start, { kind: 'examine', targetId: 'to-study', targetKind: 'exit' }).message)
       .toBe('The to study leads to the study.');
-    expect(runAction(world, start, { kind: 'examine', targetId: 'item:pebble' }).message)
+    expect(runAction(world, start, { kind: 'examine', targetId: 'pebble', targetKind: 'item' }).message)
       .toBe('The pebble is here. You could take it.');
-    expect(runAction(world, start, { kind: 'examine', targetId: 'place:study' }).message)
+    expect(runAction(world, start, { kind: 'examine', targetId: 'study', targetKind: 'place' }).message)
       .toBe('The study is nearby. Go there to look around.');
     expect(runAction(world, start, { kind: 'inventory' }).message).toBe('You are not carrying anything.');
     const later = replayCommands(world, ['take pebble', 'go study', 'take token']);
     expect(runAction(world, later, { kind: 'inventory' }).message)
       .toBe('You are carrying the token and the pebble.');
-    expect(runAction(world, later, { kind: 'examine', targetId: 'clue:note' }).message)
+    expect(runAction(world, later, { kind: 'examine', targetId: 'note', targetKind: 'clue' }).message)
       .toBe('You have found the note clue.');
   });
 
   it('explains moves that cannot happen', () => {
-    expect(runAction(world, start, { kind: 'move', targetId: 'exit:door' }).message).toBe('The door is locked.');
-    expect(runAction(world, start, { kind: 'move', targetId: 'place:entry' }).message).toBe('You are already here.');
-    expect(runAction(world, start, { kind: 'move', targetId: 'place:finish' }).message).toBe('The door is locked.');
-    expect(runAction(world, replayCommands(world, ['go study']), { kind: 'move', targetId: 'place:finish' }).message)
+    expect(runAction(world, start, { kind: 'move', targetId: 'door', targetKind: 'exit' }).message).toBe('The door is locked.');
+    expect(runAction(world, start, { kind: 'move', targetId: 'entry', targetKind: 'place' }).message).toBe('You are already here.');
+    expect(runAction(world, start, { kind: 'move', targetId: 'finish', targetKind: 'place' }).message).toBe('The door is locked.');
+    expect(runAction(world, replayCommands(world, ['go study']), { kind: 'move', targetId: 'finish', targetKind: 'place' }).message)
       .toBe('You cannot get to the finish directly from here.');
     expect(runAction(world, start, { kind: 'move', direction: 'north' }).message)
       .toBe('This adventure does not mark compass directions yet. Try go <place>.');
@@ -200,30 +201,30 @@ describe('runAction responses', () => {
   });
 
   it('takes items once and only where they are', () => {
-    const taken = runAction(world, start, { kind: 'take', targetId: 'item:pebble' });
+    const taken = runAction(world, start, { kind: 'take', targetId: 'pebble', targetKind: 'item' });
     expect(taken.message).toBe('You take the pebble.');
     expect(taken.state.itemsHeld).toEqual(['pebble']);
     expect(taken.state.turns).toBe(1);
-    expect(runAction(world, taken.state, { kind: 'take', targetId: 'item:pebble' }).message)
+    expect(runAction(world, taken.state, { kind: 'take', targetId: 'pebble', targetKind: 'item' }).message)
       .toBe('You already have the pebble.');
-    expect(runAction(world, start, { kind: 'take', targetId: 'item:token' }).message).toBe('That is not here.');
+    expect(runAction(world, start, { kind: 'take', targetId: 'token', targetKind: 'item' }).message).toBe('That is not here.');
   });
 
   it('uses items only when a step here needs them', () => {
     const atStudy = replayCommands(world, ['go study']);
-    expect(runAction(world, atStudy, { kind: 'use', itemId: 'item:token' }).message).toBe('Take the token first.');
+    expect(runAction(world, atStudy, { kind: 'use', itemId: 'token' }).message).toBe('Take the token first.');
     const holding = replayCommands(world, ['take pebble', 'go study', 'take token']);
-    const nothing = runAction(world, holding, { kind: 'use', itemId: 'item:pebble' });
+    const nothing = runAction(world, holding, { kind: 'use', itemId: 'pebble' });
     expect(nothing).toEqual({ state: holding, message: 'Nothing happens.' });
-    expect(runAction(world, holding, { kind: 'use', itemId: 'item:token', targetId: 'exit:door' }).message)
+    expect(runAction(world, holding, { kind: 'use', itemId: 'token', targetId: 'door', targetKind: 'exit' }).message)
       .toBe('That is not here.');
-    expect(runAction(world, start, { kind: 'use', itemId: 'item:key' }).message).toBe('You are not carrying that.');
+    expect(runAction(world, start, { kind: 'use', itemId: 'key' }).message).toBe('You are not carrying that.');
   });
 
   it('has no one to talk to or choices to make in version 1 worlds', () => {
-    expect(runAction(world, start, { kind: 'talk', targetId: 'person:guard' }))
+    expect(runAction(world, start, { kind: 'talk', targetId: 'guard', targetKind: 'person' }))
       .toEqual({ state: start, message: 'There is no one here to talk to.' });
-    expect(runAction(world, start, { kind: 'choose', targetId: 'choice:left' }))
+    expect(runAction(world, start, { kind: 'choose', targetId: 'left', targetKind: 'choice' }))
       .toEqual({ state: start, message: 'There is no choice to make here.' });
   });
 
@@ -308,7 +309,7 @@ function playByHints(world: AdventureWorld): PlayState {
       inputs = [`go ${place[1]}`];
     } else if (message.includes('worth taking')) {
       inputs = discoveredTargets(world, state)
-        .filter((target) => target.kind === 'item' && !state.itemsHeld.includes(target.id.slice(5)))
+        .filter((target) => target.kind === 'item' && !state.itemsHeld.includes(target.id))
         .map((target) => `take ${target.name}`);
     } else if (message.includes('could be useful here')) {
       inputs = state.itemsHeld.map((id) => `use ${id.replace(/-/g, ' ')}`);

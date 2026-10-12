@@ -48,14 +48,10 @@ interface Progress {
   unlockedExits: Set<string>;
 }
 
-type TargetKind = 'place' | 'exit' | 'item' | 'clue';
-
-// Parser targets share one ID space, but world IDs are only unique per kind.
-const targetIdFor = (kind: TargetKind, id: string) => `${kind}:${id}`;
-
-function splitTargetId(targetId: string): { kind: string; id: string } {
-  const at = targetId.indexOf(':');
-  return { kind: targetId.slice(0, at), id: targetId.slice(at + 1) };
+// World IDs are only unique within their own kind, so targets always carry both.
+interface Target {
+  readonly kind: CommandTarget['kind'];
+  readonly id: string;
 }
 
 // Content packs will supply real names later. Until then, IDs read as names.
@@ -195,17 +191,16 @@ export function startPlay(world: AdventureWorld): PlayState {
  * unfound clues never appear.
  *
  * @remarks
- * Target IDs are prefixed by kind, such as `item:key`, because world IDs are
- * only unique within their own kind. Names come from IDs until content packs
- * provide real names.
+ * Targets use world IDs with their kind, because IDs are only unique within
+ * their own kind. Names come from IDs until content packs provide real names.
  */
 export function discoveredTargets(world: AdventureWorld, state: PlayState): CommandTarget[] {
   const progress = progressFrom(state);
   const exits = exitsFrom(world, state.placeId);
   const places = new Set([state.placeId, ...state.placesVisited,
     ...exits.filter((exit) => isOpen(progress, exit)).map((exit) => exit.toPlaceId)]);
-  const target = (kind: TargetKind) => (id: string): CommandTarget =>
-    ({ id: targetIdFor(kind, id), name: nameOf(id), kind });
+  const target = (kind: CommandTarget['kind']) => (id: string): CommandTarget =>
+    ({ id, name: nameOf(id), kind });
   return [
     ...inWorldOrder(world.places, places).map(target('place')),
     ...exits.map(({ id }) => id).map(target('exit')),
@@ -227,8 +222,7 @@ function describePlace(world: AdventureWorld, progress: Progress): string {
   return parts.join(' ');
 }
 
-function examine(world: AdventureWorld, progress: Progress, targetId: string): string {
-  const { kind, id } = splitTargetId(targetId);
+function examine(world: AdventureWorld, progress: Progress, { kind, id }: Target): string {
   const name = nameOf(id);
   switch (kind) {
     case 'place':
@@ -256,8 +250,7 @@ function examine(world: AdventureWorld, progress: Progress, targetId: string): s
 }
 
 // Is the target something the player can point at from here?
-function isPresent(world: AdventureWorld, progress: Progress, targetId: string): boolean {
-  const { kind, id } = splitTargetId(targetId);
+function isPresent(world: AdventureWorld, progress: Progress, { kind, id }: Target): boolean {
   switch (kind) {
     case 'place': return id === progress.placeId;
     case 'exit': return exitsFrom(world, progress.placeId).some((exit) => exit.id === id);
@@ -274,12 +267,13 @@ interface Change {
 
 function move(
   world: AdventureWorld, progress: Progress,
-  action: { readonly direction: Direction } | { readonly targetId: string },
+  action: { readonly direction: Direction }
+    | { readonly targetId: string; readonly targetKind: Target['kind'] },
 ): Change {
   if ('direction' in action) {
     return { done: false, message: 'This adventure does not mark compass directions yet. Try go <place>.' };
   }
-  const { kind, id } = splitTargetId(action.targetId);
+  const { targetKind: kind, targetId: id } = action;
   const exits = exitsFrom(world, progress.placeId);
   let exit: Exit | undefined;
   if (kind === 'exit') {
@@ -304,8 +298,7 @@ function move(
   return { done: true, message: parts.join(' ') };
 }
 
-function take(world: AdventureWorld, progress: Progress, targetId: string): Change {
-  const { kind, id } = splitTargetId(targetId);
+function take(world: AdventureWorld, progress: Progress, { kind, id }: Target): Change {
   if (kind !== 'item') return { done: false, message: 'You cannot take that.' };
   if (progress.itemsHeld.has(id)) return { done: false, message: `You already have the ${nameOf(id)}.` };
   if (!itemsHere(world, progress).includes(id)) return { done: false, message: 'That is not here.' };
@@ -316,8 +309,7 @@ function take(world: AdventureWorld, progress: Progress, targetId: string): Chan
 function use(
   world: AdventureWorld, progress: Progress, action: CommandAction & { kind: 'use' },
 ): Change {
-  const { kind, id } = splitTargetId(action.itemId);
-  if (kind !== 'item') return { done: false, message: 'You can only use items.' };
+  const id = action.itemId;
   if (!progress.itemsHeld.has(id)) {
     return {
       done: false,
@@ -326,12 +318,14 @@ function use(
         : 'You are not carrying that.',
     };
   }
-  if (action.targetId !== undefined && !isPresent(world, progress, action.targetId)) {
+  const target: Target | undefined = 'targetId' in action
+    ? { kind: action.targetKind, id: action.targetId }
+    : undefined;
+  if (target && !isPresent(world, progress, target)) {
     return { done: false, message: 'That is not here.' };
   }
   const ready = stepsReadyHere(world, progress)
     .filter((step) => (step.conditions.itemsHeld ?? []).includes(id));
-  const target = action.targetId === undefined ? undefined : splitTargetId(action.targetId);
   // Prefer a step that opens the exit the player named, but never block progress on the target.
   const step = ready.find((entry) => target?.kind === 'exit'
     && entry.effects.some((effect) => effect.kind === 'unlock-exit' && effect.exitId === target.id))
@@ -427,7 +421,8 @@ export function runAction(world: AdventureWorld, state: PlayState, action: Comma
   switch (action.kind) {
     case 'help': return reply(commandHelp);
     case 'look': return reply(describePlace(world, progress));
-    case 'examine': return reply(examine(world, progress, action.targetId));
+    case 'examine':
+      return reply(examine(world, progress, { kind: action.targetKind, id: action.targetId }));
     case 'inventory':
       return reply(state.itemsHeld.length
         ? `You are carrying ${listNames(state.itemsHeld)}.`
@@ -447,7 +442,9 @@ export function runAction(world: AdventureWorld, state: PlayState, action: Comma
   let change: Change;
   switch (action.kind) {
     case 'move': change = move(world, progress, action); break;
-    case 'take': change = take(world, progress, action.targetId); break;
+    case 'take':
+      change = take(world, progress, { kind: action.targetKind, id: action.targetId });
+      break;
     case 'use': change = use(world, progress, action); break;
     case 'talk': change = { done: false, message: 'There is no one here to talk to.' }; break;
     case 'choose': change = { done: false, message: 'There is no choice to make here.' }; break;

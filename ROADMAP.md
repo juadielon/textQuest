@@ -54,7 +54,10 @@ creator's personal progress stays in their own save.
 
 The first step provides versioned adventure settings (seed, length and genre) and
 two-word share words such as `silverlantern`, with unit tests. Share words are
-not yet shown in the browser, and adventures are not generated from them yet.
+not yet shown in the browser. Version 1 light fantasy settings generate
+repeatable engine worlds ([issue #31](https://github.com/juadielon/textQuest/issues/31)),
+implemented in [pull request #35](https://github.com/juadielon/textQuest/pull/35).
+Generation for other genres remains planned.
 
 ### 4. Stories, places and puzzles
 
@@ -62,8 +65,9 @@ not yet shown in the browser, and adventures are not generated from them yet.
 [pull request #13](https://github.com/juadielon/textQuest/pull/13)
 ([issue #12](https://github.com/juadielon/textQuest/issues/12)). A search limit for large
 worlds merged in [pull request #22](https://github.com/juadielon/textQuest/pull/22)
-([issue #16](https://github.com/juadielon/textQuest/issues/16)). Next planned step: the version 1 content
-format and light fantasy pack ([issue #26](https://github.com/juadielon/textQuest/issues/26)).
+([issue #16](https://github.com/juadielon/textQuest/issues/16)). The version 1 content
+format and light fantasy pack ([issue #26](https://github.com/juadielon/textQuest/issues/26)) are implemented in
+[pull request #30](https://github.com/juadielon/textQuest/pull/30).
 
 **Outcome:** Adventures have connected places, story goals, clues, items and
 several kinds of solvable puzzles. The player can find optional details and
@@ -73,9 +77,25 @@ make choices that change routes or endings.
 
 The first step provides versioned plain data and a pure route search, checked
 against hand-built worlds. Puzzle solutions are separate from discoverable
-data. Genre content, generation, puzzle families, story choices and playable
-adventures are not implemented. The current rules only add progress; later
-choice rules will need their own checks.
+data. The version 1 content format and light fantasy pack are implemented
+in [pull request #30](https://github.com/juadielon/textQuest/pull/30).
+The pack includes three plot dependency graphs, four puzzle
+families, short/medium/long selections, optional route choices and endings.
+Unit tests check the authored plans against the world model and winnability
+checker. Deterministic light fantasy world generation is implemented for
+[issue #31](https://github.com/juadielon/textQuest/issues/31) in
+[pull request #35](https://github.com/juadielon/textQuest/pull/35). The seed chooses a plot, and length selects
+its fixed 8/16/24-place and 4/8/12-required-step plan. Tests cover all nine
+plot/length combinations, optional routes, winnability and repeatability.
+The world contains engine rules, not rendered story text or player progress.
+This is not a playable adventure.
+The science fiction pack ([issue #33](https://github.com/juadielon/textQuest/issues/33))
+follows the same format and checks, but the generator still rejects science
+fiction settings until [issue #40](https://github.com/juadielon/textQuest/issues/40)
+connects it. Cosy mystery content, its generation and command handling remain
+planned; unsupported settings are clearly rejected rather than replaced with
+fantasy. The current rules only add progress; mutually exclusive
+choices will need later rules and their own checks.
 
 ### 5. Commands and recovery
 
