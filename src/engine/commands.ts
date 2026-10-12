@@ -109,6 +109,7 @@ function findTarget(
 
 /** Parse typed input using only caller-supplied discovered names, without changing them.
  * Names and aliases match exactly after case, whitespace and article normalisation.
+ * Distinct complete use actions are ambiguous; repeated aliases for one action are not.
  * The caller must exclude hidden names, hidden aliases and unavailable story options.
  */
 export function parseCommand(input: string, targets: readonly CommandTarget[]): CommandResult {
@@ -169,26 +170,59 @@ export function parseCommand(input: string, targets: readonly CommandTarget[]): 
       kinds = ['choice'];
       break;
     case 'use': {
-      // A discovered item name can itself contain "on".
-      const wholeItem = matchingTargets(rest, targets).some((target) => target.kind === 'item');
       const separators = words.flatMap((word, index) => word === 'on' ? [index] : []);
-      const candidates = wholeItem ? [] : separators.filter((index) =>
-        matchingTargets(words.slice(0, index).join(' '), targets).some((target) => target.kind === 'item'),
-      );
-      if (candidates.length > 1) {
-        const options = [...new Map(candidates.flatMap((index) =>
-          matchingTargets(words.slice(0, index).join(' '), targets)
-            .filter((target) => target.kind === 'item')
-            .map((target) => [target.id, target] as const),
-        )).values()];
+      const candidates = new Map<string, { item: CommandTarget; target?: CommandTarget }>();
+      for (const item of matchingTargets(rest, targets).filter((target) => target.kind === 'item')) {
+        candidates.set(JSON.stringify([item.id]), { item });
+      }
+      for (const index of separators) {
+        const items = matchingTargets(words.slice(0, index).join(' '), targets)
+          .filter((target) => target.kind === 'item');
+        const matches = matchingTargets(words.slice(index + 1).join(' '), targets);
+        for (const item of items) {
+          for (const target of matches) {
+            candidates.set(JSON.stringify([item.id, target.id]), { item, target });
+          }
+        }
+      }
+      const parses = [...candidates.values()];
+      if (parses.length === 1) {
+        const { item, target } = parses[0];
+        return action(target
+          ? { kind: 'use', itemId: item.id, targetId: target.id }
+          : { kind: 'use', itemId: item.id });
+      }
+      if (parses.length > 1) {
+        const sameItem = parses.every(({ item }) => item.id === parses[0].item.id);
+        const sameTarget = parses.every(({ target }) => target?.id === parses[0].target?.id);
+        const options = [...new Map(parses.map(({ item, target }) => {
+          const option = sameItem ? target ?? item : item;
+          return [option.id, option] as const;
+        })).values()];
+        const names = options.map((target) => target.name).join(', ');
+        const descriptions = parses.map(({ item, target }) =>
+          `Use "${item.name}"${target ? ` on "${target.name}"` : ''}`,
+        ).join('; ');
         return {
           ok: false, problem: 'ambiguous',
-          message: `Which item do you mean? ${options.map((target) => target.name).join(', ')}.`,
+          message: sameTarget || (sameItem && parses.every(({ target }) => target))
+            ? `Which one do you mean? ${names}.`
+            : `Which action do you mean? ${descriptions}.`,
           options,
         };
       }
-      const separator = wholeItem ? undefined : candidates[0] ?? separators[0];
+      const separator = separators.find((index) =>
+        matchingTargets(words.slice(0, index).join(' '), targets)
+          .some((target) => target.kind === 'item'),
+      ) ?? separators[0];
       const itemName = separator === undefined ? rest : words.slice(0, separator).join(' ');
+      if (separator !== undefined && matchingTargets(itemName, targets)
+        .some((target) => target.kind === 'item')) {
+        const target = findTarget(words.slice(separator + 1).join(' '), targets);
+        if ('ok' in target) {
+          return target;
+        }
+      }
       const item = findTarget(itemName, targets, ['item']);
       if ('ok' in item) {
         return item;

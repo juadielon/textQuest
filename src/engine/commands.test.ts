@@ -174,16 +174,92 @@ describe('parseCommand', () => {
     });
   });
 
-  it('does not guess when use has more than one discovered item prefix', () => {
+  it('ignores item prefixes whose remaining target is unknown', () => {
     const namedTargets: readonly CommandTarget[] = [
       { id: 'badge', name: 'Badge', kind: 'item' },
       { id: 'ribbon-badge', name: 'Badge on ribbon', kind: 'item' },
       { id: 'wall', name: 'Wall', kind: 'object' },
     ];
     expect(parseCommand('use badge on ribbon on wall', namedTargets)).toEqual({
+      ok: true, action: { kind: 'use', itemId: 'ribbon-badge', targetId: 'wall' },
+    });
+  });
+
+  it('does not choose a whole item name over a valid item-on-target action', () => {
+    const namedTargets: readonly CommandTarget[] = [
+      { id: 'badge', name: 'Badge', kind: 'item' },
+      { id: 'ribbon-badge', name: 'Badge on ribbon', kind: 'item' },
+      { id: 'ribbon', name: 'Ribbon', kind: 'object' },
+    ];
+    expect(parseCommand('use badge on ribbon', namedTargets)).toEqual({
       ok: false, problem: 'ambiguous',
-      message: 'Which item do you mean? Badge, Badge on ribbon.',
-      options: namedTargets.slice(0, 2),
+      message: 'Which action do you mean? Use "Badge on ribbon"; Use "Badge" on "Ribbon".',
+      options: [namedTargets[1], namedTargets[0]],
+    });
+  });
+
+  it('validates complete targets before resolving overlapping aliases', () => {
+    const namedTargets: readonly CommandTarget[] = [
+      { id: 'badge', name: 'Badge on ribbon', aliases: ['badge'], kind: 'item' },
+      { id: 'wall', name: 'Wall', kind: 'object' },
+    ];
+    expect(parseCommand('use badge on ribbon on wall', namedTargets)).toEqual({
+      ok: true, action: { kind: 'use', itemId: 'badge', targetId: 'wall' },
+    });
+  });
+
+  it('deduplicates complete actions produced by different splits and aliases', () => {
+    const namedTargets: readonly CommandTarget[] = [
+      { id: 'badge', name: 'Badge on ribbon', aliases: ['badge'], kind: 'item' },
+      { id: 'wall', name: 'Wall', aliases: ['ribbon on wall'], kind: 'object' },
+    ];
+    expect(parseCommand('use badge on ribbon on wall', namedTargets)).toEqual({
+      ok: true, action: { kind: 'use', itemId: 'badge', targetId: 'wall' },
+    });
+  });
+
+  it('reports distinct complete actions across multiple valid splits', () => {
+    const namedTargets: readonly CommandTarget[] = [
+      { id: 'badge', name: 'Badge', kind: 'item' },
+      { id: 'ribbon-badge', name: 'Badge on ribbon', kind: 'item' },
+      { id: 'ribbon-wall', name: 'Ribbon on wall', kind: 'object' },
+      { id: 'wall', name: 'Wall', kind: 'object' },
+    ];
+    expect(parseCommand('use badge on ribbon on wall', namedTargets)).toMatchObject({
+      ok: false, problem: 'ambiguous', options: namedTargets.slice(0, 2),
+    });
+  });
+
+  it('keeps distinct targets when overlapping item aliases produce valid parses', () => {
+    const namedTargets: readonly CommandTarget[] = [
+      { id: 'badge', name: 'Badge on ribbon', aliases: ['badge'], kind: 'item' },
+      { id: 'ribbon-wall', name: 'Ribbon on wall', kind: 'object' },
+      { id: 'wall', name: 'Wall', kind: 'object' },
+    ];
+    expect(parseCommand('use badge on ribbon on wall', namedTargets)).toEqual({
+      ok: false, problem: 'ambiguous',
+      message: 'Which one do you mean? Ribbon on wall, Wall.',
+      options: namedTargets.slice(1),
+    });
+  });
+
+  it('describes distinct actions even when they refer to the same entity', () => {
+    const namedTargets: readonly CommandTarget[] = [
+      { id: 'badge', name: 'Badge', aliases: ['badge on badge'], kind: 'item' },
+    ];
+    expect(parseCommand('use badge on badge', namedTargets)).toEqual({
+      ok: false, problem: 'ambiguous',
+      message: 'Which action do you mean? Use "Badge"; Use "Badge" on "Badge".',
+      options: namedTargets,
+    });
+  });
+
+  it('does not report item ambiguity when there is no valid target', () => {
+    expect(parseCommand('use key on moon', targets)).toMatchObject({
+      ok: false, problem: 'unknown-target',
+    });
+    expect(parseCommand('use key on', targets)).toMatchObject({
+      ok: false, problem: 'incomplete',
     });
   });
 

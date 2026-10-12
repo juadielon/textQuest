@@ -87,6 +87,9 @@ and the articles `a`, `an` and `the`; there is no fuzzy or partial matching.
 For example, two discovered keys may both have the alias `key`. The parser
 reports both options rather than choosing one. Choice numbers such as `choose 1`
 work only when supplied as discovered aliases for authored options.
+For `use`, an item name containing `on` can also match an item-on-target command.
+The parser checks each complete interpretation and reports distinct actions as
+ambiguous. Aliases that describe the same action do not create extra options.
 
 Results have `ok: true` with an `action`, or `ok: false` with a `problem` and
 plain-language `message`. Ambiguous results also include discovered `options`.
