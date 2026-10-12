@@ -207,3 +207,38 @@ dd {
   margin: 0;
   overflow-wrap: anywhere;
 }
+
+.save-form {
+  margin-top: 1rem;
+}
+
+.save-form label {
+  display: block;
+  font-weight: 600;
+}
+
+.saves-list {
+  display: grid;
+  gap: 1rem;
+  padding: 0;
+  list-style: none;
+}
+
+.save-item {
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+.save-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.save-actions p {
+  flex-basis: 100%;
+  margin: 0;
+}
