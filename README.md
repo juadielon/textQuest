@@ -34,8 +34,9 @@ plots guide an overdue supply ship home, wake a quiet station and honour the
 station charter. It has the same kinds of checks and its own digest pin.
 
 The content unit tests build the fixed plans as `AdventureWorld` fixtures
-and check every plan and ending for winnability. They do not check commands
-or puzzle answers.
+and check every plan and ending for winnability. Cosy mystery prose checks
+also guard the evidence behind the puzzle conclusions. They do not check
+commands or player answers.
 
 Prose is an array of literal text and typed entity references. A later
 renderer must resolve references to included entity names, never execute
