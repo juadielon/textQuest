@@ -19,6 +19,9 @@ completes the issue.
 List the Docker commands you ran and their results. Do not list checks that
 were not run.
 
+- [ ] Unit tests for every code change pass (write `N/A` only when no code
+  changed)
+
 ## Documentation and compatibility
 
 - [ ] README or roadmap updated if needed

@@ -22,6 +22,7 @@ fixed implementation.
 
 - [ ]
 - [ ]
+- [ ] Unit tests cover each code change
 
 ## Other options
 

@@ -37,6 +37,11 @@ Describe what you saw.
 
 Add them if they help explain the problem. Remove private information first.
 
+## Regression test
+
+If this is fixed in code, add a unit test that fails for this bug and passes
+after the fix.
+
 ## Other details
 
 Add anything else that may help.

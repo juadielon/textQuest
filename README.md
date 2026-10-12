@@ -31,6 +31,10 @@ project dependencies will not need to be installed on the host.
 Docker instructions will be added with the first runnable app. Until then,
 there are no commands to build, test or play the game.
 
+Every code change must include a unit test for the behaviour it changes. A
+build or browser smoke check does not replace that test. See
+[Contributing](CONTRIBUTING.md) for the test and review rules.
+
 ## Planned features
 
 The initial plan includes:

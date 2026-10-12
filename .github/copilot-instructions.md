@@ -9,6 +9,9 @@
   working only after it has been built and checked.
 - Run project tools, install dependencies, build and test only inside Docker.
   Do not install Node.js, npm or project dependencies on the host.
+- Write or update a unit test for every code change. Add a regression test for
+  each bug fix. A build or browser smoke check does not replace a unit test.
+  Run the unit tests in Docker and do not call code complete until they pass.
 - Never claim a build or test passed unless it was actually run. Say when a
   check could not be run.
 - Keep shared adventures deterministic across their supported generator and

@@ -71,6 +71,19 @@ The app will run in your normal browser. The project's Docker setup and exact
 commands will be documented when they are available. Until then, do not report
 an app build or test as having passed.
 
+## Unit tests
+
+Every code change must include a unit test that checks the behaviour it
+changes. Add the test in the same change as the code.
+
+For a bug fix, add a regression test that shows the bug before the fix and
+passes after it. Update existing tests when behaviour changes. A successful
+build, lint check or browser smoke test does not replace a unit test.
+
+Run the unit tests in Docker. Do not mark a code change complete until its
+unit tests pass. If you cannot write a unit test for a proposed code change,
+stop and explain the problem before continuing.
+
 ## Pull requests
 
 Use the pull request template. A good pull request:
@@ -79,6 +92,8 @@ Use the pull request template. A good pull request:
 - Explains what changed and why in plain language.
 - Lists only checks that were actually run, including the Docker command and
   result.
+- Includes passing unit tests for every code change, or says `N/A` only when
+  the pull request changes no code.
 - Notes changes to README, roadmap, save formats, shared adventure
   compatibility or generated content when relevant.
 - Includes screenshots for meaningful browser interface changes when useful.

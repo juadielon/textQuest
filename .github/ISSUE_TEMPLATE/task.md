@@ -16,6 +16,7 @@ What needs to change, and why?
 
 - [ ]
 - [ ]
+- [ ] Unit tests cover each code change
 
 ## Dependencies
 
