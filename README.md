@@ -190,6 +190,61 @@ Every code change must include a unit test for the behaviour it changes. A
 build or browser smoke check does not replace that test. See
 [Contributing](CONTRIBUTING.md) for the test and review rules.
 
+## Building and hosting
+
+textQuest builds to plain static files: HTML, CSS, JavaScript and an icon.
+It needs no game server, database, API key or LLM, so any static web host
+can serve it. The current build is the browser placeholder, not a playable
+game.
+
+### Build
+
+```sh
+docker compose run --rm app npm run build
+```
+
+This type-checks the code, then writes the site to `dist/`. Each build
+replaces `dist/`, and Git ignores it. Upload everything inside `dist/`,
+keeping the `assets/` folder next to `index.html`.
+
+### Host on a sub-path
+
+By default the build expects to be served from the site root, such as
+`https://example.com/`. To serve it from a folder, such as
+`https://example.com/textQuest/`, pass Vite's `--base` option with leading
+and trailing slashes:
+
+```sh
+docker compose run --rm app npm run build -- --base=/textQuest/
+```
+
+The page then loads its files from `/textQuest/assets/`. Upload `dist/` to
+that folder on the host.
+
+### Preview the production build
+
+To check a root build with the same nginx container used for production,
+open <http://localhost:8080>:
+
+```sh
+docker compose --profile production up --build production
+```
+
+This builds a fresh copy inside the image, so it does not use your `dist/`.
+It always serves from the root.
+
+To preview the `dist/` you built, including a sub-path build, run Vite's
+preview server. Use the same `--base` you built with, or leave it out for a
+root build:
+
+```sh
+docker compose run --rm --service-ports app npx vite preview --host 0.0.0.0 --port 5173 --strictPort --base=/textQuest/
+```
+
+Open <http://localhost:5173/textQuest/>. Stop it with `Ctrl+C`; if the
+container keeps running, find it with `docker ps` and remove it with
+`docker rm -f <name>`.
+
 ## Planned features
 
 The initial plan includes:
