@@ -123,12 +123,20 @@ rules. Suggestions and checkpoints are not implemented.
 
 ### 6. Saves
 
-**Status:** Planned
+**Status:** In progress — save format and storage wrapper implemented
+([issue #34](https://github.com/juadielon/textQuest/issues/34)); saving,
+listing, resuming and deleting in the browser implemented
+([issue #43](https://github.com/juadielon/textQuest/issues/43)).
 
 **Outcome:** Players can save several adventures in their browser and export
 or import save files. Invalid files and storage errors are reported clearly.
 
 **Depends on:** Milestones 3 and 5.
+
+A save stores the settings and typed commands. Players save during play, see
+their saves listed and resume one by replaying its commands. Delete asks
+first, and unreadable saves are listed and kept. Exporting and importing
+save files in the browser is not implemented.
 
 ### 7. Browser game
 
@@ -140,7 +148,7 @@ A start screen for new adventures and share words
 in [pull request #46](https://github.com/juadielon/textQuest/pull/46).
 The play screen is implemented in
 [pull request #52](https://github.com/juadielon/textQuest/pull/52).
-Saves remain planned.
+Play can be saved, and saves can be listed, resumed and deleted.
 
 **Outcome:** A responsive, accessible browser app brings together adventure
 creation, play, clues, inventory, sharing and saves.
@@ -153,7 +161,8 @@ keyboard, announces responses to screen readers and fits narrow and wide
 screens. New adventures and share words open play directly; play shows the
 share word and a way back to start. Navigation focuses the new heading.
 Returning to start ends the session, and reopening a word starts fresh.
-Content-pack names and prose, and saves remain planned.
+A saves screen resumes and deletes saved adventures. Content-pack names and
+prose, and save file export and import remain planned.
 
 ### 8. Release checks and hosting guide
 

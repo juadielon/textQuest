@@ -5,11 +5,12 @@ authored content and game rules, without using an LLM while you play.
 
 This repository includes a Docker-run browser start screen, the rules for
 repeatable adventure settings and share words, a world model with a
-winnability checker, and deterministic light fantasy world generation.
-A command parser and a pure play module that runs parsed commands against a
+winnability checker, deterministic light fantasy world generation and a save
+format. A command parser and a pure play module that runs parsed commands against a
 world are also implemented, with a browser play screen built on them.
 Light fantasy adventures can be played from the start screen. Names still
-come from IDs; authored story text, other genres and saves remain planned.
+come from IDs; authored story text and other genres remain planned. Play can
+be saved in the browser and resumed later.
 
 ## Start screen
 
@@ -20,7 +21,7 @@ type a share word to open the same starting adventure as a friend.
 forms to play. Invalid words show a clear message beside the field.
 The play screen shows the share word, genre and length and a **Back to start**
 button. Going back ends the current session; opening its share word starts
-again with no progress. There is no save or load interface yet.
+again with no progress unless it was saved first.
 Focus moves to the new screen's heading on navigation. Both screens work by
 keyboard and screen reader, on narrow and wide screens.
 
@@ -236,8 +237,40 @@ The start screen opens play for new adventures and share words
 ([issue #54](https://github.com/juadielon/textQuest/issues/54)).
 Unsupported worlds show a clear message, their share word and a way back
 to the start screen rather than substituting a different adventure.
-Names still come from IDs, and saves are planned in
-[issue #43](https://github.com/juadielon/textQuest/issues/43).
+Names still come from IDs.
+
+## Save format and storage
+
+[Issue #34](https://github.com/juadielon/textQuest/issues/34) adds a
+versioned save format in `src/saves.ts`. A save holds an adventure name, the
+starting settings, every command the player typed and two timestamps.
+Progress is rebuilt by replaying the commands.
+Saves never contain puzzle solutions.
+
+`createSaveStore(storage)` lists, adds, updates, loads and deletes saves in
+any `Storage`-like object, such as `localStorage`. Each save has its own key,
+so a failed write never damages another save. Export gives JSON text. Import
+treats the file as untrusted, rejects damaged, oversized (over 1,000,000
+characters) or newer-version files with a clear message, and stores a good
+file as a new save. A full or blocked storage is reported clearly.
+
+## Saves screen
+
+[Issue #43](https://github.com/juadielon/textQuest/issues/43) adds saving to
+the browser. During play, a **Save adventure** form stores the adventure in
+`localStorage` under a name the player chooses. Saving again, or saving a
+resumed adventure, updates that save. **Your saves** on the start screen
+lists every save with its name, genre, length and last played time, newest
+first.
+
+**Resume** regenerates the world from the save's settings and replays its
+commands through the play module, so the place, inventory, clues, turns, undo
+history and response log match where the player left off. **Delete** asks for
+confirmation first. A save that can't be read is listed with the reason and
+kept; it is only removed if the player deletes it. Storage problems are shown
+as plain messages. The screen works by keyboard and screen reader, and all
+names are added as plain text. Exporting and importing save files from the
+browser is not implemented yet.
 
 ## Project documents
 

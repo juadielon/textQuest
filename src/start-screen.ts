@@ -20,6 +20,8 @@ export interface StartScreenOptions {
   readonly onStart: (settings: AdventureSettings) => void;
   /** Where new seeds get random numbers. Defaults to browser cryptographic randomness. */
   readonly randomSource?: RandomValueSource;
+  /** Opens the saves screen. When missing, no saves button is shown. */
+  readonly onOpenSaves?: () => void;
 }
 
 function create<K extends keyof HTMLElementTagNameMap>(
@@ -131,5 +133,10 @@ export function renderStartScreen(target: HTMLElement, options: StartScreenOptio
     create('p', { className: 'intro' }, 'Start a new text adventure, or type a share word to open one a friend made.'),
     create('div', { className: 'panels' }, newForm, shareForm),
   );
+  if (options.onOpenSaves) {
+    const saves = create('button', { type: 'button', id: 'open-saves' }, 'Your saves');
+    saves.addEventListener('click', options.onOpenSaves);
+    target.append(create('p', { className: 'saves-link' }, saves));
+  }
   heading.focus();
 }

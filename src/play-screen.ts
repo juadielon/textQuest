@@ -3,6 +3,15 @@ import type { AdventureWorld } from './adventure-world';
 import type { CommandTarget } from './engine/commands';
 import { discoveredTargets, playCommand, startPlay, type PlayState } from './engine/play';
 import { generateAdventureWorld } from './generate-world';
+import { MAX_COMMAND_LENGTH } from './saves';
+
+/** Options for {@link renderPlayScreen}. */
+export interface PlayScreenOptions {
+  /** Commands to replay first, such as a save's. They fill the log without being announced. */
+  readonly commands?: readonly string[];
+  /** Called after each typed command with every command run so far, oldest first. */
+  readonly onCommand?: (commands: readonly string[]) => void;
+}
 
 /** What the play screen shows for one moment of play, without any DOM. */
 export interface PlayView {
@@ -52,8 +61,13 @@ export function describePlay(world: AdventureWorld, state: PlayState): PlayView 
  * Player and world text is only ever inserted with `textContent`. New
  * responses are announced through a polite live region. If the world can't
  * be generated, a plain message is shown instead of the game.
+ *
+ * @param options - Saved commands to replay and a hook that hears each new command.
+ * @returns False when the world can't be played, so there is nothing to save.
  */
-export function renderPlayScreen(target: HTMLElement, settings: AdventureSettings): void {
+export function renderPlayScreen(
+  target: HTMLElement, settings: AdventureSettings, options: PlayScreenOptions = {},
+): boolean {
   let world: AdventureWorld;
   let state: PlayState;
   try {
@@ -63,7 +77,7 @@ export function renderPlayScreen(target: HTMLElement, settings: AdventureSetting
     const problem = element('p', 'status', unplayableMessage);
     problem.setAttribute('role', 'alert');
     target.replaceChildren(problem);
-    return;
+    return false;
   }
 
   const placeName = element('h2', 'play-place-name');
@@ -84,6 +98,7 @@ export function renderPlayScreen(target: HTMLElement, settings: AdventureSetting
   input.type = 'text';
   input.autocomplete = 'off';
   input.spellcheck = false;
+  input.maxLength = MAX_COMMAND_LENGTH;
   const label = element('label', undefined, 'What do you do?');
   label.htmlFor = input.id;
   const form = element('form', 'play-command', label, input, element('button', undefined, 'Go'));
@@ -112,25 +127,35 @@ export function renderPlayScreen(target: HTMLElement, settings: AdventureSetting
       + `${view.turns === 1 ? 'turn' : 'turns'}. Type undo to go back a turn.`;
   };
 
+  const commands: string[] = [];
+  const run = (command: string): string => {
+    const turn = playCommand(world, state, command);
+    state = turn.state;
+    commands.push(command);
+    log.append(element('li', 'play-entry',
+      element('p', 'play-typed', `> ${command}`), element('p', undefined, turn.message)));
+    return turn.message;
+  };
+  options.commands?.forEach((command) => run(command));
+
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     const command = input.value.trim();
     if (!command) return;
-    const turn = playCommand(world, state, command);
-    state = turn.state;
-    log.append(element('li', 'play-entry',
-      element('p', 'play-typed', `> ${command}`), element('p', undefined, turn.message)));
+    const message = run(command);
     log.scrollTop = log.scrollHeight;
     // A fresh node is announced even when the text repeats the last response.
-    announcer.replaceChildren(element('span', undefined, turn.message));
+    announcer.replaceChildren(element('span', undefined, message));
     input.value = '';
     input.focus();
     update();
+    options.onCommand?.([...commands]);
   });
 
   update();
   const screen = element('div', 'play-screen', place, ending, log, form, sidebar, announcer);
   target.replaceChildren(screen);
+  return true;
 }
 
 function fillList(list: HTMLElement, names: readonly string[], empty: string): void {
