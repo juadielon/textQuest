@@ -24,7 +24,8 @@ does not create stories.
   from newer versions such as `silverlantern2`, are rejected with a clear
   message.
 - Version 1 must always give the same results. Changes that would alter them
-  need a new version with its own word lists.
+  need a new version with its own word lists. Unit tests pin both complete
+  ordered lists to fixed released fixtures, showing any changed words.
 
 ## World model and winnability
 
