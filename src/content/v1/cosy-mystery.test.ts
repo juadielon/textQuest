@@ -276,6 +276,6 @@ describe('version 1 cosy mystery content', () => {
   it('pins the complete released content, including array order', async () => {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(pack)));
     const hex = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
-    expect(hex).toBe('bc52a1011033f57229f203e3d05d61d7875dd9b9233e682832423bde9d0698ca');
+    expect(hex).toBe('81dbf34fd5ab83871d5e5ae08febbf4d05144d467698948d5a383bcb9a0f90bf');
   });
 });

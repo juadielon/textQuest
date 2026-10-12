@@ -43,7 +43,9 @@ commands or player answers.
 Prose is an array of literal text and typed entity references. A later
 renderer must resolve references to included entity names, never execute
 text as code. Place descriptions stay true across puzzle states; clue text
-is shown only after discovery. Puzzle prompts appear before completion,
+is shown only after discovery. Place descriptions never mention a starting
+item or clue, because the generator may move it. A test checks every pack.
+Puzzle prompts appear before completion,
 and completion text only after its step.
 Never expose `solution` as a hint or player-facing text.
 

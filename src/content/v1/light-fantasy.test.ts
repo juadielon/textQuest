@@ -218,6 +218,6 @@ describe('version 1 light fantasy content', () => {
   it('pins the complete released content, including array order', async () => {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(pack)));
     const hex = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
-    expect(hex).toBe('2db1ae0df087c8924b38e515b8e025921f9b37cdca4d87d8e8a93299ba5b4d60');
+    expect(hex).toBe('b27a7f4d0e1094798f101b9467a08f2895ea1d66c7f5876c0a8c4d5880b34307');
   });
 });
