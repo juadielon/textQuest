@@ -62,9 +62,15 @@ function namedTargets(world: AdventureWorld): CommandTarget[] {
     })),
   );
   const original = [...targets];
+  // Places and exits must also work with go, where words such as north mean a direction.
+  const reachable = (target: CommandTarget, list: readonly CommandTarget[]) => {
+    if (target.kind !== 'place' && target.kind !== 'exit') return true;
+    const result = parseCommand(`go ${target.name}`, list);
+    return result.ok && 'targetId' in result.action;
+  };
   return targets.map((target, index) => {
     const result = parseCommand(`examine ${target.name}`, original);
-    if (result.ok) return target;
+    if (result.ok && reachable(target, original)) return target;
     let name = `${target.name} (${target.kind} ${index + 1})`;
     while (true) {
       const candidate = parseCommand(`examine ${name}`, targets);
@@ -217,8 +223,9 @@ export function startPlay(world: AdventureWorld): PlayState {
  *
  * @remarks
  * Targets use world IDs with their kind, because IDs are only unique within
- * their own kind. Names come from IDs; colliding parser names get a stable
- * numbered suffix. Original names remain aliases and may be ambiguous.
+ * their own kind. Names come from IDs. Names that collide, or that the parser
+ * would read as a direction or article, get a stable numbered suffix.
+ * Original names remain aliases and may be ambiguous.
  */
 export function discoveredTargets(world: AdventureWorld, state: PlayState): CommandTarget[] {
   const progress = progressFrom(state);
