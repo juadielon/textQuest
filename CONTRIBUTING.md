@@ -1,0 +1,100 @@
+# Contributing to textQuest
+
+Thanks for helping with textQuest. Keep changes easy to understand and
+straightforward to review.
+
+## Before you start
+
+1. Read the [roadmap](ROADMAP.md) to see what is planned.
+2. Search the repository's issues for existing work.
+3. Open or update an issue before starting a new task. Explain the problem or
+   goal and how we will know it is done.
+4. Link work to issues and note any issue it depends on.
+
+Use the repository's bug, feature and task templates. Do not guess at missing
+facts. Ask for them when they affect the work.
+
+## Keep changes focused
+
+- Make one clear change at a time. Include its related tests and documentation.
+- Use a separate pull request for each logical change. Do not put the whole
+  game into one pull request.
+- Around 200–400 changed lines of hand-written code is a prompt to consider
+  splitting a pull request. It is guidance, not a hard limit. Do not remove
+  needed tests or make a broken change just to stay under it.
+- Call out large content files and generated lockfiles so reviewers know what
+  to focus on.
+- Do not mix unrelated changes.
+
+## Commit messages
+
+Use [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/):
+
+```text
+<type>[optional scope]: <clear description>
+```
+
+Use `feat` for a new feature and `fix` for a bug fix. Other useful types
+include `docs`, `build`, `test`, `refactor`, `ci` and `chore`. Keep each commit
+about one logical step, and say what changed in its description. Add a short
+body when the reason or impact is not clear from the title.
+
+Examples:
+
+```text
+docs: explain the planned game and current status
+feat(sharing): recreate adventures from a versioned code
+fix(saves): keep existing progress when an import is invalid
+```
+
+Reference related issues in the commit body, for example:
+
+```text
+Refs: #12
+```
+
+Use `Closes #12` only when the pull request fully completes that issue. Mark a
+breaking change with `!` after the type or scope, or describe it in a
+`BREAKING CHANGE:` footer.
+
+Commit each coherent step after its relevant checks. Review what is staged
+before committing. Do not amend or rewrite commits that have already been
+shared.
+
+## Docker-only development
+
+Run project tools, dependency installation, app servers, builds and tests in
+Docker. Do not install Node.js, npm or project dependencies on the host. Use
+Docker volumes for downloaded packages and build caches where needed.
+
+The app will run in your normal browser. The project's Docker setup and exact
+commands will be documented when they are available. Until then, do not report
+an app build or test as having passed.
+
+## Pull requests
+
+Use the pull request template. A good pull request:
+
+- Has one clear purpose and links the issue it works on.
+- Explains what changed and why in plain language.
+- Lists only checks that were actually run, including the Docker command and
+  result.
+- Notes changes to README, roadmap, save formats, shared adventure
+  compatibility or generated content when relevant.
+- Includes screenshots for meaningful browser interface changes when useful.
+- Says what remains unfinished rather than implying the whole roadmap is
+  complete.
+
+Do not publish a pull request or push a branch without authorisation from the
+repository owner.
+
+## Writing
+
+Use simple, natural Australian English in documentation, issues, commits,
+pull requests, game text and error messages. Prefer short sentences and
+concrete words. Explain technical terms when readers need them. Avoid filler,
+robotic phrasing and claims that the game does not yet support.
+
+Keep the README and roadmap in step with the code. Clearly label planned,
+in-progress and working features. Never expose a player's personal save or
+private details in an issue.
