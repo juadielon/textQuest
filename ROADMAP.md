@@ -136,6 +136,9 @@ finished static app.
 
 **Depends on:** Milestone 7.
 
+The README explains how to build, preview and host the static app, including
+from a sub-path ([issue #49](https://github.com/juadielon/textQuest/issues/49)).
+
 ## Out of scope for the first version
 
 - LLM use while playing.
