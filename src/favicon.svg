@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>textQuest</title>
+  <rect width="64" height="64" rx="14" fill="#2b2116"/>
+  <path d="M32 19C26 14 17 14 10 16V48C17 46 26 46 32 51C38 46 47 46 54 48V16C47 14 38 14 32 19Z" fill="#f4e7c8"/>
+  <path d="M32 19V51" stroke="#2b2116" stroke-width="3"/>
+  <path d="M41 13H49V33L45 29L41 33Z" fill="#c68a00"/>
+</svg>
