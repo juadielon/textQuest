@@ -7,8 +7,9 @@ This repository includes a Docker-run browser placeholder, the rules for
 repeatable adventure settings and share words, a world model with a
 winnability checker, deterministic light fantasy world generation, a command
 parser and a save format. A pure play module that runs parsed commands against
-a world is also implemented on this branch. None of these is connected to the
-page, and the game itself is not implemented.
+a world is also implemented on this branch, with a play screen built on it.
+None of these is connected to the page yet, so the game is not playable in
+the browser.
 
 ## Version 1 authored content
 
@@ -207,8 +208,30 @@ numbered suffixes, such as `red key (item 4)`. Look, inventory and hints use
 these same names. Original names stay available as aliases, but can be
 ambiguous; use the displayed name to pick a particular target.
 Version 1 worlds have no compass directions, people or story choices, so
-those commands get a plain explanation. Prose, autocomplete, checkpoints and
-the browser screen are later steps.
+those commands get a plain explanation. Prose, autocomplete and checkpoints
+are later steps.
+
+## Play screen
+
+[Issue #44](https://github.com/juadielon/textQuest/issues/44) adds
+`renderPlayScreen(target, settings)` in `src/play-screen.ts`. It generates
+the world, then shows the current place, a log of typed commands and
+responses, a command box, the inventory, found clues and the turn count.
+Commands, including help, hint and undo, run through the play module. When
+the goal is reached, an ending says how many turns it took; undo still works.
+
+Everything can be done with the keyboard: type a command and press Enter.
+Each new response is announced through a polite live region. The layout is
+one column on narrow screens, with a progress column on wide ones. Typed and
+world text is always added as plain text, never as markup. If a world can't
+be generated, such as a cosy mystery or science fiction world for now, a
+plain message is shown instead.
+
+The screen is not yet reachable from the page: the start screen
+([issue #41](https://github.com/juadielon/textQuest/issues/41)) will open it.
+Names still come from IDs. The screen doesn't use the save format yet; the
+saves screen is planned in
+[issue #43](https://github.com/juadielon/textQuest/issues/43).
 
 ## Save format and storage
 

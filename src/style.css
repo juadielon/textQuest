@@ -14,6 +14,84 @@ main {
   padding: 2rem 1rem;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.play-screen {
+  display: grid;
+  gap: 1rem;
+}
+
+.play-log {
+  max-height: 20rem;
+  margin: 0;
+  padding: 0.5rem 1rem;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid rgb(128 128 128 / 50%);
+}
+
+.play-log p {
+  margin: 0.25rem 0;
+  white-space: pre-line;
+}
+
+.play-typed {
+  font-weight: bold;
+}
+
+.play-command {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.play-command input {
+  flex: 1 1 12rem;
+  font: inherit;
+}
+
+.play-command button {
+  font: inherit;
+}
+
+.play-ending {
+  padding: 0.75rem 1rem;
+  border-left: 4px solid #2e7d32;
+  background: rgb(46 125 50 / 12%);
+}
+
+:is(.play-log, .play-command input, .play-command button):focus-visible {
+  outline: 3px solid #1565c0;
+  outline-offset: 2px;
+}
+
+@media (min-width: 48rem) {
+  main:has(> .play-screen) {
+    max-width: 60rem;
+  }
+
+  .play-screen {
+    grid-template-columns: 2fr 1fr;
+  }
+
+  .play-screen > :not(.play-sidebar) {
+    grid-column: 1;
+  }
+
+  .play-sidebar {
+    grid-row: 1 / span 4;
+    grid-column: 2;
+  }
+}
+
 .status {
   padding: 0.75rem 1rem;
   border-left: 4px solid #c68a00;
