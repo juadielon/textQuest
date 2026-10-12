@@ -26,6 +26,9 @@ does not create stories.
 - Version 1 must always give the same results. Changes that would alter them
   need a new version with its own word lists.
 
+Seeded choices use exact integer maths for 1 to 4,294,967,295 options.
+Version 1's three-genre choices and released share words are unchanged.
+
 ## World model and winnability
 
 [Issue #12](https://github.com/juadielon/textQuest/issues/12) adds plain
