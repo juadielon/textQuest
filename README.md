@@ -20,6 +20,11 @@ warning chain, finding a missing keeper and renewing a river pact. Their
 authored length plans select 8 places and 4 steps for short adventures,
 16 places and 8 steps for medium, or 24 places and 12 steps for long.
 
+[Issue #33](https://github.com/juadielon/textQuest/issues/33) adds a science
+fiction pack in the same format and sizes, set on a space station. Its three
+plots guide an overdue supply ship home, wake a quiet station and honour the
+station charter. It has the same kinds of checks and its own digest pin.
+
 For a later generator, each plan selects its named places and required steps.
 Keep exits whose two places are selected, and items and clues whose initial
 place is selected (or which have no initial place). Include characters at
