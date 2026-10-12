@@ -71,20 +71,31 @@ The existing genre and share-word rules are unchanged.
 The first seeded draw chooses the genre, and the second chooses one of the
 pack's three plots in authored order. Length selects that plot's fixed plan:
 8 places and 4 required steps for short, 16 and 8 for medium, or 24 and 12
-for long. Exits keep both selected endpoints; items and clues keep selected
-initial places or no initial place. Optional steps at selected places remain
-available. Plot dependencies are added to each step's local conditions, and
-the goal requires **all** selected required steps as well as its authored
-conditions.
+for long. Exits keep both selected endpoints. Optional steps at selected
+places remain available. Plot dependencies are added to each step's local
+conditions, and the goal requires **all** selected required steps as well as
+its authored conditions.
+
+Later draws from the same seeded generator
+([issue #51](https://github.com/juadielon/textQuest/issues/51)) move each
+item and clue that starts in a selected place. It goes to a place the player
+can reach from the start without unlocking anything, and no further away than
+the first selected step that needs it. Items and clues that no step needs, or
+that only a step gives, stay as authored. So the same genre, plot and length
+usually gives a different world: across every version 1 seed, all medium and
+long worlds differ, and 86% to 98% of short worlds differ within each genre
+and plot.
 
 The returned world contains engine data, not plot prose, character
 descriptions or player progress. It is a detached copy: generation and callers
 cannot change the pack through it. For each genre, unit tests cover all nine
-plot/length combinations, optional routes and winnability, seed variation,
-share-word round trips, and pinned complete worlds. A sweep test generates
-seeds 0 to 999 at every length and checks each world is repeatable, survives
-a share-word round trip, and is winnable with and without its optional steps.
-It also checks that every genre and plot is reached. Changes to these
+plot/length combinations, optional routes and winnability, where items and
+clues may move, seed variation, share-word round trips, and pinned complete
+worlds. A sweep test generates seeds 0 to 999 at every length and checks each
+world is repeatable, survives a share-word round trip, and is winnable with
+and without its optional steps. It also checks that every genre and plot is
+reached, and that at least 80% of the seeds for each genre, plot and length
+give distinct worlds. Changes to these
 generator rules require a new adventure version. This is not command handling, browser
 rendering or a playable game.
 
@@ -99,8 +110,9 @@ does not create stories on its own.
 - The seed and version always choose the same genre: light fantasy, cosy
   mystery or science fiction.
 - A share word, such as `silverlantern`, joins two words from fixed lists. It
-  holds the seed and length, so it describes about 65,000 different starting
-  adventures. It never includes player progress or save data.
+  holds the seed and length, so there are about 65,000 share words. Nearly
+  all of them lead to a different starting world (see version 1 world
+  generation above). It never includes player progress or save data.
 - Share words ignore capitals, spaces and hyphens. Misspelt words, and words
   from newer versions such as `silverlantern2`, are rejected with a clear
   message.
