@@ -23,3 +23,6 @@
   passes its checks. Use the repository template and link its issue. Do not
   accumulate later features into an existing pull request or merge without
   approval. Make dependencies clear and keep dependent diffs focused.
+- Before opening a pull request, or when asked to review one, follow the
+  `code-review` skill in `.github/skills/code-review/SKILL.md`. Reviews report
+  findings only and never change code.
