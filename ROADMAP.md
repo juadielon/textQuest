@@ -13,8 +13,9 @@ all development tools must run in Docker.
 
 ### 1. Project rules and overview
 
-**Status:** Implemented on a branch; awaiting review —
-[issue #1](https://github.com/juadielon/textQuest/issues/1).
+**Status:** Done — [issue #1](https://github.com/juadielon/textQuest/issues/1),
+[pull request #4](https://github.com/juadielon/textQuest/pull/4). A code review skill was added in
+[pull request #7](https://github.com/juadielon/textQuest/pull/7).
 
 **Outcome:** Contributors can understand the project, plan work through
 issues, make small Conventional Commits and prepare focused pull requests.
@@ -25,7 +26,9 @@ templates and pull request template.
 
 ### 2. Docker development setup
 
-**Status:** Done — issue #2, pull request #5
+**Status:** Done — [issue #2](https://github.com/juadielon/textQuest/issues/2),
+[pull request #5](https://github.com/juadielon/textQuest/pull/5). ESLint was added in
+[pull request #24](https://github.com/juadielon/textQuest/pull/24).
 
 **Outcome:** Contributors can install project dependencies, run the browser
 placeholder, build it and run tests through Docker, without installing
@@ -38,8 +41,11 @@ container and a small test are in place. The game is not implemented.
 
 ### 3. Repeatable adventures and sharing
 
-**Status:** In progress — versioned settings and share words implemented:
-[issue #3](https://github.com/juadielon/textQuest/issues/3)
+**Status:** In progress — versioned settings and share words merged in
+[pull request #11](https://github.com/juadielon/textQuest/pull/11)
+([issue #3](https://github.com/juadielon/textQuest/issues/3)). Follow-up fixes merged:
+exact large-count picks in [pull request #17](https://github.com/juadielon/textQuest/pull/17) and pinned
+version 1 share-word lists in [pull request #18](https://github.com/juadielon/textQuest/pull/18).
 
 **Outcome:** A shared game code recreates the same starting adventure. The
 creator's personal progress stays in their own save.
@@ -52,10 +58,12 @@ not yet shown in the browser, and adventures are not generated from them yet.
 
 ### 4. Stories, places and puzzles
 
-**Status:** In progress — world model and winnability checker implemented
-([issue #12](https://github.com/juadielon/textQuest/issues/12)). A search
-limit for large worlds is on a branch, awaiting review:
-[issue #16](https://github.com/juadielon/textQuest/issues/16)
+**Status:** In progress — world model and winnability checker merged in
+[pull request #13](https://github.com/juadielon/textQuest/pull/13)
+([issue #12](https://github.com/juadielon/textQuest/issues/12)). A search limit for large
+worlds merged in [pull request #22](https://github.com/juadielon/textQuest/pull/22)
+([issue #16](https://github.com/juadielon/textQuest/issues/16)). Next planned step: the version 1 content
+format and light fantasy pack ([issue #26](https://github.com/juadielon/textQuest/issues/26)).
 
 **Outcome:** Adventures have connected places, story goals, clues, items and
 several kinds of solvable puzzles. The player can find optional details and
@@ -71,8 +79,9 @@ choice rules will need their own checks.
 
 ### 5. Commands and recovery
 
-**Status:** In progress — pure typed command parser implemented on a branch,
-awaiting review: [issue #27](https://github.com/juadielon/textQuest/issues/27)
+**Status:** In progress — pure typed command parser
+([issue #27](https://github.com/juadielon/textQuest/issues/27)) awaiting review
+in [pull request #29](https://github.com/juadielon/textQuest/pull/29)
 
 **Outcome:** Players can act through typed commands with suggestions, request
 hints, undo actions and return to checkpoints. Occasional non-graphic violent
