@@ -54,10 +54,11 @@ creator's personal progress stays in their own save.
 
 The first step provides versioned adventure settings (seed, length and genre) and
 two-word share words such as `silverlantern`, with unit tests. Share words are
-not yet shown in the browser. Version 1 light fantasy settings generate
+not yet shown in the browser. Version 1 settings generate
 repeatable engine worlds ([issue #31](https://github.com/juadielon/textQuest/issues/31)),
 implemented in [pull request #35](https://github.com/juadielon/textQuest/pull/35).
-Generation for other genres remains planned.
+[Issue #40](https://github.com/juadielon/textQuest/issues/40) extends this to the
+cosy mystery and science fiction genres.
 
 ### 4. Stories, places and puzzles
 
@@ -90,13 +91,12 @@ plot/length combinations, optional routes, winnability and repeatability.
 The world contains engine rules, not rendered story text or player progress.
 This is not a playable adventure.
 The science fiction pack ([issue #33](https://github.com/juadielon/textQuest/issues/33))
-follows the same format and checks, but the generator still rejects science
-fiction settings until [issue #40](https://github.com/juadielon/textQuest/issues/40)
-connects it. The cosy mystery pack
-([issue #32](https://github.com/juadielon/textQuest/issues/32)) follows the same
-format, and issue #40 will connect it to the generator too. Command handling
-remains planned; unsupported settings are clearly rejected rather than replaced
-with fantasy. The current rules only add progress; mutually exclusive
+and the cosy mystery pack
+([issue #32](https://github.com/juadielon/textQuest/issues/32)) follow the same
+format and checks. The generator builds worlds from both
+([issue #40](https://github.com/juadielon/textQuest/issues/40)), with the same
+tests and pinned worlds for each genre. Command handling remains planned.
+The current rules only add progress; mutually exclusive
 choices will need later rules and their own checks.
 
 ### 5. Commands and recovery

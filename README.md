@@ -5,14 +5,14 @@ authored stories and game rules, without using an LLM while you play.
 
 This repository includes a Docker-run browser placeholder, the rules for
 repeatable adventure settings and share words, a world model with a
-winnability checker, and deterministic light fantasy world generation.
+winnability checker, and deterministic world generation for all three version 1 genres.
 The game itself is not implemented.
 
 ## Version 1 authored content
 
 [Issue #26](https://github.com/juadielon/textQuest/issues/26) adds a typed
 content format in `src/content/v1/` and the light fantasy pack. It is not
-connected to the browser. The generator uses its authored plans.
+connected to the browser. The generator uses its authored plans, and those of the two packs below.
 
 The pack has 24 places, motivated characters, items, clues, 12 required puzzle
 templates across four families, optional discoveries, route choices and
@@ -59,10 +59,10 @@ content change. Existing share words and player saves are unchanged.
 
 [Issue #31](https://github.com/juadielon/textQuest/issues/31) adds
 `generateAdventureWorld(settings)` in `src/generate-world.ts`. It accepts
-valid version 1 settings whose seed chooses light fantasy. Cosy mystery and
-science fiction settings throw a clear `RangeError` until the generator uses
-their packs ([issue #40](https://github.com/juadielon/textQuest/issues/40));
-invalid settings and a genre that does not match the seed are also rejected.
+valid version 1 settings and uses the content pack for the seed's genre: light
+fantasy, cosy mystery or science fiction
+([issue #40](https://github.com/juadielon/textQuest/issues/40)). Invalid
+settings and a genre that does not match the seed throw a clear `RangeError`.
 The existing genre and share-word rules are unchanged.
 
 The first seeded draw chooses the genre, and the second chooses one of the
@@ -76,9 +76,9 @@ conditions.
 
 The returned world contains engine data, not plot prose, character
 descriptions or player progress. It is a detached copy: generation and callers
-cannot change the pack through it. Unit tests cover all nine plot/length
-combinations, optional routes and winnability, seed variation, share-word
-round trips, and pinned complete worlds. Changes to these generator rules
+cannot change the pack through it. For each genre, unit tests cover all nine
+plot/length combinations, optional routes and winnability, seed variation,
+share-word round trips, and pinned complete worlds. Changes to these generator rules
 require a new adventure version. This is not command handling, browser
 rendering or a playable game.
 
