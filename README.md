@@ -81,7 +81,10 @@ The returned world contains engine data, not plot prose, character
 descriptions or player progress. It is a detached copy: generation and callers
 cannot change the pack through it. For each genre, unit tests cover all nine
 plot/length combinations, optional routes and winnability, seed variation,
-share-word round trips, and pinned complete worlds. Changes to these
+share-word round trips, and pinned complete worlds. A sweep test generates
+seeds 0 to 999 at every length and checks each world is repeatable, survives
+a share-word round trip, and is winnable with and without its optional steps.
+It also checks that every genre and plot is reached. Changes to these
 generator rules require a new adventure version. This is not command handling, browser
 rendering or a playable game.
 
