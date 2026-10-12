@@ -23,6 +23,7 @@ were not run.
 
 - [ ] Unit tests for every code change pass (write `N/A` only when no code
   changed)
+- [ ] ESLint passes (`docker compose run --rm app npm run lint`)
 
 ## Documentation and compatibility
 
