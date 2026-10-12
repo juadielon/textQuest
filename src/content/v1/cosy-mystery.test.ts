@@ -92,6 +92,51 @@ describe('version 1 cosy mystery content', () => {
     for (const ending of pack.endings) checkProse(ending.text);
   });
 
+  it('shows the unsigned note mark alongside the postmark meanings', () => {
+    const clue = pack.clues.find(({ id }) => id === 'postmark-chart')!;
+    expect(clue.text.join('')).toContain('The unsigned note has a round postmark.');
+    expect(clue.text.join('')).toContain('A round postmark means the village');
+  });
+
+  it('asks about the raffle ticket date rather than an unnamed reader', () => {
+    const puzzle = pack.puzzles.find(({ id }) => id === 'check-loans')!;
+    expect(puzzle.prompt).toEqual(['Which raffle does the ticket in the returned book come from?']);
+    expect(pack.clues.find(({ id }) => id === 'bookmark')!.text.join('')).toContain('Friday raffle ticket');
+    expect(puzzle.completion.at(-1)).toBe('; the ticket is from the Friday raffle.');
+  });
+
+  it('asks where the polish went, matching the swap ledger and conclusion', () => {
+    const puzzle = pack.puzzles.find(({ id }) => id === 'compare-seeds')!;
+    expect(puzzle.prompt).toEqual(['Where did the tin of polish swapped for sweet peas go?']);
+    expect(pack.clues.find(({ id }) => id === 'seed-label')!.text.join('')).toContain('swapped on Saturday for a tin of polish');
+    expect(pack.clues.find(({ id }) => id === 'swap-ledger')!.text.join('')).toContain('sent up to the lighthouse');
+    expect(puzzle.completion.at(-1)).toBe('; a tin of polish went to the lighthouse.');
+  });
+
+  it('uses the clock to repeat its last hour without inferring when the hall was locked', () => {
+    const puzzle = pack.puzzles.find(({ id }) => id === 'wind-clock')!;
+    expect(puzzle.prompt).toEqual(['Find out which hour the mantel clock from the hall last struck.']);
+    expect(pack.clues.find(({ id }) => id === 'clock-note')!.text.at(-1)).toContain('repeats the last hour it struck');
+    expect(puzzle.completion.at(-1)).toBe('; it repeats its last chime: seven.');
+  });
+
+  it('asks for the sundial direction without inventing a cyclist sighting', () => {
+    const puzzle = pack.puzzles.find(({ id }) => id === 'read-sundial')!;
+    expect(puzzle.prompt).toEqual(['Use the sundial motto to find the direction towards the sea.']);
+    expect(pack.clues.find(({ id }) => id === 'sundial-motto')!.text.join('')).toContain('Follow the noon shadow');
+    expect(puzzle.completion.at(-1)).toBe(', you follow the noon shadow towards the sea.');
+  });
+
+  it('shows the same teapot detail and keeper in both photographs', () => {
+    for (const id of ['fete-photo', 'garden-photo']) {
+      const clue = pack.clues.find((clue) => clue.id === id)!;
+      expect(clue.text).toContainEqual({ kind: 'character', id: 'keeper' });
+      expect(clue.text.filter((part) => typeof part === 'string').join('')).toContain('crescent notch in its handle');
+    }
+    const puzzle = pack.puzzles.find(({ id }) => id === 'compare-photos')!;
+    expect(puzzle.completion).toContain('; the matching crescent notch identifies the same teapot, both times in the care of ');
+  });
+
   it('resolves placements, dependencies, conditions and effects', () => {
     expect(ids.place).toContain(pack.startPlaceId);
     expect(ids.place).toContain(pack.solution.goal.placeId);
@@ -231,6 +276,6 @@ describe('version 1 cosy mystery content', () => {
   it('pins the complete released content, including array order', async () => {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(pack)));
     const hex = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
-    expect(hex).toBe('7f1074da3a3dc3309b50b17e9deae5babf083b7e9de77147192b6c68ce9760b3');
+    expect(hex).toBe('81dbf34fd5ab83871d5e5ae08febbf4d05144d467698948d5a383bcb9a0f90bf');
   });
 });
