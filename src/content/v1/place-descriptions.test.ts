@@ -6,9 +6,12 @@ import { scienceFiction } from './science-fiction';
 
 const words = (text: string) => text.toLowerCase().match(/[a-z]+/g) ?? [];
 
-// A name word of four or more letters, or its simple plural, counts as a
-// mention, so "Carved tide marks" describes the "Tide verse" clue.
-const mentions = (text: string, name: string) => words(name).filter((nameWord) => nameWord.length >= 4)
+// Joining words and "old" say nothing about which thing a name means.
+const fillerWords = new Set(['a', 'an', 'and', 'at', 'for', 'in', 'of', 'old', 'on', 'the', 'to', 'with']);
+
+// Any other name word, or its simple plural, counts as a mention, so "Carved
+// tide marks" describes the "Tide verse" clue and "the map" a "River map".
+const mentions = (text: string, name: string) => words(name).filter((nameWord) => !fillerWords.has(nameWord))
   .some((nameWord) => words(text).some((word) => [nameWord, `${nameWord}s`, `${nameWord}es`].includes(word)));
 
 // Lists each place description that mentions a starting item or clue, which
@@ -33,5 +36,13 @@ describe('version 1 place descriptions', () => {
       .toEqual(['bridge mentions Tide verse']);
     expect(movableMentions({ ...lightFantasy, places: [bridge], items: [], clues: [{ ...tideVerse, placeId: undefined }] }))
       .toEqual([]);
+  });
+
+  it('catches short name words such as map and log', () => {
+    const cabin = { id: 'cabin', name: 'Cabin', description: ['An old map hangs by the log book.'] };
+    const map = { id: 'river-map', placeId: 'mill', name: 'Dated river map', text: [] };
+    const log = { id: 'crew-log', placeId: 'mill', name: 'Crew log', text: [] };
+    expect(movableMentions({ ...lightFantasy, places: [cabin], items: [], clues: [map, log] }))
+      .toEqual(['cabin mentions Dated river map', 'cabin mentions Crew log']);
   });
 });
