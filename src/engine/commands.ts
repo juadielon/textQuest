@@ -89,32 +89,42 @@ function matchingTargets(input: string, targets: readonly CommandTarget[]): Comm
   ) : [];
 }
 
+type TargetLookup =
+  | { readonly found: true; readonly target: CommandTarget }
+  | { readonly found: false; readonly error: CommandResult & { readonly ok: false } };
+
 function findTarget(
   input: string,
   targets: readonly CommandTarget[],
   kinds?: readonly CommandTarget['kind'][],
-): CommandTarget | (CommandResult & { readonly ok: false }) {
+): TargetLookup {
   const name = normaliseName(input);
   if (!name) {
-    return error('incomplete', 'Add the name of something you have discovered.');
+    return { found: false, error: error('incomplete', 'Add the name of something you have discovered.') };
   }
   const matches = matchingTargets(input, targets);
   if (!matches.length) {
-    return error('unknown-target', 'That name is not one you have discovered.');
+    return { found: false, error: error('unknown-target', 'That name is not one you have discovered.') };
   }
   const options = kinds ? matches.filter((target) => kinds.includes(target.kind)) : matches;
   if (!options.length) {
-    return error('invalid', 'That kind of thing does not fit this command. Type help for commands.');
+    return {
+      found: false,
+      error: error('invalid', 'That kind of thing does not fit this command. Type help for commands.'),
+    };
   }
   if (options.length > 1) {
     return {
-      ok: false,
-      problem: 'ambiguous',
-      message: `Which one do you mean? ${options.map((target) => target.name).join(', ')}.`,
-      options,
+      found: false,
+      error: {
+        ok: false,
+        problem: 'ambiguous',
+        message: `Which one do you mean? ${options.map((target) => target.name).join(', ')}.`,
+        options,
+      },
     };
   }
-  return options[0];
+  return { found: true, target: options[0] };
 }
 
 /** Parse typed input using only caller-supplied discovered names, without changing them.
@@ -233,25 +243,27 @@ export function parseCommand(input: string, targets: readonly CommandTarget[]): 
       if (separator !== undefined && matchingTargets(itemName, targets)
         .some((target) => target.kind === 'item')) {
         const target = findTarget(words.slice(separator + 1).join(' '), targets);
-        if ('ok' in target) {
-          return target;
+        if (!target.found) {
+          return target.error;
         }
       }
       const item = findTarget(itemName, targets, ['item']);
-      if ('ok' in item) {
-        return item;
+      if (!item.found) {
+        return item.error;
       }
       if (separator === undefined) {
-        return action({ kind: 'use', itemId: item.id });
+        return action({ kind: 'use', itemId: item.target.id });
       }
       const target = findTarget(words.slice(separator + 1).join(' '), targets);
-      return 'ok' in target ? target : action({
-        kind: 'use', itemId: item.id, targetId: target.id, targetKind: target.kind,
+      return !target.found ? target.error : action({
+        kind: 'use', itemId: item.target.id, targetId: target.target.id, targetKind: target.target.kind,
       });
     }
     default:
       return error('unknown-command', 'That command is not supported. Type help for commands.');
   }
   const target = findTarget(name, targets, kinds);
-  return 'ok' in target ? target : action({ kind, targetId: target.id, targetKind: target.kind });
+  return !target.found ? target.error : action({
+    kind, targetId: target.target.id, targetKind: target.target.kind,
+  });
 }

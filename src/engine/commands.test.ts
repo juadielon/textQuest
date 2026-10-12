@@ -148,6 +148,26 @@ describe('parseCommand', () => {
     expect(parseCommand('x lamp', [])).toMatchObject({ ok: false, problem: 'unknown-target' });
   });
 
+  it('does not confuse targets with an own ok property for lookup outcomes', () => {
+    const item: CommandTarget & { readonly ok: boolean } = {
+      id: 'token', name: 'Token', kind: 'item', ok: true,
+    };
+    const object: CommandTarget & { readonly ok: boolean } = {
+      id: 'pedestal', name: 'Pedestal', kind: 'object', ok: false,
+    };
+    const namedTargets = [item, object];
+
+    expect(parseCommand('examine pedestal', namedTargets)).toEqual({
+      ok: true, action: { kind: 'examine', targetId: 'pedestal', targetKind: 'object' },
+    });
+    expect(parseCommand('use token', namedTargets)).toEqual({
+      ok: true, action: { kind: 'use', itemId: 'token' },
+    });
+    expect(parseCommand('use token on pedestal', namedTargets)).toEqual({
+      ok: true, action: { kind: 'use', itemId: 'token', targetId: 'pedestal', targetKind: 'object' },
+    });
+  });
+
   it('reports missing and unknown use targets', () => {
     expect(parseCommand('use lamp on the', targets)).toMatchObject({
       ok: false, problem: 'incomplete',
