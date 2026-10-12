@@ -93,6 +93,13 @@ Run the unit tests in Docker. Do not mark a code change complete until its
 unit tests pass. If you cannot write a unit test for a proposed code change,
 stop and explain the problem before continuing.
 
+## Code documentation
+
+Give every new or changed export a short TSDoc comment (`/** ... */`) in
+Australian English. Say what it is for, and note any parameters, return
+value, errors and rules that must not change. Keep it brief and update it
+when behaviour changes.
+
 ## Pull requests
 
 Use the pull request template. A good pull request:

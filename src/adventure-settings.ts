@@ -1,18 +1,43 @@
 import { createSeededRandom } from './seeded-random';
 import { versionOneFirstWords, versionOneSecondWords } from './share-words';
 
-// The starting settings that a share word identifies. Player progress, saves
-// and display titles are deliberately not part of this contract.
+/*
+ * The starting settings that a share word identifies. Player progress, saves
+ * and display titles are deliberately not part of this contract.
+ */
 
+/**
+ * Adventure lengths a player can choose, in share-word order.
+ *
+ * @remarks
+ * Never add, remove, rename or reorder entries. Released version 1 share
+ * words depend on this exact list; a change needs a new version.
+ */
 export const adventureLengths = ['short', 'medium', 'long'] as const;
+
+/** How long an adventure is: short, medium or long. */
 export type AdventureLength = (typeof adventureLengths)[number];
 
+/**
+ * Every genre an adventure can have.
+ *
+ * @remarks
+ * Each version's own rules set which genres it uses and the order its seed
+ * picks from, so this list doesn't decide the genre for a seed.
+ */
 export const adventureGenres = ['light-fantasy', 'cosy-mystery', 'science-fiction'] as const;
+
+/** The genre of an adventure, which is chosen from its seed. */
 export type AdventureGenre = (typeof adventureGenres)[number];
 
-// One number covers both the generator rules and their content. Any change
-// that could give a different adventure for the same seed needs a new
-// version, and every released version must keep working unchanged.
+/**
+ * The adventure version used for new adventures.
+ *
+ * @remarks
+ * One number covers both the generator rules and their content. Any change
+ * that could give a different adventure for the same seed needs a new
+ * version, and every released version must keep working unchanged.
+ */
 export const currentVersion = 1;
 
 interface VersionRules {
@@ -25,6 +50,8 @@ const versionRules: ReadonlyMap<number, VersionRules> = new Map([
   [
     1,
     {
+      // The seed picks a genre by position. Never change this list: released
+      // version 1 share words depend on it.
       genres: ['light-fantasy', 'cosy-mystery', 'science-fiction'],
       firstWords: versionOneFirstWords,
       secondWords: versionOneSecondWords,
@@ -32,20 +59,38 @@ const versionRules: ReadonlyMap<number, VersionRules> = new Map([
   ],
 ]);
 
+/** Adventure versions this copy of textQuest can create and open. */
 export const supportedVersions: readonly number[] = [...versionRules.keys()];
 
+/** Everything needed to recreate the same starting adventure. */
 export interface AdventureSettings {
+  /** The adventure version whose rules and content are used. */
   readonly version: number;
+  /** A whole number below {@link seedCountFor} for this version. */
   readonly seed: number;
+  /** The length the player chose. */
   readonly length: AdventureLength;
+  /** The genre chosen from the seed. It must match the seed and version. */
   readonly genre: AdventureGenre;
 }
 
+/**
+ * Why a share word could not be read.
+ *
+ * - `malformed`: the word is misspelt or isn't a textQuest share word.
+ * - `unsupported-version`: the word is for a version this copy doesn't know.
+ */
 export type ShareWordProblem = 'malformed' | 'unsupported-version';
 
+/** Thrown by {@link parseShareWord} with a message a player can read. */
 export class ShareWordError extends Error {
+  /** The kind of problem, so callers can respond without matching message text. */
   readonly problem: ShareWordProblem;
 
+  /**
+   * @param problem - The kind of problem.
+   * @param message - A plain-English message to show the player.
+   */
   constructor(problem: ShareWordProblem, message: string) {
     super(message);
     this.name = 'ShareWordError';
@@ -61,13 +106,33 @@ function rulesFor(version: number): VersionRules {
   return rules;
 }
 
-// Every word pair stands for one seed and length, so the number of seeds is
-// the number of pairs shared out between the lengths.
+/**
+ * Counts the seeds a version supports.
+ *
+ * @remarks
+ * Every word pair stands for one seed and length, so the number of seeds is
+ * the number of pairs shared out between the lengths.
+ *
+ * @param version - The adventure version.
+ * @returns How many seeds the version has. Valid seeds go from 0 to this number minus 1.
+ * @throws RangeError if the version is not supported.
+ */
 export function seedCountFor(version: number): number {
   const rules = rulesFor(version);
   return Math.floor((rules.firstWords.length * rules.secondWords.length) / adventureLengths.length);
 }
 
+/**
+ * Builds the starting settings for a seed and length. The genre is worked out
+ * from the seed, so the same input always gives the same settings.
+ *
+ * @param seed - A whole number below {@link seedCountFor} for the version.
+ * @param length - The adventure length.
+ * @param version - The adventure version. Defaults to {@link currentVersion}.
+ * @returns The adventure's starting settings.
+ * @throws RangeError if the version is unsupported, the seed is out of range
+ * or the length is unknown.
+ */
 export function createAdventureSettings(
   seed: number,
   length: AdventureLength,
@@ -86,12 +151,27 @@ export function createAdventureSettings(
   return { version, seed, length, genre };
 }
 
+/**
+ * A source of unpredictable numbers, such as the browser's `crypto` object.
+ * Tests can pass a fixed source instead.
+ */
 export interface RandomValueSource {
+  /** Fills `array` with random 32-bit values. */
   getRandomValues(array: Uint32Array<ArrayBuffer>): unknown;
 }
 
-// Only new adventures use real randomness. Everything after the seed is
-// worked out from it.
+/**
+ * Picks an unpredictable seed for a new adventure. Every seed is equally likely.
+ *
+ * @remarks
+ * Only new adventures use real randomness. Everything after the seed is
+ * worked out from it.
+ *
+ * @param version - The adventure version. Defaults to {@link currentVersion}.
+ * @param source - Where to get random numbers. Defaults to browser cryptographic randomness.
+ * @returns A seed below {@link seedCountFor} for the version.
+ * @throws RangeError if the version is not supported.
+ */
 export function createSeed(
   version: number = currentVersion,
   source: RandomValueSource = globalThis.crypto,
@@ -106,6 +186,14 @@ export function createSeed(
   return values[0] % count;
 }
 
+/**
+ * Starts a new adventure of the chosen length with a fresh random seed.
+ *
+ * @param length - The adventure length the player chose.
+ * @param source - Where to get random numbers. Defaults to browser cryptographic randomness.
+ * @returns Settings for the current version.
+ * @throws RangeError if the length is unknown.
+ */
 export function createNewAdventureSettings(
   length: AdventureLength,
   source: RandomValueSource = globalThis.crypto,
@@ -113,9 +201,18 @@ export function createNewAdventureSettings(
   return createAdventureSettings(createSeed(currentVersion, source), length);
 }
 
-// A share word joins one word from each list, such as "silverlantern".
-// Version 1 words have no number. Later versions will end with their number,
-// such as "silverlantern2", so older copies can say they do not support them.
+/**
+ * Turns adventure settings into their one canonical share word.
+ *
+ * @remarks
+ * A share word joins one word from each list, such as "silverlantern".
+ * Version 1 words have no number. Later versions will end with their number,
+ * such as "silverlantern2", so older copies can say they do not support them.
+ *
+ * @param settings - The settings to share.
+ * @returns A lowercase share word.
+ * @throws RangeError if the settings are invalid or the genre doesn't match the seed.
+ */
 export function encodeShareWord(settings: AdventureSettings): string {
   const expected = createAdventureSettings(settings.seed, settings.length, settings.version);
   if (settings.genre !== expected.genre) {
@@ -137,6 +234,14 @@ function malformed(): ShareWordError {
   );
 }
 
+/**
+ * Reads a share word that a player typed. Capitals, spaces and hyphens are
+ * ignored, so "Silver Lantern" works too.
+ *
+ * @param input - The text the player entered.
+ * @returns The adventure settings the word stands for.
+ * @throws {@link ShareWordError} if the word is malformed or for an unsupported version.
+ */
 export function parseShareWord(input: string): AdventureSettings {
   if (typeof input !== 'string') {
     throw malformed();
