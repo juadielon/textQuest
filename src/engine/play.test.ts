@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { createAdventureSettings } from '../adventure-settings';
 import type { AdventureWorld } from '../adventure-world';
+import { generateAdventureWorld } from '../generate-world';
 import { checkWinnability } from '../winnability';
 import { commandHelp } from './commands';
 import {
@@ -387,6 +389,19 @@ describe('undo', () => {
     const looked = replayCommands(world, ['look', 'i', 'hint']);
     expect(looked).toEqual(start);
     expect(playCommand(world, start, 'undo')).toEqual({ state: start, message: 'There is nothing to undo.' });
+  });
+});
+
+describe('replaying a long save', () => {
+  // Regression: naming targets used to be redone for every command, so a long
+  // world took about 75 ms per command and big saves were slow to resume.
+  it('replays thousands of commands on a long generated world quickly', () => {
+    let settings = createAdventureSettings(0, 'long');
+    while (settings.genre !== 'light-fantasy') settings = createAdventureSettings(settings.seed + 1, 'long');
+    const world = generateAdventureWorld(settings);
+    const started = Date.now();
+    expect(replayCommands(world, Array<string>(2000).fill('look'))).toEqual(startPlay(world));
+    expect(Date.now() - started).toBeLessThan(2000);
   });
 });
 

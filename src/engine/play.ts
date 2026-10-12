@@ -54,8 +54,20 @@ interface Target {
   readonly id: string;
 }
 
+// Naming parses every target, which is slow, so each world's names are kept.
+// Play never changes a world, so the names stay correct.
+const namesByWorld = new WeakMap<AdventureWorld, readonly CommandTarget[]>();
+
 // Keep names stable as targets are discovered, including parser normalisation.
-function namedTargets(world: AdventureWorld): CommandTarget[] {
+function namedTargets(world: AdventureWorld): readonly CommandTarget[] {
+  const cached = namesByWorld.get(world);
+  if (cached) return cached;
+  const named = nameTargets(world);
+  namesByWorld.set(world, named);
+  return named;
+}
+
+function nameTargets(world: AdventureWorld): CommandTarget[] {
   const targets = (['place', 'exit', 'item', 'clue'] as const).flatMap((kind) =>
     world[`${kind}s`].map(({ id }): CommandTarget => ({
       id, kind, name: id.replace(/[-_]+/g, ' ').trim() || id,
