@@ -65,6 +65,11 @@ changed part so you can judge whether the change actually works.
 - If you can, run the tests in Docker and report the exact command and
   result. Otherwise say they were not run.
 
+**Code documentation**
+
+- Every new or changed export needs a short TSDoc comment in Australian
+  English. Flag missing comments and comments that no longer match the code.
+
 **Focused scope**
 
 - The pull request should do one logical thing and link its issue.

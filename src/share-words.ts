@@ -1,8 +1,12 @@
-// Share-word lists for adventure version 1. A share word joins one word from
-// each list, such as "silverlantern". Never edit, reorder or remove these
-// words: released share words depend on each position. Make a new version
-// with new lists instead.
+/**
+ * @packageDocumentation
+ * Share-word lists for adventure version 1. A share word joins one word from
+ * each list, such as "silverlantern". Never edit, reorder or remove these
+ * words: released share words depend on each position. Make a new version
+ * with new lists instead.
+ */
 
+/** The 256 version 1 first words, such as "silver". Never change this list. */
 export const versionOneFirstWords: readonly string[] = [
   'able', 'amber', 'ancient', 'autumn', 'azure', 'balmy', 'bold', 'bouncy',
   'brave', 'breezy', 'bright', 'brisk', 'bronze', 'bubbly', 'busy', 'calm',
@@ -38,6 +42,7 @@ export const versionOneFirstWords: readonly string[] = [
   'bumpy', 'chunky', 'crunchy', 'fizzy', 'minty', 'peppy', 'sleek', 'sunlit',
 ];
 
+/** The 255 version 1 second words, such as "lantern". Never change this list. */
 export const versionOneSecondWords: readonly string[] = [
   'acorn', 'anchor', 'apple', 'arrow', 'badger', 'balloon', 'banjo', 'barrel',
   'basket', 'beacon', 'beetle', 'bell', 'berry', 'biscuit', 'blossom', 'boat',

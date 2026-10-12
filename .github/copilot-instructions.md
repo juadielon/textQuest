@@ -12,6 +12,8 @@
 - Write or update a unit test for every code change. Add a regression test for
   each bug fix. A build or browser smoke check does not replace a unit test.
   Run the unit tests in Docker and do not call code complete until they pass.
+- Give every new or changed export a short TSDoc comment in Australian
+  English. Keep it in step with the code.
 - Never claim a build or test passed unless it was actually run. Say when a
   check could not be run.
 - Keep shared adventures deterministic across their supported generator and
