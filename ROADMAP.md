@@ -57,7 +57,7 @@ two-word share words such as `silverlantern`, with unit tests. Share words are
 not yet shown in the browser. Version 1 light fantasy settings generate
 repeatable engine worlds ([issue #31](https://github.com/juadielon/textQuest/issues/31)),
 implemented in [pull request #35](https://github.com/juadielon/textQuest/pull/35).
-Other genre packs remain planned.
+Generation for other genres remains planned.
 
 ### 4. Stories, places and puzzles
 
@@ -88,10 +88,13 @@ checker. Deterministic light fantasy world generation is implemented for
 its fixed 8/16/24-place and 4/8/12-required-step plan. Tests cover all nine
 plot/length combinations, optional routes, winnability and repeatability.
 The world contains engine rules, not rendered story text or player progress.
-This is not a playable adventure. Cosy mystery and science fiction content,
-their generation and command handling remain planned; their settings are
-clearly rejected rather than replaced with fantasy.
-The current rules only add progress; mutually exclusive
+This is not a playable adventure.
+The science fiction pack ([issue #33](https://github.com/juadielon/textQuest/issues/33))
+follows the same format and checks, but the generator still rejects science
+fiction settings until [issue #40](https://github.com/juadielon/textQuest/issues/40)
+connects it. Cosy mystery content, its generation and command handling remain
+planned; unsupported settings are clearly rejected rather than replaced with
+fantasy. The current rules only add progress; mutually exclusive
 choices will need later rules and their own checks.
 
 ### 5. Commands and recovery

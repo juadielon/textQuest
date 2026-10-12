@@ -21,6 +21,11 @@ warning chain, finding a missing keeper and renewing a river pact. Their
 authored length plans select 8 places and 4 steps for short adventures,
 16 places and 8 steps for medium, or 24 places and 12 steps for long.
 
+[Issue #33](https://github.com/juadielon/textQuest/issues/33) adds a science
+fiction pack in the same format and sizes, set on a space station. Its three
+plots guide an overdue supply ship home, wake a quiet station and honour the
+station charter. It has the same kinds of checks and its own digest pin.
+
 The content unit tests build the fixed plans as `AdventureWorld` fixtures
 and check every plan and ending for winnability. They do not check commands
 or puzzle answers.
@@ -48,7 +53,8 @@ content change. Existing share words and player saves are unchanged.
 [Issue #31](https://github.com/juadielon/textQuest/issues/31) adds
 `generateAdventureWorld(settings)` in `src/generate-world.ts`. It accepts
 valid version 1 settings whose seed chooses light fantasy. Cosy mystery and
-science fiction settings throw a clear `RangeError` until their packs exist;
+science fiction settings throw a clear `RangeError` until the generator uses
+their packs ([issue #40](https://github.com/juadielon/textQuest/issues/40));
 invalid settings and a genre that does not match the seed are also rejected.
 The existing genre and share-word rules are unchanged.
 
