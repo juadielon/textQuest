@@ -7,6 +7,47 @@ This repository includes a Docker-run browser placeholder, the rules for
 repeatable adventure settings and share words, and a world model with a
 winnability checker. The game itself is not implemented.
 
+## Version 1 authored content
+
+[Issue #26](https://github.com/juadielon/textQuest/issues/26) adds a typed
+content format in `src/content/v1/` and the light fantasy pack. It is not
+connected to the browser or a seed-based world generator yet.
+
+The pack has 24 places, motivated characters, items, clues, 12 required puzzle
+templates across four families, optional discoveries, route choices and
+endings. Three plots use different puzzle dependency graphs: restoring a
+warning chain, finding a missing keeper and renewing a river pact. Their
+authored length plans select 8 places and 4 steps for short adventures,
+16 places and 8 steps for medium, or 24 places and 12 steps for long.
+
+For a later generator, each plan selects its named places and required steps.
+Keep exits whose two places are selected, and items and clues whose initial
+place is selected (or which have no initial place). Include characters at
+selected places and optional steps there whose references remain available.
+Merge the plot's dependencies into each required step's `stepsDone`
+conditions. The goal must require **all** selected required steps as well as
+the pack's goal conditions. The unit tests build these fixed plans as
+`AdventureWorld` fixtures and check every plan and ending for winnability.
+They do not check seed generation, commands or puzzle answers.
+
+Prose is an array of literal text and typed entity references. A later
+renderer must resolve references to included entity names, never execute
+text as code. Place descriptions stay true across puzzle states; clue text
+is shown only after discovery. Puzzle prompts appear before completion,
+and completion text only after its step.
+Never expose `solution` as a hint or player-facing text.
+
+After reaching the goal, choose the last matching ending from the plot's
+ordered `endingIds`. A force consequence takes priority over a peaceful
+choice if both were taken. Both shortcuts can be opened; version 1 does not
+remove progress or make choices mutually exclusive. The force choice is a
+non-graphic shove, not a combat system.
+
+This is released data: changing version 1 IDs, prose, array order, selections,
+conditions or effects after merge requires a new content version. A test pins
+the complete pack's SHA-256 digest. Do not update that pin to hide a released
+content change. Existing share words and player saves are unchanged.
+
 ## Adventure settings and share words
 
 [Issue #3](https://github.com/juadielon/textQuest/issues/3) adds the code that

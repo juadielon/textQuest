@@ -65,9 +65,15 @@ make choices that change routes or endings.
 
 The first step provides versioned plain data and a pure route search, checked
 against hand-built worlds. Puzzle solutions are separate from discoverable
-data. Genre content, generation, puzzle families, story choices and playable
-adventures are not implemented. The current rules only add progress; later
-choice rules will need their own checks.
+data. The version 1 content format and light fantasy pack are implemented
+on a branch for [issue #26](https://github.com/juadielon/textQuest/issues/26),
+awaiting review. The pack includes three plot dependency graphs, four puzzle
+families, short/medium/long selections, optional route choices and endings.
+Unit tests check the authored plans against the world model and winnability
+checker. This is not seed-based generation or a playable adventure.
+Cosy mystery and science fiction content, generation and command handling
+remain planned. The current rules only add progress; mutually exclusive
+choices will need later rules and their own checks.
 
 ### 5. Commands and recovery
 
