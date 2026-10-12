@@ -99,8 +99,15 @@ Open <http://localhost:5173>. Run the checks in containers:
 
 ```sh
 docker compose run --rm app npm test
+docker compose run --rm app npm run lint
 docker compose run --rm app npm run build
 ```
+
+ESLint checks all TypeScript in `src/`, including tests, with
+typescript-eslint's recommended rules. These are syntax-based checks, not
+type-aware rules. The linter uses TypeScript 6 because typescript-eslint does
+not yet support TypeScript 7. Builds still use TypeScript 7 through the
+`typescript-native` package alias.
 
 To serve the production build in a container, open <http://localhost:8080>:
 

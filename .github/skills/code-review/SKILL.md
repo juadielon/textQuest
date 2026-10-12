@@ -79,6 +79,8 @@ changed part so you can judge whether the change actually works.
   step that expects Node.js or npm on the host.
 - Check new dependencies are needed and come from a trusted source. Flag
   missing lockfile updates.
+- Run `docker compose run --rm app npm run lint` and report its result.
+  Check that ESLint covers all TypeScript in `src/`, including tests.
 
 **Deterministic adventures**
 

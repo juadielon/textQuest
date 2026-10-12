@@ -9,6 +9,8 @@
   working only after it has been built and checked.
 - Run project tools, install dependencies, build and test only inside Docker.
   Do not install Node.js, npm or project dependencies on the host.
+- Run `docker compose run --rm app npm run lint` alongside unit tests and the
+  build. Report the exact Docker commands and results in the pull request.
 - Write or update a unit test for every code change. Add a regression test for
   each bug fix. A build or browser smoke check does not replace a unit test.
   Run the unit tests in Docker and do not call code complete until they pass.

@@ -67,9 +67,18 @@ Run project tools, dependency installation, app servers, builds and tests in
 Docker. Do not install Node.js, npm or project dependencies on the host. Use
 Docker volumes for downloaded packages and build caches where needed.
 
-The app will run in your normal browser. The project's Docker setup and exact
-commands will be documented when they are available. Until then, do not report
-an app build or test as having passed.
+Install dependencies and run the checks in containers:
+
+```sh
+docker compose run --rm app npm ci
+docker compose run --rm app npm run lint
+docker compose run --rm app npm test
+docker compose run --rm app npm run build
+```
+
+ESLint checks all TypeScript in `src/`, including tests. See the README for
+the development server and the linter's TypeScript version requirements.
+Report the exact commands and results in the pull request.
 
 ## Unit tests
 
@@ -92,6 +101,7 @@ Use the pull request template. A good pull request:
 - Explains what changed and why in plain language.
 - Lists only checks that were actually run, including the Docker command and
   result.
+- Includes the ESLint check: `docker compose run --rm app npm run lint`.
 - Includes passing unit tests for every code change, or says `N/A` only when
   the pull request changes no code.
 - Notes changes to README, roadmap, save formats, shared adventure
