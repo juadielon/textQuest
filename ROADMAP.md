@@ -110,7 +110,7 @@ choices can change the story; there is no turn-based combat system.
 
 ### 6. Saves
 
-**Status:** In progress — save format and storage wrapper awaiting review
+**Status:** In progress — save format and storage wrapper implemented
 ([issue #34](https://github.com/juadielon/textQuest/issues/34)).
 
 **Outcome:** Players can save several adventures in their browser and export

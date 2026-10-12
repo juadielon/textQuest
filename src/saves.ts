@@ -89,7 +89,7 @@ export class SaveError extends Error {
 const isoTimePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 // Typed commands and names are single lines, so control characters only
 // appear in damaged or crafted files.
-const controlCharacterPattern = /[\u0000-\u001f\u007f]/;
+const controlCharacterPattern = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
 
 function damaged(detail: string): SaveError {
   return new SaveError('malformed', `This save file is damaged or isn't a textQuest save: ${detail}`);
@@ -151,7 +151,7 @@ function readCommands(value: unknown): string[] {
       `This save has more than ${MAX_SAVE_COMMANDS.toLocaleString('en-AU')} commands, which is more than textQuest can keep.`,
     );
   }
-  return value.map((command) => {
+  return Array.from(value, (command) => {
     if (typeof command !== 'string' || controlCharacterPattern.test(command)) {
       throw damaged('a command is not plain text.');
     }

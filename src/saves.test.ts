@@ -119,6 +119,31 @@ describe('save format', () => {
     expect(importSaveFile(exportSaveFile(save))).toEqual(save);
   });
 
+  it.each(['\u0080', '\u0085', '\u009f', '\u2028', '\u2029'])(
+    'rejects names and commands containing %j',
+    (character) => {
+      expect(problemOf(() => sampleSave(`First${character}second`))).toBe('malformed');
+      expect(problemOf(() => sampleSave('Trip', [`look${character}north`]))).toBe('malformed');
+      const save = sampleSave();
+      expect(problemOf(() => importSaveFile(JSON.stringify({
+        ...save,
+        name: `First${character}second`,
+      })))).toBe('malformed');
+      expect(problemOf(() => importSaveFile(JSON.stringify({
+        ...save,
+        commands: [`look${character}north`],
+      })))).toBe('malformed');
+    },
+  );
+
+  it('rejects sparse command arrays rather than exporting null commands', () => {
+    const commands: string[] = ['look', 'go north'];
+    delete commands[0];
+    expect(problemOf(() => sampleSave('Trip', commands))).toBe('malformed');
+    expect(problemOf(() => validateSave({ ...sampleSave(), commands }))).toBe('malformed');
+    expect(problemOf(() => exportSaveFile({ ...sampleSave(), commands }))).toBe('malformed');
+  });
+
   it('keeps only known fields, so a file cannot slip in extra data', () => {
     const file = exportSaveFile(sampleSave());
     const extra = `{"__proto__":{"polluted":true},"solution":{"secret":true},${file.slice(1)}`;
