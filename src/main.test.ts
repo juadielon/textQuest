@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import * as adventureSettings from './adventure-settings';
-import { discoveredTargets, startPlay } from './engine/play';
+import { discoveredTargets, replayCommands, startPlay } from './engine/play';
 import { generateAdventureWorld } from './generate-world';
 import { describePlay, unplayableMessage } from './play-screen';
 import { summariseAdventure } from './start-screen-model';
@@ -13,6 +13,7 @@ const settings = Array.from({ length: 100 }, (_, seed) =>
 
 beforeEach(async () => {
   vi.resetModules();
+  localStorage.clear();
   app = document.createElement('main');
   app.id = 'app';
   document.body.append(app);
@@ -126,4 +127,54 @@ it('shows an unsupported-world message and still lets the player return to start
   get<HTMLButtonElement>('header button').click();
   expect(get('#new-adventure')).not.toBeNull();
   expect(document.activeElement).toBe(get('h1'));
+});
+
+it('saves during play, lists the save and resumes the exact state and log', () => {
+  // A short world keeps this test quick, as it is generated several times.
+  const short = Array.from({ length: 100 }, (_, seed) =>
+    adventureSettings.createAdventureSettings(seed, 'short'))
+    .find((value) => value.genre === 'light-fantasy')!;
+  openAdventure(adventureSettings.encodeShareWord(short));
+  const world = generateAdventureWorld(short);
+  const exit = world.exits.find((value) => value.fromPlaceId === world.startPlaceId && !value.locked)!;
+  const name = discoveredTargets(world, startPlay(world)).find((value) => value.id === exit.id)!.name;
+  const commands = [`go to ${name}`, 'hint', 'look'];
+  for (const command of commands) {
+    get<HTMLInputElement>('#play-command').value = command;
+    get<HTMLFormElement>('.play-command').requestSubmit();
+  }
+  get<HTMLInputElement>('#save-name').value = 'My trip';
+  get<HTMLFormElement>('.save-form').requestSubmit();
+  expect(get('#save-status').textContent).toBe('Saved “My trip”.');
+
+  get<HTMLButtonElement>('header button').click();
+  get<HTMLButtonElement>('#open-saves').click();
+  expect(get('h1').textContent).toBe('Your saves');
+  expect(document.activeElement).toBe(get('h1'));
+  expect(get('.save-item h2').textContent).toBe('My trip');
+  get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+
+  const view = describePlay(world, replayCommands(world, commands));
+  expect(get('.play-place-name').textContent).toBe(view.placeName);
+  expect(get('.play-sidebar p').textContent).toBe(`Turns taken: ${view.turns}`);
+  expect([...app.querySelectorAll('.play-typed')].map((node) => node.textContent))
+    .toEqual(commands.map((command) => `> ${command}`));
+  expect(get<HTMLInputElement>('#save-name').value).toBe('My trip');
+  expect(document.activeElement).toBe(get('h1'));
+
+  get<HTMLInputElement>('#play-command').value = 'inventory';
+  get<HTMLFormElement>('.play-command').requestSubmit();
+  get<HTMLFormElement>('.save-form').requestSubmit();
+  get<HTMLButtonElement>('header button').click();
+  get<HTMLButtonElement>('#open-saves').click();
+  expect(app.querySelectorAll('.save-item')).toHaveLength(1);
+});
+
+it('offers no save form when the world cannot be played', () => {
+  const unsupported = Array.from({ length: 100 }, (_, seed) =>
+    adventureSettings.createAdventureSettings(seed, 'short'))
+    .find((value) => value.genre === 'cosy-mystery')!;
+  openAdventure(adventureSettings.encodeShareWord(unsupported));
+
+  expect(app.querySelector('.save-form')).toBeNull();
 });
