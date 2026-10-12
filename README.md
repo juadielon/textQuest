@@ -40,8 +40,9 @@ and the goal live in `solution`, separate from discoverable world data.
 Future hints and suggestions must not expose this field directly.
 
 `checkWinnability(world)` searches routes from the starting place without
-changing the world. It returns `winnable` and `unreachableStepIds`, including
-optional steps that cannot be completed even when the goal is reachable.
+changing the world. For a fully checked world it returns `winnable` and
+`unreachableStepIds`, including optional steps that cannot be completed even
+when the goal is reachable.
 Invalid references, empty or repeated IDs, unsupported world versions and
 unknown effects throw a `RangeError` rather than reporting a valid adventure.
 It accepts typed world data, not untrusted save files.
@@ -54,8 +55,18 @@ being at its named place with its conditions met. Items are not consumed,
 and choices cannot remove progress or exclude other steps in this version.
 
 The checker keeps each route's progress separate, including on one-way
-paths. Its exhaustive search is intended for small worlds; many independent
-routes can create a large number of states. Tests use hand-built data only.
+paths. Places the player can walk to and back from are checked together as
+one area, because visiting them all only adds progress. Choices between
+one-way paths still create separate routes.
+
+[Issue #16](https://github.com/juadielon/textQuest/issues/16) limits the
+search to `MAX_SEARCH_STATES` (10,000) states, so a large world cannot freeze
+the page. A world that needs more returns `{ winnable: false, tooLarge: true }`
+instead. It must be treated as rejected, never as winnable. The same world
+always gives the same result, whatever the time, locale or browser. Tests show
+long worlds with 28 places and 14 required steps finish within the limit. The
+limit is a cautious first value and will be retuned once real generated
+worlds exist. Tests use hand-built data only.
 There is no generated story, player command handling or playable adventure.
 
 ## Project documents
