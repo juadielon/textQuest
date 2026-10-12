@@ -3,8 +3,28 @@
 textQuest is a planned text adventure game. It will build adventures from
 authored stories and game rules, without using an LLM while you play.
 
-This repository includes a Docker-run browser placeholder; the game itself is
-not implemented.
+This repository includes a Docker-run browser placeholder and the rules for
+repeatable adventure settings and share words. The game itself is not
+implemented.
+
+## Adventure settings and share words
+
+[Issue #3](https://github.com/juadielon/textQuest/issues/3) adds the code that
+describes how an adventure starts. It is not yet connected to the page, and it
+does not create stories.
+
+- A new adventure gets a random seed from the browser's cryptographic random
+  numbers. The player chooses a short, medium or long adventure.
+- The seed and version always choose the same genre: light fantasy, cosy
+  mystery or science fiction.
+- A share word, such as `silverlantern`, joins two words from fixed lists. It
+  holds the seed and length, so it describes about 65,000 different starting
+  adventures. It never includes player progress or save data.
+- Share words ignore capitals, spaces and hyphens. Misspelt words, and words
+  from newer versions such as `silverlantern2`, are rejected with a clear
+  message.
+- Version 1 must always give the same results. Changes that would alter them
+  need a new version with its own word lists.
 
 ## Project documents
 
