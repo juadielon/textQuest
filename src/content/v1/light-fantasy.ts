@@ -191,7 +191,7 @@ export const lightFantasy = {
     },
     {
       id: 'align-mirrors', placeId: 'glasshouse', family: 'read-clue',
-      prompt: ['Arrange the mirrors to follow the garden labels.'],
+      prompt: ['Arrange the mirrors to follow the sun labels.'],
       completion: ['You use ', { kind: 'clue', id: 'sun-note' }, ' to direct light onto the right beds.'],
     },
     {
