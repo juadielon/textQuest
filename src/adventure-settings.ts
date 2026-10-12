@@ -1,8 +1,7 @@
 import { createSeededRandom } from './seeded-random';
 import { versionOneFirstWords, versionOneSecondWords } from './share-words';
 
-/**
- * @packageDocumentation
+/*
  * The starting settings that a share word identifies. Player progress, saves
  * and display titles are deliberately not part of this contract.
  */

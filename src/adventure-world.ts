@@ -1,5 +1,4 @@
-/**
- * @packageDocumentation
+/*
  * The data format for an adventure's world: places, exits, items, clues,
  * puzzle steps and the goal. IDs are plain strings and must be unique within
  * their own kind.

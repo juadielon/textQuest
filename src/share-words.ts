@@ -1,5 +1,4 @@
-/**
- * @packageDocumentation
+/*
  * Share-word lists for adventure version 1. A share word joins one word from
  * each list, such as "silverlantern". Never edit, reorder or remove these
  * words: released share words depend on each position. Make a new version
