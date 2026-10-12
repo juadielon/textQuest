@@ -150,8 +150,9 @@ forms include `n`, `x`, `i`, `h` and `u`; `u` means undo, so use `up` to move
 upwards. `commandHelp` provides grammar help without puzzle advice.
 
 The caller supplies only discovered targets with IDs, names, kinds and optional
-discovered aliases. Names match exactly after ignoring case, extra whitespace
-and the articles `a`, `an` and `the`; there is no fuzzy or partial matching.
+discovered aliases. Names and aliases match exactly after ignoring case, extra
+whitespace, trailing `.`, `!` or `?` and the articles `a`, `an` and `the`;
+there is no fuzzy or partial matching. Punctuation inside a command is kept.
 For example, two discovered keys may both have the alias `key`. The parser
 reports both options rather than choosing one. Choice numbers such as `choose 1`
 work only when supplied as discovered aliases for authored options.
