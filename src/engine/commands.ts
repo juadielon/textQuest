@@ -89,6 +89,23 @@ function matchingTargets(input: string, targets: readonly CommandTarget[]): Comm
   ) : [];
 }
 
+function targetLabels(targets: readonly CommandTarget[]): string[] {
+  const uniqueTargets = [...new Map(targets.map((target) => [
+    JSON.stringify([target.kind, target.id]),
+    target,
+  ])).values()];
+  return targets.map((target) => {
+    const sameName = uniqueTargets.filter((candidate) => candidate.name === target.name);
+    if (sameName.length < 2) {
+      return target.name;
+    }
+    const sameKind = sameName.filter((candidate) => candidate.kind === target.kind);
+    return sameKind.length < 2
+      ? `${target.name} (${target.kind})`
+      : `${target.name} (${target.kind}: ${target.id})`;
+  });
+}
+
 type TargetLookup =
   | { readonly found: true; readonly target: CommandTarget }
   | { readonly found: false; readonly error: CommandResult & { readonly ok: false } };
@@ -119,7 +136,7 @@ function findTarget(
       error: {
         ok: false,
         problem: 'ambiguous',
-        message: `Which one do you mean? ${options.map((target) => target.name).join(', ')}.`,
+        message: `Which one do you mean? ${targetLabels(options).join(', ')}.`,
         options,
       },
     };
@@ -223,9 +240,21 @@ export function parseCommand(input: string, targets: readonly CommandTarget[]): 
           const option = sameItem ? target ?? item : item;
           return [JSON.stringify([option.kind, option.id]), option] as const;
         })).values()];
-        const names = options.map((target) => target.name).join(', ');
-        const descriptions = parses.map(({ item, target }) =>
-          `Use "${item.name}"${target ? ` on "${target.name}"` : ''}`,
+        const names = targetLabels(options).join(', ');
+        const itemLabels = targetLabels(parses.map(({ item }) => item));
+        const targetParses = parses.filter(({ target }) => target);
+        const parsedTargets = targetParses.map(({ target }) => target!);
+        const parsedTargetLabels = targetLabels(parsedTargets);
+        const labelsByTarget = new Map(
+          parsedTargets.map((target, index) => [
+            JSON.stringify([target.kind, target.id]),
+            parsedTargetLabels[index],
+          ]),
+        );
+        const descriptions = parses.map(({ target }, index) =>
+          `Use "${itemLabels[index]}"${target
+            ? ` on "${labelsByTarget.get(JSON.stringify([target.kind, target.id]))}"`
+            : ''}`,
         ).join('; ');
         return {
           ok: false, problem: 'ambiguous',
