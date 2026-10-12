@@ -53,8 +53,9 @@ creator's personal progress stays in their own save.
 **Depends on:** Milestone 2.
 
 The first step provides versioned adventure settings (seed, length and genre) and
-two-word share words such as `silverlantern`, with unit tests. Share words are
-not yet shown in the browser. Version 1 light fantasy settings generate
+two-word share words such as `silverlantern`, with unit tests. The start
+screen ([issue #41](https://github.com/juadielon/textQuest/issues/41)) shows
+them in the browser, but does not generate worlds. Version 1 light fantasy settings generate
 repeatable engine worlds ([issue #31](https://github.com/juadielon/textQuest/issues/31)),
 implemented in [pull request #35](https://github.com/juadielon/textQuest/pull/35).
 Generation for other genres remains planned.
@@ -119,7 +120,10 @@ or import save files. Invalid files and storage errors are reported clearly.
 
 ### 7. Browser game
 
-**Status:** Planned
+**Status:** In progress — a start screen for new adventures and share words
+([issue #41](https://github.com/juadielon/textQuest/issues/41)) is implemented
+in [pull request #46](https://github.com/juadielon/textQuest/pull/46).
+Play and saves are not in the browser yet.
 
 **Outcome:** A responsive, accessible browser app brings together adventure
 creation, play, clues, inventory, sharing and saves.

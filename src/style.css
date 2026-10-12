@@ -2,6 +2,19 @@
   color-scheme: light dark;
   font-family: system-ui, sans-serif;
   line-height: 1.5;
+  --accent: #0b5cad;
+  --error: #a1001b;
+  --muted: #4a4a4a;
+  --border: #8a8a8a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --accent: #8cc4ff;
+    --error: #ff9aa8;
+    --muted: #c4c4c4;
+    --border: #707070;
+  }
 }
 
 body {
@@ -9,13 +22,121 @@ body {
 }
 
 main {
-  max-width: 40rem;
+  max-width: 56rem;
   margin: 0 auto;
   padding: 2rem 1rem;
 }
 
-.status {
-  padding: 0.75rem 1rem;
-  border-left: 4px solid #c68a00;
-  background: rgb(198 138 0 / 12%);
+/* Side by side on wide screens, stacked on narrow ones. */
+.panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: 1rem;
+}
+
+.panel,
+.result:not(:empty) {
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.result:not(:empty) {
+  margin-top: 1rem;
+  border-left: 4px solid var(--accent);
+}
+
+h2 {
+  margin-top: 0;
+  font-size: 1.25rem;
+}
+
+fieldset {
+  margin: 0 0 1rem;
+  padding: 0;
+  border: 0;
+}
+
+legend {
+  margin-bottom: 0.25rem;
+  font-weight: 600;
+}
+
+.choice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+}
+
+.choice input {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+}
+
+label[for='share-word'] {
+  display: block;
+  font-weight: 600;
+}
+
+.hint {
+  margin: 0 0 0.5rem;
+  color: var(--muted);
+}
+
+input[type='text'] {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.5rem;
+  font: inherit;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+}
+
+input[aria-invalid='true'] {
+  border-color: var(--error);
+}
+
+.error {
+  margin: 0.5rem 0;
+  color: var(--error);
+  font-weight: 600;
+}
+
+.error:empty {
+  margin: 0;
+}
+
+button {
+  margin-top: 0.5rem;
+  padding: 0.5rem 1rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+  margin: 0 0 1rem;
+}
+
+dt {
+  font-weight: 600;
+}
+
+dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.coming-soon {
+  margin: 0;
+  color: var(--muted);
 }
