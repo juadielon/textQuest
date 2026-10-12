@@ -138,7 +138,8 @@ always gives the same result, whatever the time, locale or browser. Tests show
 long worlds with 28 places and 14 required steps finish within the limit. The
 limit is a cautious first value. Generator tests also check the authored
 light fantasy worlds, including every long plot, within this limit.
-There is no rendered story, command execution or playable adventure.
+There is no rendered story or playable adventure in the browser. Commands
+can be run against a world by the play module described below.
 
 ## Typed command parser
 

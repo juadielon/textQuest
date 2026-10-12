@@ -126,7 +126,7 @@ describe('playing with typed commands', () => {
 });
 
 describe('discoveredTargets', () => {
-  it('lists only things the player has found, with kind-prefixed IDs', () => {
+  it('lists only things the player has found, as world IDs with a separate kind', () => {
     const world = sampleWorld();
     expect(discoveredTargets(world, startPlay(world))).toEqual([
       { id: 'entry', name: 'entry', kind: 'place' },
@@ -204,6 +204,24 @@ describe('discoveredTargets', () => {
     expect(discoveredTargets(world, start)).not.toContainEqual(
       expect.objectContaining({ id: 'hidden-solution' }),
     );
+  });
+
+  it.each(['north', 'up', 'the'])('can walk to a place and exit both called %j', (id) => {
+    const world: AdventureWorld = {
+      version: 1, startPlaceId: 'entry',
+      places: [{ id: 'entry' }, { id }],
+      exits: [{ id, fromPlaceId: 'entry', toPlaceId: id, locked: false }],
+      items: [], clues: [],
+      solution: { steps: [], goal: { placeId: id, conditions: {} } },
+    };
+    expect(checkWinnability(world).winnable).toBe(true);
+    const start = startPlay(world);
+    const names = discoveredTargets(world, start).filter(({ id: found }) => found === id)
+      .map(({ name }) => name);
+    expect(names).toHaveLength(2);
+    for (const name of names) {
+      expect(playCommand(world, start, `go ${name}`).state.goalReached).toBe(true);
+    }
   });
 
   it('uses distinct names in movement hints when place IDs collide', () => {
