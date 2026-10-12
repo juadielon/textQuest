@@ -5,14 +5,16 @@ authored stories and game rules, without using an LLM while you play.
 
 This repository includes a Docker-run browser placeholder, the rules for
 repeatable adventure settings and share words, a world model with a
-winnability checker, and deterministic world generation for all three version 1 genres.
+winnability checker, and deterministic world generation for all three
+version 1 genres.
 The game itself is not implemented.
 
 ## Version 1 authored content
 
 [Issue #26](https://github.com/juadielon/textQuest/issues/26) adds a typed
 content format in `src/content/v1/` and the light fantasy pack. It is not
-connected to the browser. The generator uses its authored plans, and those of the two packs below.
+connected to the browser. The generator uses its authored plans, and those
+of the two packs below.
 
 The pack has 24 places, motivated characters, items, clues, 12 required puzzle
 templates across four families, optional discoveries, route choices and
@@ -78,8 +80,8 @@ The returned world contains engine data, not plot prose, character
 descriptions or player progress. It is a detached copy: generation and callers
 cannot change the pack through it. For each genre, unit tests cover all nine
 plot/length combinations, optional routes and winnability, seed variation,
-share-word round trips, and pinned complete worlds. Changes to these generator rules
-require a new adventure version. This is not command handling, browser
+share-word round trips, and pinned complete worlds. Changes to these
+generator rules require a new adventure version. This is not command handling, browser
 rendering or a playable game.
 
 ## Adventure settings and share words
