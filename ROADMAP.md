@@ -25,13 +25,16 @@ templates and pull request template.
 
 ### 2. Docker development setup
 
-**Status:** Planned
+**Status:** In progress — issue #2
 
-**Outcome:** Contributors can install project dependencies, run the app,
-build it and run tests through Docker, without installing Node.js or npm on
-the host.
+**Outcome:** Contributors can install project dependencies, run the browser
+placeholder, build it and run tests through Docker, without installing
+Node.js or npm on the host.
 
 **Depends on:** Milestone 1.
+
+The Docker-based TypeScript and Vite shell, placeholder page, production
+container and a small test are in place. The game is not implemented.
 
 ### 3. Repeatable adventures and sharing
 

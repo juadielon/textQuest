@@ -3,8 +3,8 @@
 textQuest is a planned text adventure game. It will build adventures from
 authored stories and game rules, without using an LLM while you play.
 
-The game is not implemented yet. There is no runnable app or Docker setup in
-this repository.
+This repository includes a Docker-run browser placeholder; the game itself is
+not implemented.
 
 ## Project documents
 
@@ -24,12 +24,29 @@ runtime.
 
 ## Development
 
-Development tools, dependencies, the app server and tests must run in Docker.
-You will need Docker with Linux containers and a web browser. Node.js, npm and
-project dependencies will not need to be installed on the host.
+You will need Docker with Linux containers and a web browser. Install
+dependencies in a container the first time, then start the development server:
 
-Docker instructions will be added with the first runnable app. Until then,
-there are no commands to build, test or play the game.
+```sh
+docker compose run --rm app npm ci
+docker compose up app
+```
+
+Open <http://localhost:5173>. Run the checks in containers:
+
+```sh
+docker compose run --rm app npm test
+docker compose run --rm app npm run build
+```
+
+To serve the production build in a container, open <http://localhost:8080>:
+
+```sh
+docker compose --profile production up --build production
+```
+
+Stop a running service with `Ctrl+C`. Node.js, npm and project dependencies
+do not need to be installed on the host.
 
 Every code change must include a unit test for the behaviour it changes. A
 build or browser smoke check does not replace that test. See
