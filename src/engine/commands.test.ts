@@ -129,8 +129,24 @@ describe('parseCommand', () => {
     expect(parseCommand('talk guide', sameNames)).toEqual({
       ok: true, action: { kind: 'talk', targetId: 'person', targetKind: 'person' },
     });
-    expect(parseCommand('x guide', sameNames)).toMatchObject({
-      ok: false, problem: 'ambiguous', options: sameNames,
+    expect(parseCommand('x guide', sameNames)).toEqual({
+      ok: false,
+      problem: 'ambiguous',
+      message: 'Which one do you mean? Guide (item), Guide (person).',
+      options: sameNames,
+    });
+  });
+
+  it('distinguishes duplicate names of the same kind by ID', () => {
+    const sameNames: readonly CommandTarget[] = [
+      { id: 'first-guide', name: 'Guide', kind: 'item' },
+      { id: 'second-guide', name: 'Guide', kind: 'item' },
+    ];
+    expect(parseCommand('take guide', sameNames)).toEqual({
+      ok: false,
+      problem: 'ambiguous',
+      message: 'Which one do you mean? Guide (item: first-guide), Guide (item: second-guide).',
+      options: sameNames,
     });
   });
 
@@ -272,7 +288,7 @@ describe('parseCommand', () => {
     expect(parseCommand('use key on door', sameIdTargets)).toEqual({
       ok: false,
       problem: 'ambiguous',
-      message: 'Which one do you mean? Door, Door.',
+      message: 'Which one do you mean? Door (place), Door (exit).',
       options: sameIdTargets.slice(1),
     });
   });

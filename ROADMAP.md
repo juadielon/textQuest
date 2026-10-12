@@ -101,8 +101,8 @@ choices will need later rules and their own checks.
 ### 5. Commands and recovery
 
 **Status:** In progress — pure typed command parser
-([issue #27](https://github.com/juadielon/textQuest/issues/27)) awaiting review
-in [pull request #29](https://github.com/juadielon/textQuest/pull/29). Running parsed
+([issue #27](https://github.com/juadielon/textQuest/issues/27)) is implemented in
+[pull request #29](https://github.com/juadielon/textQuest/pull/29). Running parsed
 commands against a world ([issue #36](https://github.com/juadielon/textQuest/issues/36)) builds on it
 and awaits review.
 
