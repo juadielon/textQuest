@@ -1,15 +1,29 @@
 # textQuest
 
-textQuest is a planned text adventure game. It will build adventures from
-authored stories and game rules, without using an LLM while you play.
+textQuest is a text adventure game in development. It builds adventures from
+authored content and game rules, without using an LLM while you play.
 
-This repository includes a Docker-run browser placeholder, the rules for
+This repository includes a Docker-run browser start screen, the rules for
 repeatable adventure settings and share words, a world model with a
 winnability checker, deterministic light fantasy world generation, a command
 parser and a save format. A pure play module that runs parsed commands against
-a world is also implemented on this branch, with a play screen built on it.
-None of these is connected to the page yet, so the game is not playable in
-the browser.
+a world is also implemented, with a browser play screen built on it.
+Light fantasy adventures can be played from the start screen. Names still
+come from IDs; authored story text, other genres and the saves screen remain
+planned.
+
+## Start screen
+
+[Issue #41](https://github.com/juadielon/textQuest/issues/41) adds the first
+browser screen. Players can choose a short, medium or long adventure, or
+type a share word to open the same starting adventure as a friend.
+[Issue #54](https://github.com/juadielon/textQuest/issues/54) connects both
+forms to play. Invalid words show a clear message beside the field.
+The play screen shows the share word, genre and length and a **Back to start**
+button. Going back ends the current session; opening its share word starts
+again with no progress. There is no save or load interface yet.
+Focus moves to the new screen's heading on navigation. Both screens work by
+keyboard and screen reader, on narrow and wide screens.
 
 ## Version 1 authored content
 
@@ -83,14 +97,14 @@ descriptions or player progress. It is a detached copy: generation and callers
 cannot change the pack through it. Unit tests cover all nine plot/length
 combinations, optional routes and winnability, seed variation, share-word
 round trips, and pinned complete worlds. Changes to these generator rules
-require a new adventure version. This is not command handling, browser
-rendering or a playable game.
+require a new adventure version. The generator supplies the browser play
+screen; command handling and player progress live in the play module.
 
 ## Adventure settings and share words
 
 [Issue #3](https://github.com/juadielon/textQuest/issues/3) adds the code that
-describes how an adventure starts. It is not yet connected to the page, and it
-does not create stories on its own.
+describes how an adventure starts. The start screen shows these settings, but
+it does not create stories on its own.
 
 - A new adventure gets a random seed from the browser's cryptographic random
   numbers. The player chooses a short, medium or long adventure.
@@ -146,14 +160,14 @@ always gives the same result, whatever the time, locale or browser. Tests show
 long worlds with 28 places and 14 required steps finish within the limit. The
 limit is a cautious first value. Generator tests also check the authored
 light fantasy worlds, including every long plot, within this limit.
-There is no rendered story or playable adventure in the browser. Commands
-can be run against a world by the play module described below.
+Authored story text is not rendered yet. Commands run against generated
+worlds in the browser through the play module described below.
 
 ## Typed command parser
 
 [Issue #27](https://github.com/juadielon/textQuest/issues/27) adds
 `parseCommand(input, targets)` in `src/engine/commands.ts`. The play module
-below uses it; neither is connected to the page.
+below uses it for commands typed into the browser play screen.
 
 It handles movement, look/examine, inventory, take, use (an item alone or on
 a target), talk, authored story choices, hint, undo and help. Common short
@@ -227,8 +241,10 @@ world text is always added as plain text, never as markup. If a world can't
 be generated, such as a cosy mystery or science fiction world for now, a
 plain message is shown instead.
 
-The screen is not yet reachable from the page: the start screen
-([issue #41](https://github.com/juadielon/textQuest/issues/41)) will open it.
+The start screen opens play for new adventures and share words
+([issue #54](https://github.com/juadielon/textQuest/issues/54)).
+Unsupported worlds show a clear message, their share word and a way back
+to the start screen rather than substituting a different adventure.
 Names still come from IDs. The screen doesn't use the save format yet; the
 saves screen is planned in
 [issue #43](https://github.com/juadielon/textQuest/issues/43).

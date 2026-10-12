@@ -36,8 +36,8 @@ Node.js or npm on the host.
 
 **Depends on:** Milestone 1.
 
-The Docker-based TypeScript and Vite shell, placeholder page, production
-container and a small test are in place. The game is not implemented.
+The Docker-based TypeScript and Vite shell, production container and tests
+are in place. The start and play screens now use this setup.
 
 ### 3. Repeatable adventures and sharing
 
@@ -53,8 +53,11 @@ creator's personal progress stays in their own save.
 **Depends on:** Milestone 2.
 
 The first step provides versioned adventure settings (seed, length and genre) and
-two-word share words such as `silverlantern`, with unit tests. Share words are
-not yet shown in the browser. Version 1 light fantasy settings generate
+two-word share words such as `silverlantern`, with unit tests. The start
+screen ([issue #41](https://github.com/juadielon/textQuest/issues/41)) opens
+play for new adventures or share words, and play shows the share word
+([issue #54](https://github.com/juadielon/textQuest/issues/54)).
+Version 1 light fantasy settings generate
 repeatable engine worlds ([issue #31](https://github.com/juadielon/textQuest/issues/31)),
 implemented in [pull request #35](https://github.com/juadielon/textQuest/pull/35).
 Generation for other genres remains planned.
@@ -88,7 +91,8 @@ checker. Deterministic light fantasy world generation is implemented for
 its fixed 8/16/24-place and 4/8/12-required-step plan. Tests cover all nine
 plot/length combinations, optional routes, winnability and repeatability.
 The world contains engine rules, not rendered story text or player progress.
-This is not a playable adventure.
+These engine worlds can be played in the browser, but authored names and
+story text are not rendered yet.
 The science fiction pack ([issue #33](https://github.com/juadielon/textQuest/issues/33))
 follows the same format and checks, but the generator still rejects science
 fiction settings until [issue #40](https://github.com/juadielon/textQuest/issues/40)
@@ -104,8 +108,8 @@ choices will need later rules and their own checks.
 **Status:** In progress — pure typed command parser
 ([issue #27](https://github.com/juadielon/textQuest/issues/27)) is implemented in
 [pull request #29](https://github.com/juadielon/textQuest/pull/29). Running parsed
-commands against a world ([issue #36](https://github.com/juadielon/textQuest/issues/36)) builds on it
-and awaits review.
+commands against a world ([issue #36](https://github.com/juadielon/textQuest/issues/36)) is implemented
+in [pull request #42](https://github.com/juadielon/textQuest/pull/42).
 
 **Outcome:** Players can act through typed commands with suggestions, request
 hints, undo actions and return to checkpoints. Occasional non-graphic violent
@@ -134,9 +138,15 @@ commands into a world and the save screens are not implemented.
 
 ### 7. Browser game
 
-**Status:** In progress — a play screen
-([issue #44](https://github.com/juadielon/textQuest/issues/44)) is built but not yet
-reachable from the page.
+**Status:** In progress — start and play screens are connected
+([issue #54](https://github.com/juadielon/textQuest/issues/54)), completing the
+play interface in [issue #44](https://github.com/juadielon/textQuest/issues/44).
+A start screen for new adventures and share words
+([issue #41](https://github.com/juadielon/textQuest/issues/41)) is implemented
+in [pull request #46](https://github.com/juadielon/textQuest/pull/46).
+The play screen is implemented in
+[pull request #52](https://github.com/juadielon/textQuest/pull/52).
+Saves remain planned.
 
 **Outcome:** A responsive, accessible browser app brings together adventure
 creation, play, clues, inventory, sharing and saves.
@@ -146,8 +156,10 @@ creation, play, clues, inventory, sharing and saves.
 `renderPlayScreen` generates a world and plays typed commands with a response
 log, inventory, found clues, help, hint, undo and an ending. It works by
 keyboard, announces responses to screen readers and fits narrow and wide
-screens. Connecting it to the start screen, content-pack names and prose,
-and saves remain planned.
+screens. New adventures and share words open play directly; play shows the
+share word and a way back to start. Navigation focuses the new heading.
+Returning to start ends the session, and reopening a word starts fresh.
+Content-pack names and prose, and saves remain planned.
 
 ### 8. Release checks and hosting guide
 
@@ -175,5 +187,5 @@ verified progress changes. Do not mark it complete until its outcome has been
 checked.
 
 Open a focused pull request after each completed logical step, rather than
-one pull request for the whole milestone or game. Keep steps awaiting review
+one pull request for the whole milestone or game. Keep implemented steps
 distinct from work that has been merged.
