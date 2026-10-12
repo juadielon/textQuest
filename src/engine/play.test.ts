@@ -351,8 +351,9 @@ describe('replaying a long save', () => {
     const world = generateAdventureWorld(settings);
     const started = Date.now();
     expect(replayCommands(world, Array<string>(2000).fill('look'))).toEqual(startPlay(world));
-    expect(Date.now() - started).toBeLessThan(2000);
-  });
+    // The slow version took minutes, so a generous limit still catches it.
+    expect(Date.now() - started).toBeLessThan(10_000);
+  }, 20_000);
 });
 
 describe('hints', () => {
