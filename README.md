@@ -5,9 +5,9 @@ authored stories and game rules, without using an LLM while you play.
 
 This repository includes a Docker-run browser placeholder, the rules for
 repeatable adventure settings and share words, a world model with a
-winnability checker, and deterministic world generation for all three
-version 1 genres.
-The game itself is not implemented.
+winnability checker, deterministic world generation for all three version 1
+genres, a standalone command parser and a save format. The game itself is not
+implemented.
 
 ## Version 1 authored content
 
@@ -36,8 +36,9 @@ plots guide an overdue supply ship home, wake a quiet station and honour the
 station charter. It has the same kinds of checks and its own digest pin.
 
 The content unit tests build the fixed plans as `AdventureWorld` fixtures
-and check every plan and ending for winnability. They do not check commands
-or puzzle answers.
+and check every plan and ending for winnability. Cosy mystery prose checks
+also guard the evidence behind the puzzle conclusions. They do not check
+commands or player answers.
 
 Prose is an array of literal text and typed entity references. A later
 renderer must resolve references to included entity names, never execute
@@ -144,7 +145,54 @@ always gives the same result, whatever the time, locale or browser. Tests show
 long worlds with 28 places and 14 required steps finish within the limit. The
 limit is a cautious first value. Generator tests also check the authored
 light fantasy worlds, including every long plot, within this limit.
-There is no rendered story, player command handling or playable adventure.
+There is no rendered story, command execution or playable adventure.
+
+## Typed command parser
+
+[Issue #27](https://github.com/juadielon/textQuest/issues/27) adds
+`parseCommand(input, targets)` in `src/engine/commands.ts`. It is a standalone
+parser on this branch, not connected to the page or a play module.
+
+It handles movement, look/examine, inventory, take, use (an item alone or on
+a target), talk, authored story choices, hint, undo and help. Common short
+forms include `n`, `x`, `i`, `h` and `u`; `u` means undo, so use `up` to move
+upwards. `commandHelp` provides grammar help without puzzle advice.
+
+The caller supplies only discovered targets with IDs, names, kinds and optional
+discovered aliases. Names match exactly after ignoring case, extra whitespace
+and the articles `a`, `an` and `the`; there is no fuzzy or partial matching.
+For example, two discovered keys may both have the alias `key`. The parser
+reports both options rather than choosing one. Choice numbers such as `choose 1`
+work only when supplied as discovered aliases for authored options.
+For `use`, an item name containing `on` can also match an item-on-target command.
+The parser checks each complete interpretation and reports distinct actions as
+ambiguous. Aliases that describe the same action do not create extra options.
+
+Results have `ok: true` with an `action`, or `ok: false` with a `problem` and
+plain-language `message`. Target actions include both the target ID and kind,
+because IDs may repeat across kinds. Ambiguous results also include discovered
+`options`. The parser rejects target kinds that do not fit a command, such as
+taking a person. It cannot check location, inventory, locked exits or puzzle
+success.
+The caller must exclude hidden names, hidden aliases and unavailable choices.
+Parsing never changes targets or player state. Execution, turn counting,
+suggestions, hint content and undo history remain unimplemented.
+
+## Save format and storage
+
+[Issue #34](https://github.com/juadielon/textQuest/issues/34) adds a
+versioned save format in `src/saves.ts`. A save holds an adventure name, the
+starting settings, every command the player typed and two timestamps.
+Progress will be rebuilt by replaying the commands, which is a later step.
+Saves never contain puzzle solutions.
+
+`createSaveStore(storage)` lists, adds, updates, loads and deletes saves in
+any `Storage`-like object, such as `localStorage`. Each save has its own key,
+so a failed write never damages another save. Export gives JSON text. Import
+treats the file as untrusted, rejects damaged, oversized (over 1,000,000
+characters) or newer-version files with a clear message, and stores a good
+file as a new save. A full or blocked storage is reported clearly. There are
+no save screens in the browser yet.
 
 ## Project documents
 
