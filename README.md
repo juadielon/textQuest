@@ -27,6 +27,11 @@ any harm. Its three plots follow the trail one clue at a time, hear every side
 in any order before piecing them together, or follow two threads until they
 meet. A test keeps its text free of violent words.
 
+[Issue #33](https://github.com/juadielon/textQuest/issues/33) adds a science
+fiction pack in the same format and sizes, set on a space station. Its three
+plots guide an overdue supply ship home, wake a quiet station and honour the
+station charter. It has the same kinds of checks and its own digest pin.
+
 For a later generator, each plan selects its named places and required steps.
 Keep exits whose two places are selected, and items and clues whose initial
 place is selected (or which have no initial place). Include characters at
