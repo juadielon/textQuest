@@ -19,29 +19,29 @@ describe('parseCommand', () => {
     ['n', { kind: 'move', direction: 'north' }],
     ['go n', { kind: 'move', direction: 'north' }],
     ['walk to the east', { kind: 'move', direction: 'east' }],
-    ['move great hall', { kind: 'move', targetId: 'hall' }],
-    ['go to the oak door', { kind: 'move', targetId: 'door' }],
+    ['move great hall', { kind: 'move', targetId: 'hall', targetKind: 'place' }],
+    ['go to the oak door', { kind: 'move', targetId: 'door', targetKind: 'exit' }],
     ['look', { kind: 'look' }],
     ['l', { kind: 'look' }],
     ['look around', { kind: 'look' }],
-    ['look at the torn note', { kind: 'examine', targetId: 'note' }],
-    ['look door lock', { kind: 'examine', targetId: 'lock' }],
-    ['examine gate keeper', { kind: 'examine', targetId: 'keeper' }],
-    ['x lamp', { kind: 'examine', targetId: 'lamp' }],
+    ['look at the torn note', { kind: 'examine', targetId: 'note', targetKind: 'clue' }],
+    ['look door lock', { kind: 'examine', targetId: 'lock', targetKind: 'object' }],
+    ['examine gate keeper', { kind: 'examine', targetId: 'keeper', targetKind: 'person' }],
+    ['x lamp', { kind: 'examine', targetId: 'lamp', targetKind: 'item' }],
     ['inventory', { kind: 'inventory' }],
     ['inv', { kind: 'inventory' }],
     ['i', { kind: 'inventory' }],
-    ['take the brass key', { kind: 'take', targetId: 'brass-key' }],
-    ['get an oil lamp', { kind: 'take', targetId: 'lamp' }],
+    ['take the brass key', { kind: 'take', targetId: 'brass-key', targetKind: 'item' }],
+    ['get an oil lamp', { kind: 'take', targetId: 'lamp', targetKind: 'item' }],
     ['use lamp', { kind: 'use', itemId: 'lamp' }],
-    ['use brass key on the lock', { kind: 'use', itemId: 'brass-key', targetId: 'lock' }],
-    ['use lamp on keeper', { kind: 'use', itemId: 'lamp', targetId: 'keeper' }],
-    ['talk gate keeper', { kind: 'talk', targetId: 'keeper' }],
-    ['talk to the keeper', { kind: 'talk', targetId: 'keeper' }],
-    ['t keeper', { kind: 'talk', targetId: 'keeper' }],
-    ['choose wait by the gate', { kind: 'choose', targetId: 'wait' }],
-    ['choose 1', { kind: 'choose', targetId: 'wait' }],
-    ['c 1', { kind: 'choose', targetId: 'wait' }],
+    ['use brass key on the lock', { kind: 'use', itemId: 'brass-key', targetId: 'lock', targetKind: 'object' }],
+    ['use lamp on keeper', { kind: 'use', itemId: 'lamp', targetId: 'keeper', targetKind: 'person' }],
+    ['talk gate keeper', { kind: 'talk', targetId: 'keeper', targetKind: 'person' }],
+    ['talk to the keeper', { kind: 'talk', targetId: 'keeper', targetKind: 'person' }],
+    ['t keeper', { kind: 'talk', targetId: 'keeper', targetKind: 'person' }],
+    ['choose wait by the gate', { kind: 'choose', targetId: 'wait', targetKind: 'choice' }],
+    ['choose 1', { kind: 'choose', targetId: 'wait', targetKind: 'choice' }],
+    ['c 1', { kind: 'choose', targetId: 'wait', targetKind: 'choice' }],
     ['hint', { kind: 'hint' }],
     ['h', { kind: 'hint' }],
     ['undo', { kind: 'undo' }],
@@ -67,10 +67,10 @@ describe('parseCommand', () => {
 
   it('normalises capitals, spaces, tabs, newlines and articles on both sides', () => {
     expect(parseCommand(' \tUsE  THE Brass \n KEY  ON a DOOR \t LOCK ', targets)).toEqual({
-      ok: true, action: { kind: 'use', itemId: 'brass-key', targetId: 'lock' },
+      ok: true, action: { kind: 'use', itemId: 'brass-key', targetId: 'lock', targetKind: 'object' },
     });
     expect(parseCommand('go GREAT HALL', targets)).toEqual({
-      ok: true, action: { kind: 'move', targetId: 'hall' },
+      ok: true, action: { kind: 'move', targetId: 'hall', targetKind: 'place' },
     });
   });
 
@@ -127,7 +127,7 @@ describe('parseCommand', () => {
       { id: 'person', name: 'Guide', kind: 'person' },
     ];
     expect(parseCommand('talk guide', sameNames)).toEqual({
-      ok: true, action: { kind: 'talk', targetId: 'person' },
+      ok: true, action: { kind: 'talk', targetId: 'person', targetKind: 'person' },
     });
     expect(parseCommand('x guide', sameNames)).toMatchObject({
       ok: false, problem: 'ambiguous', options: sameNames,
@@ -167,10 +167,10 @@ describe('parseCommand', () => {
       ok: true, action: { kind: 'use', itemId: 'badge' },
     });
     expect(parseCommand('use badge on a ribbon on mark on the wall', namedTargets)).toEqual({
-      ok: true, action: { kind: 'use', itemId: 'badge', targetId: 'mark' },
+      ok: true, action: { kind: 'use', itemId: 'badge', targetId: 'mark', targetKind: 'object' },
     });
     expect(parseCommand('use on switch on mark on the wall', namedTargets)).toEqual({
-      ok: true, action: { kind: 'use', itemId: 'switch', targetId: 'mark' },
+      ok: true, action: { kind: 'use', itemId: 'switch', targetId: 'mark', targetKind: 'object' },
     });
   });
 
@@ -181,7 +181,7 @@ describe('parseCommand', () => {
       { id: 'wall', name: 'Wall', kind: 'object' },
     ];
     expect(parseCommand('use badge on ribbon on wall', namedTargets)).toEqual({
-      ok: true, action: { kind: 'use', itemId: 'ribbon-badge', targetId: 'wall' },
+      ok: true, action: { kind: 'use', itemId: 'ribbon-badge', targetId: 'wall', targetKind: 'object' },
     });
   });
 
@@ -204,7 +204,7 @@ describe('parseCommand', () => {
       { id: 'wall', name: 'Wall', kind: 'object' },
     ];
     expect(parseCommand('use badge on ribbon on wall', namedTargets)).toEqual({
-      ok: true, action: { kind: 'use', itemId: 'badge', targetId: 'wall' },
+      ok: true, action: { kind: 'use', itemId: 'badge', targetId: 'wall', targetKind: 'object' },
     });
   });
 
@@ -214,7 +214,7 @@ describe('parseCommand', () => {
       { id: 'wall', name: 'Wall', aliases: ['ribbon on wall'], kind: 'object' },
     ];
     expect(parseCommand('use badge on ribbon on wall', namedTargets)).toEqual({
-      ok: true, action: { kind: 'use', itemId: 'badge', targetId: 'wall' },
+      ok: true, action: { kind: 'use', itemId: 'badge', targetId: 'wall', targetKind: 'object' },
     });
   });
 
@@ -243,6 +243,20 @@ describe('parseCommand', () => {
     });
   });
 
+  it('keeps same-ID targets of different kinds distinct when parsing use', () => {
+    const sameIdTargets: readonly CommandTarget[] = [
+      { id: 'key', name: 'Key', kind: 'item' },
+      { id: 'door', name: 'Door', kind: 'place' },
+      { id: 'door', name: 'Door', kind: 'exit' },
+    ];
+    expect(parseCommand('use key on door', sameIdTargets)).toEqual({
+      ok: false,
+      problem: 'ambiguous',
+      message: 'Which one do you mean? Door, Door.',
+      options: sameIdTargets.slice(1),
+    });
+  });
+
   it('describes distinct actions even when they refer to the same entity', () => {
     const namedTargets: readonly CommandTarget[] = [
       { id: 'badge', name: 'Badge', aliases: ['badge on badge'], kind: 'item' },
@@ -265,7 +279,7 @@ describe('parseCommand', () => {
 
   it('parses syntax without deciding puzzle success, availability or consuming a turn', () => {
     expect(parseCommand('use lamp on lamp', targets)).toEqual({
-      ok: true, action: { kind: 'use', itemId: 'lamp', targetId: 'lamp' },
+      ok: true, action: { kind: 'use', itemId: 'lamp', targetId: 'lamp', targetKind: 'item' },
     });
     expect(parseCommand('north', [])).toEqual({
       ok: true, action: { kind: 'move', direction: 'north' },

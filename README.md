@@ -92,9 +92,11 @@ The parser checks each complete interpretation and reports distinct actions as
 ambiguous. Aliases that describe the same action do not create extra options.
 
 Results have `ok: true` with an `action`, or `ok: false` with a `problem` and
-plain-language `message`. Ambiguous results also include discovered `options`.
-The parser rejects target kinds that do not fit a command, such as taking a
-person. It cannot check location, inventory, locked exits or puzzle success.
+plain-language `message`. Target actions include both the target ID and kind,
+because IDs may repeat across kinds. Ambiguous results also include discovered
+`options`. The parser rejects target kinds that do not fit a command, such as
+taking a person. It cannot check location, inventory, locked exits or puzzle
+success.
 The caller must exclude hidden names, hidden aliases and unavailable choices.
 Parsing never changes targets or player state. Execution, turn counting,
 suggestions, hint content and undo history remain unimplemented.
