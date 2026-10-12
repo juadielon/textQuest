@@ -74,6 +74,44 @@ describe('parseCommand', () => {
     });
   });
 
+  it.each([
+    ['take the key.', 'take the key'],
+    ['take brass key.', 'take brass key'],
+    ['look!', 'look'],
+    ['look!!', 'look'],
+    ['go north?', 'go north'],
+    ['go north...', 'go north'],
+    ['n?!.', 'n'],
+    ['use brass key on the lock .', 'use brass key on the lock'],
+    ['help?', 'help'],
+    ['??', '?'],
+  ])('ignores trailing punctuation in %j', (input, plain) => {
+    expect(parseCommand(input, targets)).toEqual(parseCommand(plain, targets));
+  });
+
+  it('keeps punctuation inside a command', () => {
+    const dotted = [...targets, { id: 'dr-ash', name: 'Dr. Ash', kind: 'person' } as const];
+    expect(parseCommand('talk to dr. ash!', dotted)).toEqual({
+      ok: true, action: { kind: 'talk', targetId: 'dr-ash', targetKind: 'person' },
+    });
+    expect(parseCommand('talk to dr ash', dotted)).toMatchObject({ ok: false, problem: 'unknown-target' });
+    expect(parseCommand('take brass. key', targets)).toMatchObject({ ok: false, problem: 'unknown-target' });
+    expect(parseCommand('use brass key. on lock', targets)).toMatchObject({ ok: false, problem: 'unknown-target' });
+  });
+
+  it('still matches a discovered name that ends with punctuation', () => {
+    const run = [...targets, { id: 'run', name: 'Run!', kind: 'choice' } as const];
+    for (const input of ['choose run!', 'choose run', 'choose run!!!']) {
+      expect(parseCommand(input, run)).toEqual({
+        ok: true, action: { kind: 'choose', targetId: 'run', targetKind: 'choice' },
+      });
+    }
+  });
+
+  it.each(['.', '!!', ' ... '])('reports punctuation-only input %j as unknown', (input) => {
+    expect(parseCommand(input, targets)).toMatchObject({ ok: false, problem: 'unknown-command' });
+  });
+
   it.each(['', '   ', 'take', 'take the', 'x', 'look at', 'go', 'go to', 'talk', 'talk to', 'choose', 'use', 'use lamp on', 'use on lock'])(
     'reports incomplete input %j',
     (input) => {
