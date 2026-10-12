@@ -124,6 +124,22 @@ describe('renderPlayScreen', () => {
     expect(text(target, '.play-sidebar ul')[0]).toBe('You are not carrying anything.');
   });
 
+  it('keeps focus in the command box and re-announces a repeated response', () => {
+    const target = renderTiny();
+    const input = target.querySelector<HTMLInputElement>('#play-command')!;
+    const announcer = target.querySelector('[aria-live="polite"]')!;
+    target.querySelector('button')!.focus();
+
+    type(target, 'hint');
+    const first = announcer.firstChild;
+    type(target, 'hint');
+
+    expect(document.activeElement).toBe(input);
+    expect(announcer.children).toHaveLength(1);
+    expect(announcer.firstChild).not.toBe(first);
+    expect(announcer.textContent).toBe(first?.textContent);
+  });
+
   it('shows the ending when the goal is reached and hides it again after undo', () => {
     const target = renderTiny();
     const ending = target.querySelector<HTMLElement>('.play-ending')!;
@@ -138,6 +154,22 @@ describe('renderPlayScreen', () => {
 
     type(target, 'undo');
     expect(ending.hidden).toBe(true);
+  });
+
+  it('says "1 turn" for a one-move win', () => {
+    vi.mocked(generateAdventureWorld).mockReturnValueOnce({
+      ...tinyWorld,
+      exits: [{ ...tinyWorld.exits[0], locked: false }],
+      solution: { steps: [], goal: { placeId: 'old-tower', conditions: {} } },
+    });
+    const target = document.createElement('main');
+    document.body.append(target);
+    renderPlayScreen(target, settingsFor('light-fantasy'));
+
+    type(target, 'go to old tower');
+
+    expect(target.querySelector('.play-ending')?.textContent)
+      .toContain('You reached your goal in 1 turn.');
   });
 
   it('inserts typed text as plain text, never as markup', () => {

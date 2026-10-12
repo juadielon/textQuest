@@ -108,8 +108,8 @@ export function renderPlayScreen(target: HTMLElement, settings: AdventureSetting
     fillList(clues, view.clues, 'No clues found yet.');
     turns.textContent = `Turns taken: ${view.turns}`;
     ending.hidden = !view.ended;
-    endingText.textContent = `You reached your goal in ${view.turns} turns. `
-      + 'Type undo to go back a turn.';
+    endingText.textContent = `You reached your goal in ${view.turns} `
+      + `${view.turns === 1 ? 'turn' : 'turns'}. Type undo to go back a turn.`;
   };
 
   form.addEventListener('submit', (event) => {
@@ -121,8 +121,10 @@ export function renderPlayScreen(target: HTMLElement, settings: AdventureSetting
     log.append(element('li', 'play-entry',
       element('p', 'play-typed', `> ${command}`), element('p', undefined, turn.message)));
     log.scrollTop = log.scrollHeight;
-    announcer.textContent = turn.message;
+    // A fresh node is announced even when the text repeats the last response.
+    announcer.replaceChildren(element('span', undefined, turn.message));
     input.value = '';
+    input.focus();
     update();
   });
 
