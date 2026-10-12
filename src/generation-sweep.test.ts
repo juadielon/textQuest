@@ -8,6 +8,7 @@ import { cosyMystery } from './content/v1/cosy-mystery';
 import { lightFantasy } from './content/v1/light-fantasy';
 import { scienceFiction } from './content/v1/science-fiction';
 import { generateAdventureWorld } from './generate-world';
+import { createSeededRandom } from './seeded-random';
 import { checkWinnability } from './winnability';
 
 // A fixed range keeps the sweep repeatable. It is large enough to reach every
@@ -19,6 +20,18 @@ const plotCounts: Record<AdventureGenre, number> = {
   'cosy-mystery': cosyMystery.plots.length,
   'science-fiction': scienceFiction.plots.length,
 };
+
+// Short worlds have the fewest places to move things between, so a few seeds
+// share a world. Across every seed, the least varied short group still gives
+// 86% distinct worlds; medium and long give 100%.
+const minimumDistinctShare = 0.8;
+
+// Repeats the generator's second draw, so worlds can be grouped by plot.
+function plotIndexFor(seed: number, genre: AdventureGenre): number {
+  const random = createSeededRandom(seed);
+  random.nextUint32();
+  return random.pickIndex(plotCounts[genre]);
+}
 
 function withoutOptionalSteps(world: AdventureWorld): AdventureWorld {
   const requiredStepIds = world.solution.goal.conditions.stepsDone ?? [];
@@ -34,16 +47,18 @@ function withoutOptionalSteps(world: AdventureWorld): AdventureWorld {
 describe('version 1 generation sweep', () => {
   for (const length of adventureLengths) {
     it(`${length}: every seed gives a repeatable, shareable, winnable world`, () => {
-      const worldsByGenre = new Map<AdventureGenre, Set<string>>(
-        adventureGenres.map((genre) => [genre, new Set<string>()]),
-      );
+      const groups = new Map<string, { genre: AdventureGenre; seeds: number; worlds: Set<string> }>();
       const problems: string[] = [];
 
       for (let seed = 0; seed < sweepSeedCount; seed += 1) {
         const settings = createAdventureSettings(seed, length);
         const world = generateAdventureWorld(settings);
         const json = JSON.stringify(world);
-        worldsByGenre.get(settings.genre)!.add(json);
+        const key = `${settings.genre}/${plotIndexFor(seed, settings.genre)}`;
+        const group = groups.get(key) ?? { genre: settings.genre, seeds: 0, worlds: new Set<string>() };
+        group.seeds += 1;
+        group.worlds.add(json);
+        groups.set(key, group);
 
         if (JSON.stringify(generateAdventureWorld(settings)) !== json) {
           problems.push(`seed ${seed}: regenerated world differs`);
@@ -63,9 +78,13 @@ describe('version 1 generation sweep', () => {
 
       expect(problems).toEqual([]);
       for (const genre of adventureGenres) {
-        // Each plot gives exactly one world per genre and length, so the
-        // count of distinct worlds shows every plot was reached.
-        expect(worldsByGenre.get(genre)!.size, genre).toBe(plotCounts[genre]);
+        const plots = [...groups.values()].filter((group) => group.genre === genre);
+        expect(plots, genre).toHaveLength(plotCounts[genre]);
+      }
+      for (const [key, { seeds, worlds }] of groups) {
+        // Most seeds of one genre, plot and length should give their own world.
+        expect(seeds, key).toBeGreaterThan(50);
+        expect(worlds.size, key).toBeGreaterThanOrEqual(Math.ceil(seeds * minimumDistinctShare));
       }
     });
   }

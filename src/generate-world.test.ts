@@ -47,15 +47,21 @@ describe('version 1 world generation', () => {
     });
   }
 
-  it.each(packs)('$genre: selects every authored graph across seeds, without correlating plot with genre', (pack) => {
+  it.each(packs)('$genre: varies the world within each plot, without correlating plot with genre', (pack) => {
     const worlds = new Set<string>();
+    const spots = new Map<string, Set<string>>();
     for (let seed = 0; seed < seedCount; seed += 1) {
       const settings = createAdventureSettings(seed, 'short');
-      if (settings.genre === pack.genre) {
-        worlds.add(JSON.stringify(generateAdventureWorld(settings)));
+      if (settings.genre !== pack.genre) continue;
+      const world = generateAdventureWorld(settings);
+      worlds.add(JSON.stringify(world));
+      for (const { id, placeId } of [...world.items, ...world.clues]) {
+        if (placeId !== undefined) spots.set(id, (spots.get(id) ?? new Set()).add(placeId));
       }
     }
-    expect(worlds.size).toBe(pack.plots.length);
+    expect(worlds.size).toBeGreaterThan(pack.plots.length * 10);
+    // Every starting item and clue turns up in more than one place.
+    for (const [id, places] of spots) expect(places.size, id).toBeGreaterThan(1);
   });
 
   for (const pack of packs) for (const length of adventureLengths) {
@@ -86,9 +92,23 @@ describe('version 1 world generation', () => {
         expect(world.exits).toEqual(pack.exits.filter(({ fromPlaceId, toPlaceId }) =>
           plan.placeIds.includes(fromPlaceId) && plan.placeIds.includes(toPlaceId)));
         for (const kind of ['items', 'clues'] as const) {
-          expect(world[kind]).toEqual(pack[kind]
-            .filter(({ placeId }) => placeId === undefined || plan.placeIds.includes(placeId))
-            .map(({ id, placeId }) => placeId === undefined ? { id } : { id, placeId }));
+          const authored = pack[kind]
+            .filter(({ placeId }) => placeId === undefined || plan.placeIds.includes(placeId));
+          expect(world[kind].map(({ id }) => id)).toEqual(authored.map(({ id }) => id));
+          for (const [index, { id, placeId }] of world[kind].entries()) {
+            const authoredPlaceId = authored[index].placeId;
+            const neededAt = world.solution.steps
+              .filter(({ conditions }) => (kind === 'items' ? conditions.itemsHeld : conditions.cluesRevealed)?.includes(id))
+              .map((step) => plan.placeIds.indexOf(step.placeId));
+            if (authoredPlaceId === undefined || neededAt.length === 0) {
+              expect(placeId, id).toBe(authoredPlaceId);
+            } else {
+              // Plans list places in walking order from the start, so this
+              // means the thing is found on the way to where it's first used.
+              expect(plan.placeIds.indexOf(placeId!), id).toBeGreaterThanOrEqual(0);
+              expect(plan.placeIds.indexOf(placeId!), id).toBeLessThanOrEqual(Math.min(...neededAt));
+            }
+          }
         }
         expect(world.solution.steps.map(({ id }) => id)).toEqual([
           ...plan.requiredStepIds, ...pack.optionalDiscoveries.map(({ id }) => id),
@@ -156,15 +176,15 @@ describe('version 1 world generation', () => {
   });
 
   it.each([
-    [0, 'short', 'light-fantasy', '28963b7eceb5d70a22d76b087f6cdff0ca67155cefacfb34c1e5b0ed849937c6'],
-    [1234, 'medium', 'light-fantasy', '917290c0b0fb358e5aeee74f462c80b78a22ad42f47ee0e81719e4577fbf1db0'],
-    [9999, 'long', 'light-fantasy', '2376a8828b5e705c4c430bde79ae91bb70af5176beac50eaf1c5a6ccf8baf51d'],
-    [1, 'short', 'cosy-mystery', 'a7671f5ed95e1e904b6f4e6114f346f48ece7d014983ef5db0bb6a1545dfc3de'],
-    [42, 'medium', 'cosy-mystery', '94e24f29769cfcc48dded9642b89dce263b279878d7c04bde15a3952a00e7066'],
-    [13, 'long', 'cosy-mystery', 'c5bb081f302488f4ebcca3dc6bf932fb830db84434a7427f4e45e0c66c63315c'],
-    [17000, 'short', 'science-fiction', '26b79005727cc71480acca452f31dfa6a65dfc3b12d9901cdf6239493f873f69'],
-    [2024, 'medium', 'science-fiction', 'df434d4055dd65b66638b40e563b2c650f0b7817d562b7ed60647988da72eed4'],
-    [777, 'long', 'science-fiction', '1d3fdf21a29ee337bc1cb0b0b9568aac44a2188b81f4d2152cf9a73dcc6848a7'],
+    [0, 'short', 'light-fantasy', 'e9af7673d2dee3d86f601d159e2038d7891d932a64b8ba2e6d83cfc1f39a8f04'],
+    [1234, 'medium', 'light-fantasy', 'b2f9ed8d8ccb1cd58e15447fe5f23e0a3cd75c65eb9171375b6fab273a083db6'],
+    [9999, 'long', 'light-fantasy', 'fcdbac2b6aad75922cefa15a2e7b6c1b054ee2d4494b20603a7f2ff021ba4497'],
+    [1, 'short', 'cosy-mystery', '40bb4833f1f2c763f5dec54bc1caa276cf9f97dd71c8a4d217adf735124e8958'],
+    [42, 'medium', 'cosy-mystery', '99a59ddac090dd607902d595a0fd45d86a6ab71667d27f08440bb703fb51e8f8'],
+    [13, 'long', 'cosy-mystery', 'fa7a08310af44887476d55dcafcf554b00c2962cbdf6c0aecf3e7f1da7496bdb'],
+    [17000, 'short', 'science-fiction', '8f8d5f6c14c69f26ce9e0eec3141d1a6a77de3c99d342365910f01cbe0698f3b'],
+    [2024, 'medium', 'science-fiction', '6fd7031df8796f7159ab4bb73cd826e4c59f77b775bee377be7f672a5316b014'],
+    [777, 'long', 'science-fiction', '9a6636b701c88dc96d05a8a377502f91195f42c6a29efa067ee99cf662b23556'],
   ] satisfies [number, AdventureLength, AdventureGenre, string][])(
     'pins the complete version 1 world for seed %i, %s, %s',
     async (seed, length, genre, expected) => {
