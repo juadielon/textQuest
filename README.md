@@ -5,13 +5,81 @@ authored stories and game rules, without using an LLM while you play.
 
 This repository includes a Docker-run browser placeholder, the rules for
 repeatable adventure settings and share words, a world model with a
-winnability checker, and a save format. The game itself is not implemented.
+winnability checker, deterministic light fantasy world generation and a save
+format. The game itself is not implemented.
+
+## Version 1 authored content
+
+[Issue #26](https://github.com/juadielon/textQuest/issues/26) adds a typed
+content format in `src/content/v1/` and the light fantasy pack. It is not
+connected to the browser. The generator uses its authored plans.
+
+The pack has 24 places, motivated characters, items, clues, 12 required puzzle
+templates across four families, optional discoveries, route choices and
+endings. Three plots use different puzzle dependency graphs: restoring a
+warning chain, finding a missing keeper and renewing a river pact. Their
+authored length plans select 8 places and 4 steps for short adventures,
+16 places and 8 steps for medium, or 24 places and 12 steps for long.
+
+[Issue #33](https://github.com/juadielon/textQuest/issues/33) adds a science
+fiction pack in the same format and sizes, set on a space station. Its three
+plots guide an overdue supply ship home, wake a quiet station and honour the
+station charter. It has the same kinds of checks and its own digest pin.
+
+The content unit tests build the fixed plans as `AdventureWorld` fixtures
+and check every plan and ending for winnability. They do not check commands
+or puzzle answers.
+
+Prose is an array of literal text and typed entity references. A later
+renderer must resolve references to included entity names, never execute
+text as code. Place descriptions stay true across puzzle states; clue text
+is shown only after discovery. Puzzle prompts appear before completion,
+and completion text only after its step.
+Never expose `solution` as a hint or player-facing text.
+
+After reaching the goal, choose the last matching ending from the plot's
+ordered `endingIds`. A force consequence takes priority over a peaceful
+choice if both were taken. Both shortcuts can be opened; version 1 does not
+remove progress or make choices mutually exclusive. The force choice is a
+non-graphic shove, not a combat system.
+
+This is released data: changing version 1 IDs, prose, array order, selections,
+conditions or effects after merge requires a new content version. A test pins
+the complete pack's SHA-256 digest. Do not update that pin to hide a released
+content change. Existing share words and player saves are unchanged.
+
+## Version 1 world generation
+
+[Issue #31](https://github.com/juadielon/textQuest/issues/31) adds
+`generateAdventureWorld(settings)` in `src/generate-world.ts`. It accepts
+valid version 1 settings whose seed chooses light fantasy. Cosy mystery and
+science fiction settings throw a clear `RangeError` until the generator uses
+their packs ([issue #40](https://github.com/juadielon/textQuest/issues/40));
+invalid settings and a genre that does not match the seed are also rejected.
+The existing genre and share-word rules are unchanged.
+
+The first seeded draw chooses the genre, and the second chooses one of the
+pack's three plots in authored order. Length selects that plot's fixed plan:
+8 places and 4 required steps for short, 16 and 8 for medium, or 24 and 12
+for long. Exits keep both selected endpoints; items and clues keep selected
+initial places or no initial place. Optional steps at selected places remain
+available. Plot dependencies are added to each step's local conditions, and
+the goal requires **all** selected required steps as well as its authored
+conditions.
+
+The returned world contains engine data, not plot prose, character
+descriptions or player progress. It is a detached copy: generation and callers
+cannot change the pack through it. Unit tests cover all nine plot/length
+combinations, optional routes and winnability, seed variation, share-word
+round trips, and pinned complete worlds. Changes to these generator rules
+require a new adventure version. This is not command handling, browser
+rendering or a playable game.
 
 ## Adventure settings and share words
 
 [Issue #3](https://github.com/juadielon/textQuest/issues/3) adds the code that
 describes how an adventure starts. It is not yet connected to the page, and it
-does not create stories.
+does not create stories on its own.
 
 - A new adventure gets a random seed from the browser's cryptographic random
   numbers. The player chooses a short, medium or long adventure.
@@ -65,9 +133,9 @@ the page. A world that needs more returns `{ winnable: false, tooLarge: true }`
 instead. It must be treated as rejected, never as winnable. The same world
 always gives the same result, whatever the time, locale or browser. Tests show
 long worlds with 28 places and 14 required steps finish within the limit. The
-limit is a cautious first value and will be retuned once real generated
-worlds exist. Tests use hand-built data only.
-There is no generated story, player command handling or playable adventure.
+limit is a cautious first value. Generator tests also check the authored
+light fantasy worlds, including every long plot, within this limit.
+There is no rendered story, player command handling or playable adventure.
 
 ## Save format and storage
 
