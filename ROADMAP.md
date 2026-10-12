@@ -92,9 +92,11 @@ This is not a playable adventure.
 The science fiction pack ([issue #33](https://github.com/juadielon/textQuest/issues/33))
 follows the same format and checks, but the generator still rejects science
 fiction settings until [issue #40](https://github.com/juadielon/textQuest/issues/40)
-connects it. Cosy mystery content, its generation and command handling remain
-planned; unsupported settings are clearly rejected rather than replaced with
-fantasy. The current rules only add progress; mutually exclusive
+connects it. The cosy mystery pack
+([issue #32](https://github.com/juadielon/textQuest/issues/32)) follows the same
+format, and issue #40 will connect it to the generator too. Command handling
+remains planned; unsupported settings are clearly rejected rather than replaced
+with fantasy. The current rules only add progress; mutually exclusive
 choices will need later rules and their own checks.
 
 ### 5. Commands and recovery
@@ -119,12 +121,16 @@ rules. Suggestions and checkpoints are not implemented.
 
 ### 6. Saves
 
-**Status:** Planned
+**Status:** In progress — save format and storage wrapper implemented
+([issue #34](https://github.com/juadielon/textQuest/issues/34)).
 
 **Outcome:** Players can save several adventures in their browser and export
 or import save files. Invalid files and storage errors are reported clearly.
 
 **Depends on:** Milestones 3 and 5.
+
+The first step stores settings and typed commands, with unit tests. Replaying
+commands into a world and the save screens are not implemented.
 
 ### 7. Browser game
 
