@@ -20,6 +20,13 @@ warning chain, finding a missing keeper and renewing a river pact. Their
 authored length plans select 8 places and 4 steps for short adventures,
 16 places and 8 steps for medium, or 24 places and 12 steps for long.
 
+[Issue #32](https://github.com/juadielon/textQuest/issues/32) adds the cosy
+mystery pack in `src/content/v1/cosy-mystery.ts`, using the same format and
+plan sizes. A village fete's Silver Teapot has gone missing, and nobody means
+any harm. Its three plots follow the trail one clue at a time, hear every side
+in any order before piecing them together, or follow two threads until they
+meet. A test keeps its text free of violent words.
+
 For a later generator, each plan selects its named places and required steps.
 Keep exits whose two places are selected, and items and clues whose initial
 place is selected (or which have no initial place). Include characters at

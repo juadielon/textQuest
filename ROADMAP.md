@@ -80,7 +80,9 @@ The pack includes three plot dependency graphs, four puzzle
 families, short/medium/long selections, optional route choices and endings.
 Unit tests check the authored plans against the world model and winnability
 checker. This is not seed-based generation or a playable adventure.
-Cosy mystery and science fiction content, generation and command handling
+The cosy mystery pack ([issue #32](https://github.com/juadielon/textQuest/issues/32))
+is implemented on a branch that builds on pull request #30.
+Science fiction content, generation and command handling
 remain planned. The current rules only add progress; mutually exclusive
 choices will need later rules and their own checks.
 
