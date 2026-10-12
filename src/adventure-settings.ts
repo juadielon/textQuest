@@ -19,11 +19,11 @@ export const adventureLengths = ['short', 'medium', 'long'] as const;
 export type AdventureLength = (typeof adventureLengths)[number];
 
 /**
- * Every genre an adventure can have, in the order the seed picks from.
+ * Every genre an adventure can have.
  *
  * @remarks
- * Never add, remove, rename or reorder entries. Released version 1 share
- * words depend on this exact list; a change needs a new version.
+ * Each version's own rules set which genres it uses and the order its seed
+ * picks from, so this list doesn't decide the genre for a seed.
  */
 export const adventureGenres = ['light-fantasy', 'cosy-mystery', 'science-fiction'] as const;
 
@@ -50,6 +50,8 @@ const versionRules: ReadonlyMap<number, VersionRules> = new Map([
   [
     1,
     {
+      // The seed picks a genre by position. Never change this list: released
+      // version 1 share words depend on it.
       genres: ['light-fantasy', 'cosy-mystery', 'science-fiction'],
       firstWords: versionOneFirstWords,
       secondWords: versionOneSecondWords,
@@ -190,6 +192,7 @@ export function createSeed(
  * @param length - The adventure length the player chose.
  * @param source - Where to get random numbers. Defaults to browser cryptographic randomness.
  * @returns Settings for the current version.
+ * @throws RangeError if the length is unknown.
  */
 export function createNewAdventureSettings(
   length: AdventureLength,
