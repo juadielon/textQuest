@@ -193,7 +193,10 @@ or the next place on a shortest winning route, without naming answers.
 Discovered targets never include puzzle steps, the goal, unfound clues, items
 elsewhere or places out of sight. Targets use world IDs with their kind, so a
 place and an item may share an ID. Names come from IDs until content packs are
-connected to play.
+connected to play. Names that collide after parser normalisation get stable
+numbered suffixes, such as `red key (item 4)`. Look, inventory and hints use
+these same names. Original names stay available as aliases, but can be
+ambiguous; use the displayed name to pick a particular target.
 Version 1 worlds have no compass directions, people or story choices, so
 those commands get a plain explanation. Prose, autocomplete, checkpoints and
 the browser screen are later steps.

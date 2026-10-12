@@ -158,8 +158,70 @@ describe('discoveredTargets', () => {
       solution: { steps: [], goal: { placeId: 'study', conditions: { itemsHeld: ['study'] } } },
     };
     const { state, messages } = play(world, ['take study', 'go to study']);
-    expect(messages[0]).toBe('You take the study.');
+    expect(messages[0]).toMatch(/^You take the study \(item \d+\)\.$/);
     expect(state.goalReached).toBe(true);
+  });
+
+  it.each([
+    ['red-key', 'red_key'],
+    ['Red Key', 'red key'],
+    ['the key', 'key'],
+    ['the', 'a'],
+    ['red-key', 'red_key', 'red key (item 4)'],
+  ])('wins using displayed names despite colliding IDs: %j', (...ids: string[]) => {
+    const world: AdventureWorld = {
+      version: 1,
+      startPlaceId: 'entry',
+      places: [{ id: 'entry' }, { id: 'finish' }],
+      exits: [{ id: 'door', fromPlaceId: 'entry', toPlaceId: 'finish', locked: true }],
+      items: ids.map((id) => ({ id, placeId: 'entry' })),
+      clues: [{ id: 'hidden-clue' }],
+      solution: {
+        steps: [{
+          id: 'hidden-solution', placeId: 'entry',
+          conditions: { itemsHeld: ids },
+          effects: [{ kind: 'unlock-exit', exitId: 'door' }],
+        }],
+        goal: { placeId: 'finish', conditions: { stepsDone: ['hidden-solution'] } },
+      },
+    };
+    expect(checkWinnability(world).winnable).toBe(true);
+    const start = startPlay(world);
+    const items = discoveredTargets(world, start).filter(({ kind }) => kind === 'item');
+    const look = playCommand(world, start, 'look').message;
+    const commands = items.map(({ name }) => {
+      expect(look).toContain(name);
+      return `take ${name}`;
+    });
+    commands.push(`use ${items[0].name} on door`, 'go finish');
+    const won = replayCommands(world, commands);
+    expect(won.itemsHeld).toEqual(ids);
+    expect(won.goalReached).toBe(true);
+    expect(replayCommands(world, commands)).toEqual(won);
+    expect(discoveredTargets(world, start)).not.toContainEqual(
+      expect.objectContaining({ id: 'hidden-clue' }),
+    );
+    expect(discoveredTargets(world, start)).not.toContainEqual(
+      expect.objectContaining({ id: 'hidden-solution' }),
+    );
+  });
+
+  it('uses distinct names in movement hints when place IDs collide', () => {
+    const world: AdventureWorld = {
+      version: 1, startPlaceId: 'entry',
+      places: [{ id: 'entry' }, { id: 'red-room' }, { id: 'red_room' }],
+      exits: [
+        { id: 'wrong-way', fromPlaceId: 'entry', toPlaceId: 'red-room', locked: false },
+        { id: 'right-way', fromPlaceId: 'entry', toPlaceId: 'red_room', locked: false },
+      ],
+      items: [], clues: [],
+      solution: { steps: [], goal: { placeId: 'red_room', conditions: {} } },
+    };
+    const start = startPlay(world);
+    const target = discoveredTargets(world, start).find(({ id }) => id === 'red_room')!;
+    expect(playCommand(world, start, 'look').message).toContain(target.name);
+    expect(playCommand(world, start, 'hint').message).toBe(`Try going to the ${target.name}.`);
+    expect(playCommand(world, start, `go ${target.name}`).state.goalReached).toBe(true);
   });
 });
 

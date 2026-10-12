@@ -54,11 +54,36 @@ interface Target {
   readonly id: string;
 }
 
-// Content packs will supply real names later. Until then, IDs read as names.
-const nameOf = (id: string) => id.replace(/[-_]+/g, ' ').trim() || id;
+// Keep names stable as targets are discovered, including parser normalisation.
+function namedTargets(world: AdventureWorld): CommandTarget[] {
+  const targets = (['place', 'exit', 'item', 'clue'] as const).flatMap((kind) =>
+    world[`${kind}s`].map(({ id }): CommandTarget => ({
+      id, kind, name: id.replace(/[-_]+/g, ' ').trim() || id,
+    })),
+  );
+  const original = [...targets];
+  return targets.map((target, index) => {
+    const result = parseCommand(`examine ${target.name}`, original);
+    if (result.ok) return target;
+    let name = `${target.name} (${target.kind} ${index + 1})`;
+    while (true) {
+      const candidate = parseCommand(`examine ${name}`, targets);
+      if (!candidate.ok && candidate.problem === 'unknown-target') break;
+      name += '!';
+    }
+    const named = { ...target, name, aliases: [target.name] };
+    targets[index] = named;
+    return named;
+  });
+}
 
-function listNames(ids: readonly string[]): string {
-  const names = ids.map((id) => `the ${nameOf(id)}`);
+function nameOf(world: AdventureWorld, kind: Target['kind'], id: string): string {
+  return namedTargets(world).find((target) => target.kind === kind && target.id === id)?.name
+    ?? id;
+}
+
+function listNames(world: AdventureWorld, kind: Target['kind'], ids: readonly string[]): string {
+  const names = ids.map((id) => `the ${nameOf(world, kind, id)}`);
   return names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
 }
 
@@ -130,13 +155,13 @@ function completeStep(world: AdventureWorld, progress: Progress, step: PuzzleSte
     switch (effect.kind) {
       case 'unlock-exit':
         progress.unlockedExits.add(effect.exitId);
-        return `The ${nameOf(effect.exitId)} is now open.`;
+        return `The ${nameOf(world, 'exit', effect.exitId)} is now open.`;
       case 'give-item':
         progress.itemsHeld.add(effect.itemId);
-        return `You now have the ${nameOf(effect.itemId)}.`;
+        return `You now have the ${nameOf(world, 'item', effect.itemId)}.`;
       case 'reveal-clue':
         progress.cluesRevealed.add(effect.clueId);
-        return `You found the ${nameOf(effect.clueId)} clue.`;
+        return `You found the ${nameOf(world, 'clue', effect.clueId)} clue.`;
     }
   });
 }
@@ -192,15 +217,17 @@ export function startPlay(world: AdventureWorld): PlayState {
  *
  * @remarks
  * Targets use world IDs with their kind, because IDs are only unique within
- * their own kind. Names come from IDs until content packs provide real names.
+ * their own kind. Names come from IDs; colliding parser names get a stable
+ * numbered suffix. Original names remain aliases and may be ambiguous.
  */
 export function discoveredTargets(world: AdventureWorld, state: PlayState): CommandTarget[] {
   const progress = progressFrom(state);
   const exits = exitsFrom(world, state.placeId);
   const places = new Set([state.placeId, ...state.placesVisited,
     ...exits.filter((exit) => isOpen(progress, exit)).map((exit) => exit.toPlaceId)]);
-  const target = (kind: CommandTarget['kind']) => (id: string): CommandTarget =>
-    ({ id, name: nameOf(id), kind });
+  const names = namedTargets(world);
+  const target = (kind: Target['kind']) => (id: string): CommandTarget =>
+    names.find((target) => target.kind === kind && target.id === id)!;
   return [
     ...inWorldOrder(world.places, places).map(target('place')),
     ...exits.map(({ id }) => id).map(target('exit')),
@@ -210,20 +237,20 @@ export function discoveredTargets(world: AdventureWorld, state: PlayState): Comm
 }
 
 function describePlace(world: AdventureWorld, progress: Progress): string {
-  const parts = [`You are at the ${nameOf(progress.placeId)}.`];
+  const parts = [`You are at the ${nameOf(world, 'place', progress.placeId)}.`];
   const items = itemsHere(world, progress);
-  if (items.length) parts.push(`You can see ${listNames(items)}.`);
+  if (items.length) parts.push(`You can see ${listNames(world, 'item', items)}.`);
   const clues = world.clues.filter((clue) => clue.placeId === progress.placeId).map(({ id }) => id);
-  if (clues.length) parts.push(`Clues here: ${listNames(clues)}.`);
+  if (clues.length) parts.push(`Clues here: ${listNames(world, 'clue', clues)}.`);
   const exits = exitsFrom(world, progress.placeId).map((exit) => isOpen(progress, exit)
-    ? `the ${nameOf(exit.id)} to the ${nameOf(exit.toPlaceId)}`
-    : `the ${nameOf(exit.id)} (locked)`);
+    ? `the ${nameOf(world, 'exit', exit.id)} to the ${nameOf(world, 'place', exit.toPlaceId)}`
+    : `the ${nameOf(world, 'exit', exit.id)} (locked)`);
   parts.push(exits.length ? `Ways out: ${exits.join(', ')}.` : 'There is no way out.');
   return parts.join(' ');
 }
 
 function examine(world: AdventureWorld, progress: Progress, { kind, id }: Target): string {
-  const name = nameOf(id);
+  const name = nameOf(world, kind, id);
   switch (kind) {
     case 'place':
       if (id === progress.placeId) return describePlace(world, progress);
@@ -234,7 +261,7 @@ function examine(world: AdventureWorld, progress: Progress, { kind, id }: Target
       const exit = exitsFrom(world, progress.placeId).find((entry) => entry.id === id);
       if (!exit) return 'That is not here.';
       return isOpen(progress, exit)
-        ? `The ${name} leads to the ${nameOf(exit.toPlaceId)}.`
+        ? `The ${name} leads to the ${nameOf(world, 'place', exit.toPlaceId)}.`
         : `The ${name} is locked.`;
     }
     case 'item':
@@ -283,27 +310,27 @@ function move(
     if (id === progress.placeId) return { done: false, message: 'You are already here.' };
     const ways = exits.filter((entry) => entry.toPlaceId === id);
     if (!ways.length) {
-      return { done: false, message: `You cannot get to the ${nameOf(id)} directly from here.` };
+      return { done: false, message: `You cannot get to the ${nameOf(world, 'place', id)} directly from here.` };
     }
     exit = ways.find((entry) => isOpen(progress, entry)) ?? ways[0];
   } else {
     return { done: false, message: 'You cannot go there.' };
   }
   if (!isOpen(progress, exit)) {
-    return { done: false, message: `The ${nameOf(exit.id)} is locked.` };
+    return { done: false, message: `The ${nameOf(world, 'exit', exit.id)} is locked.` };
   }
   const found = arrive(world, progress, exit.toPlaceId);
   const parts = [describePlace(world, progress)];
-  if (found.length) parts.push(`You found ${listNames(found)} clue${found.length > 1 ? 's' : ''}.`);
+  if (found.length) parts.push(`You found ${listNames(world, 'clue', found)} clue${found.length > 1 ? 's' : ''}.`);
   return { done: true, message: parts.join(' ') };
 }
 
 function take(world: AdventureWorld, progress: Progress, { kind, id }: Target): Change {
   if (kind !== 'item') return { done: false, message: 'You cannot take that.' };
-  if (progress.itemsHeld.has(id)) return { done: false, message: `You already have the ${nameOf(id)}.` };
+  if (progress.itemsHeld.has(id)) return { done: false, message: `You already have the ${nameOf(world, 'item', id)}.` };
   if (!itemsHere(world, progress).includes(id)) return { done: false, message: 'That is not here.' };
   progress.itemsHeld.add(id);
-  return { done: true, message: `You take the ${nameOf(id)}.` };
+  return { done: true, message: `You take the ${nameOf(world, 'item', id)}.` };
 }
 
 function use(
@@ -314,7 +341,7 @@ function use(
     return {
       done: false,
       message: itemsHere(world, progress).includes(id)
-        ? `Take the ${nameOf(id)} first.`
+        ? `Take the ${nameOf(world, 'item', id)} first.`
         : 'You are not carrying that.',
     };
   }
@@ -331,10 +358,10 @@ function use(
     && entry.effects.some((effect) => effect.kind === 'unlock-exit' && effect.exitId === target.id))
     ?? ready[0];
   if (!step) return { done: false, message: 'Nothing happens.' };
-  const onTarget = target ? ` on the ${nameOf(target.id)}` : '';
+  const onTarget = target ? ` on the ${nameOf(world, target.kind, target.id)}` : '';
   return {
     done: true,
-    message: [`You use the ${nameOf(id)}${onTarget}.`, ...completeStep(world, progress, step)].join(' '),
+    message: [`You use the ${nameOf(world, 'item', id)}${onTarget}.`, ...completeStep(world, progress, step)].join(' '),
   };
 }
 
@@ -397,7 +424,7 @@ function hint(world: AdventureWorld, progress: Progress): string {
   const next = nextPlaceToGoal(world, progress);
   if (next === 'too-large') return 'Try exploring somewhere you have not been yet.';
   if (next === null) return 'There seems to be no way forward from here. Try undo.';
-  return `Try going to the ${nameOf(next)}.`;
+  return `Try going to the ${nameOf(world, 'place', next)}.`;
 }
 
 /**
@@ -425,7 +452,7 @@ export function runAction(world: AdventureWorld, state: PlayState, action: Comma
       return reply(examine(world, progress, { kind: action.targetKind, id: action.targetId }));
     case 'inventory':
       return reply(state.itemsHeld.length
-        ? `You are carrying ${listNames(state.itemsHeld)}.`
+        ? `You are carrying ${listNames(world, 'item', state.itemsHeld)}.`
         : 'You are not carrying anything.');
     case 'hint':
       return reply(state.goalReached ? 'You have already finished this adventure.' : hint(world, progress));
