@@ -5,8 +5,9 @@ authored stories and game rules, without using an LLM while you play.
 
 This repository includes a Docker-run browser placeholder, the rules for
 repeatable adventure settings and share words, and a world model with a
-winnability checker. A standalone command parser is also implemented on this
-branch. The game itself is not implemented.
+winnability checker. A command parser and a pure play module that runs parsed
+commands against a world are also implemented on this branch. Neither is
+connected to the page yet, and there is no generated story.
 
 ## Adventure settings and share words
 
@@ -96,8 +97,35 @@ plain-language `message`. Ambiguous results also include discovered `options`.
 The parser rejects target kinds that do not fit a command, such as taking a
 person. It cannot check location, inventory, locked exits or puzzle success.
 The caller must exclude hidden names, hidden aliases and unavailable choices.
-Parsing never changes targets or player state. Execution, turn counting,
-suggestions, hint content and undo history remain unimplemented.
+Parsing never changes targets or player state.
+
+## Playing a world
+
+[Issue #36](https://github.com/juadielon/textQuest/issues/36) adds
+`src/engine/play.ts`. `startPlay(world)` begins at the start place.
+`playCommand(world, state, input)` parses typed input against
+`discoveredTargets(world, state)` and returns a new state and a short
+response. Neither the world nor the input state is changed.
+
+The state tracks the place, inventory, found clues, completed steps, opened
+exits, turn count, whether the goal is reached and the previous state for
+undo. Moves, takes and successful uses count as turns; look, examine,
+inventory, hint and help are free. `replayCommands(world, inputs)` always
+gives the same state, so saves can store a command list.
+
+Play follows the winnability checker's rules. Entering a place reveals its
+clues. Items must be taken. A step that needs items happens when the player
+uses one of them at the step's place; other steps happen by themselves once
+their conditions hold. Tests check that following hints wins worlds the
+checker calls winnable. Hints suggest taking a needed item, using something
+or the next place on a shortest winning route, without naming answers.
+
+Discovered targets never include puzzle steps, the goal, unfound clues, items
+elsewhere or places out of sight. Their IDs carry a kind prefix such as
+`item:key`. Names come from IDs until content packs supply real ones.
+Version 1 worlds have no compass directions, people or story choices, so
+those commands get a plain explanation. Prose, autocomplete, checkpoints and
+the browser screen are later steps.
 
 ## Project documents
 
