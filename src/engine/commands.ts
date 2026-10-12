@@ -67,7 +67,11 @@ function normalise(input: string): string {
   return input.toLowerCase().trim().replace(/\s+/g, ' ');
 }
 
-function normaliseName(input: string): string {
+/**
+ * Puts a name in the form the parser matches: lower case, single spaces and
+ * no `a`, `an` or `the`. Two names clash when this gives the same result.
+ */
+export function normaliseName(input: string): string {
   return normalise(input).split(' ').filter((word) => !['a', 'an', 'the'].includes(word)).join(' ');
 }
 
