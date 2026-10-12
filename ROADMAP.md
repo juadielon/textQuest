@@ -52,13 +52,21 @@ not yet shown in the browser, and adventures are not generated from them yet.
 
 ### 4. Stories, places and puzzles
 
-**Status:** Planned
+**Status:** In progress — world model and winnability checker implemented on
+a branch; awaiting review:
+[issue #12](https://github.com/juadielon/textQuest/issues/12)
 
 **Outcome:** Adventures have connected places, story goals, clues, items and
 several kinds of solvable puzzles. The player can find optional details and
 make choices that change routes or endings.
 
 **Depends on:** Milestone 3.
+
+The first step provides versioned plain data and a pure route search, checked
+against hand-built worlds. Puzzle solutions are separate from discoverable
+data. Genre content, generation, puzzle families, story choices and playable
+adventures are not implemented. The current rules only add progress; later
+choice rules will need their own checks.
 
 ### 5. Commands and recovery
 
