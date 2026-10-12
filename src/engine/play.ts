@@ -62,22 +62,32 @@ function namedTargets(world: AdventureWorld): CommandTarget[] {
     })),
   );
   const original = [...targets];
-  // Places and exits must also work with go, where words such as north mean a direction.
   const reachable = (target: CommandTarget, list: readonly CommandTarget[]) => {
-    if (target.kind !== 'place' && target.kind !== 'exit') return true;
-    const result = parseCommand(`go ${target.name}`, list);
-    return result.ok && 'targetId' in result.action;
+    const verbs = target.kind === 'item' ? ['examine', 'use']
+      : target.kind === 'place' || target.kind === 'exit' ? ['examine', 'go'] : ['examine'];
+    return verbs.every((verb) => {
+      const result = parseCommand(`${verb} ${target.name}`, list);
+      if (!result.ok) return false;
+      if (result.action.kind === 'use') {
+        return result.action.itemId === target.id && !('targetId' in result.action);
+      }
+      return 'targetId' in result.action && result.action.targetId === target.id
+        && result.action.targetKind === target.kind;
+    });
   };
   return targets.map((target, index) => {
-    const result = parseCommand(`examine ${target.name}`, original);
-    if (result.ok && reachable(target, original)) return target;
+    if (reachable(target, original)) return target;
     let name = `${target.name} (${target.kind} ${index + 1})`;
+    let named = { ...target, name, aliases: [target.name] };
+    const withCandidate = () => targets.map((entry, position) => position === index ? named : entry);
+    if (!reachable(named, withCandidate())) name = `${target.kind} ${index + 1}`;
     while (true) {
       const candidate = parseCommand(`examine ${name}`, targets);
-      if (!candidate.ok && candidate.problem === 'unknown-target') break;
+      named = { ...target, name, aliases: [target.name] };
+      if (!candidate.ok && candidate.problem === 'unknown-target'
+        && reachable(named, withCandidate())) break;
       name += '!';
     }
-    const named = { ...target, name, aliases: [target.name] };
     targets[index] = named;
     return named;
   });
@@ -419,7 +429,7 @@ function nextPlaceToGoal(world: AdventureWorld, start: Progress): string | null 
   return null;
 }
 
-function hint(world: AdventureWorld, progress: Progress): string {
+function hint(world: AdventureWorld, progress: Progress, canUndo: boolean): string {
   const { steps, goal } = world.solution;
   const neededItems = new Set([goal, ...steps].flatMap(({ conditions }) => conditions.itemsHeld ?? []));
   if (itemsHere(world, progress).some((id) => neededItems.has(id))) {
@@ -430,7 +440,9 @@ function hint(world: AdventureWorld, progress: Progress): string {
   }
   const next = nextPlaceToGoal(world, progress);
   if (next === 'too-large') return 'Try exploring somewhere you have not been yet.';
-  if (next === null) return 'There seems to be no way forward from here. Try undo.';
+  if (next === null) {
+    return `There seems to be no way forward from here.${canUndo ? ' Try undo.' : ''}`;
+  }
   return `Try going to the ${nameOf(world, 'place', next)}.`;
 }
 
@@ -444,7 +456,8 @@ function hint(world: AdventureWorld, progress: Progress): string {
  * when the player uses one of those items at its place; other steps happen by
  * themselves once their conditions hold. These match the winnability
  * checker's rules, so any winnable world can be won with typed commands.
- * Hints point at the next useful step without naming puzzle answers.
+ * Hints point at the next useful step without naming puzzle answers, and
+ * suggest undo at a dead end only when a previous turn exists.
  *
  * @throws RangeError when the world is invalid.
  */
@@ -462,7 +475,8 @@ export function runAction(world: AdventureWorld, state: PlayState, action: Comma
         ? `You are carrying ${listNames(world, 'item', state.itemsHeld)}.`
         : 'You are not carrying anything.');
     case 'hint':
-      return reply(state.goalReached ? 'You have already finished this adventure.' : hint(world, progress));
+      return reply(state.goalReached ? 'You have already finished this adventure.'
+        : hint(world, progress, state.previous !== null));
     case 'undo':
       return state.previous
         ? { state: state.previous, message: 'You undo your last turn.' }

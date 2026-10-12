@@ -204,7 +204,9 @@ elsewhere or places out of sight. Targets use world IDs with their kind, so a
 place and an item may share an ID. Names come from IDs until content packs are
 connected to play. Names that collide after parser normalisation get stable
 numbered suffixes, such as `red key (item 4)`. Look, inventory and hints use
-these same names. Original names stay available as aliases, but can be
+these same names. Names that clash with movement or item-use grammar get a
+short numbered name, such as `exit 4` or `item 5`, instead.
+Original names stay available as aliases, but can be
 ambiguous; use the displayed name to pick a particular target.
 Version 1 worlds have no compass directions, people or story choices, so
 those commands get a plain explanation. Prose, autocomplete, checkpoints and
