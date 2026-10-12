@@ -5,11 +5,12 @@ authored content and game rules, without using an LLM while you play.
 
 This repository includes a Docker-run browser start screen, the rules for
 repeatable adventure settings and share words, a world model with a
-winnability checker, and deterministic light fantasy world generation.
-A command parser and a pure play module that runs parsed commands against a
-world are also implemented, with a browser play screen built on them.
+winnability checker, deterministic light fantasy world generation, a command
+parser and a save format. A pure play module that runs parsed commands against
+a world is also implemented, with a browser play screen built on it.
 Light fantasy adventures can be played from the start screen. Names still
-come from IDs; authored story text, other genres and saves remain planned.
+come from IDs; authored story text, other genres and the saves screen remain
+planned.
 
 ## Start screen
 
@@ -37,14 +38,22 @@ warning chain, finding a missing keeper and renewing a river pact. Their
 authored length plans select 8 places and 4 steps for short adventures,
 16 places and 8 steps for medium, or 24 places and 12 steps for long.
 
+[Issue #32](https://github.com/juadielon/textQuest/issues/32) adds the cosy
+mystery pack in `src/content/v1/cosy-mystery.ts`, using the same format and
+plan sizes. A village fete's Silver Teapot has gone missing, and nobody means
+any harm. Its three plots follow the trail one clue at a time, hear every side
+in any order before piecing them together, or follow two threads until they
+meet. A test keeps its text free of violent words.
+
 [Issue #33](https://github.com/juadielon/textQuest/issues/33) adds a science
 fiction pack in the same format and sizes, set on a space station. Its three
 plots guide an overdue supply ship home, wake a quiet station and honour the
 station charter. It has the same kinds of checks and its own digest pin.
 
 The content unit tests build the fixed plans as `AdventureWorld` fixtures
-and check every plan and ending for winnability. They do not check commands
-or puzzle answers.
+and check every plan and ending for winnability. Cosy mystery prose checks
+also guard the evidence behind the puzzle conclusions. They do not check
+commands or player answers.
 
 Prose is an array of literal text and typed entity references. A later
 renderer must resolve references to included entity names, never execute
@@ -229,15 +238,32 @@ Everything can be done with the keyboard: type a command and press Enter.
 Each new response is announced through a polite live region. The layout is
 one column on narrow screens, with a progress column on wide ones. Typed and
 world text is always added as plain text, never as markup. If a world can't
-be generated, such as a cosy mystery world for now, a plain message is shown
-instead.
+be generated, such as a cosy mystery or science fiction world for now, a
+plain message is shown instead.
 
 The start screen opens play for new adventures and share words
 ([issue #54](https://github.com/juadielon/textQuest/issues/54)).
 Unsupported worlds show a clear message, their share word and a way back
 to the start screen rather than substituting a different adventure.
-Names still come from IDs, and saves are planned in
+Names still come from IDs. The screen doesn't use the save format yet; the
+saves screen is planned in
 [issue #43](https://github.com/juadielon/textQuest/issues/43).
+
+## Save format and storage
+
+[Issue #34](https://github.com/juadielon/textQuest/issues/34) adds a
+versioned save format in `src/saves.ts`. A save holds an adventure name, the
+starting settings, every command the player typed and two timestamps.
+Progress will be rebuilt by replaying the commands, which is a later step.
+Saves never contain puzzle solutions.
+
+`createSaveStore(storage)` lists, adds, updates, loads and deletes saves in
+any `Storage`-like object, such as `localStorage`. Each save has its own key,
+so a failed write never damages another save. Export gives JSON text. Import
+treats the file as untrusted, rejects damaged, oversized (over 1,000,000
+characters) or newer-version files with a clear message, and stores a good
+file as a new save. A full or blocked storage is reported clearly. There are
+no save screens in the browser yet.
 
 ## Project documents
 
