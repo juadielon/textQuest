@@ -6,6 +6,7 @@ authored stories and game rules, without using an LLM while you play.
 This repository includes a Docker-run browser placeholder, the rules for
 repeatable adventure settings and share words, a world model with a
 winnability checker, and deterministic light fantasy world generation.
+A standalone command parser is also implemented on this branch.
 The game itself is not implemented.
 
 ## Version 1 authored content
@@ -135,7 +136,38 @@ always gives the same result, whatever the time, locale or browser. Tests show
 long worlds with 28 places and 14 required steps finish within the limit. The
 limit is a cautious first value. Generator tests also check the authored
 light fantasy worlds, including every long plot, within this limit.
-There is no rendered story, player command handling or playable adventure.
+There is no rendered story, command execution or playable adventure.
+
+## Typed command parser
+
+[Issue #27](https://github.com/juadielon/textQuest/issues/27) adds
+`parseCommand(input, targets)` in `src/engine/commands.ts`. It is a standalone
+parser on this branch, not connected to the page or a play module.
+
+It handles movement, look/examine, inventory, take, use (an item alone or on
+a target), talk, authored story choices, hint, undo and help. Common short
+forms include `n`, `x`, `i`, `h` and `u`; `u` means undo, so use `up` to move
+upwards. `commandHelp` provides grammar help without puzzle advice.
+
+The caller supplies only discovered targets with IDs, names, kinds and optional
+discovered aliases. Names match exactly after ignoring case, extra whitespace
+and the articles `a`, `an` and `the`; there is no fuzzy or partial matching.
+For example, two discovered keys may both have the alias `key`. The parser
+reports both options rather than choosing one. Choice numbers such as `choose 1`
+work only when supplied as discovered aliases for authored options.
+For `use`, an item name containing `on` can also match an item-on-target command.
+The parser checks each complete interpretation and reports distinct actions as
+ambiguous. Aliases that describe the same action do not create extra options.
+
+Results have `ok: true` with an `action`, or `ok: false` with a `problem` and
+plain-language `message`. Target actions include both the target ID and kind,
+because IDs may repeat across kinds. Ambiguous results also include discovered
+`options`. The parser rejects target kinds that do not fit a command, such as
+taking a person. It cannot check location, inventory, locked exits or puzzle
+success.
+The caller must exclude hidden names, hidden aliases and unavailable choices.
+Parsing never changes targets or player state. Execution, turn counting,
+suggestions, hint content and undo history remain unimplemented.
 
 ## Project documents
 
