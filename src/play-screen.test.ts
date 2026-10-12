@@ -5,9 +5,10 @@ import {
 } from './adventure-settings';
 import type { AdventureWorld } from './adventure-world';
 import { commandHelp } from './engine/commands';
-import { startPlay } from './engine/play';
+import { replayCommands, startPlay } from './engine/play';
 import { generateAdventureWorld } from './generate-world';
 import { describePlay, renderPlayScreen, unplayableMessage } from './play-screen';
+import { MAX_COMMAND_LENGTH } from './saves';
 
 vi.mock('./generate-world', async (original) => {
   const actual = await original<typeof import('./generate-world')>();
@@ -181,13 +182,47 @@ describe('renderPlayScreen', () => {
     expect(text(target, '.play-typed')).toEqual(['> <img src=x onerror=alert(1)>']);
   });
 
+  it('reports every command run so far after each typed command', () => {
+    vi.mocked(generateAdventureWorld).mockReturnValueOnce(tinyWorld);
+    const target = document.createElement('main');
+    const onCommand = vi.fn();
+    expect(renderPlayScreen(target, settingsFor('light-fantasy'), { onCommand })).toBe(true);
+
+    type(target, ' take brass key ');
+    type(target, 'undo');
+
+    expect(onCommand.mock.calls).toEqual([[['take brass key']], [['take brass key', 'undo']]]);
+    expect(target.querySelector<HTMLInputElement>('#play-command')?.maxLength).toBe(MAX_COMMAND_LENGTH);
+  });
+
+  it('replays saved commands into the same state and log, without announcing them', () => {
+    vi.mocked(generateAdventureWorld).mockReturnValueOnce(tinyWorld);
+    const target = document.createElement('main');
+    const onCommand = vi.fn();
+    const saved = ['take brass key', 'use brass key', 'hint'];
+
+    renderPlayScreen(target, settingsFor('light-fantasy'), { commands: saved, onCommand });
+
+    const view = describePlay(tinyWorld, replayCommands(tinyWorld, saved));
+    expect(target.querySelector('h2')?.textContent).toBe(view.placeName);
+    expect(text(target, '.play-sidebar ul')[0]).toBe(view.inventory[0]);
+    expect(target.querySelector('.play-sidebar p')?.textContent).toBe(`Turns taken: ${view.turns}`);
+    expect(text(target, '.play-typed')).toEqual(saved.map((command) => `> ${command}`));
+    expect(target.querySelector('[aria-live="polite"]')?.textContent).toBe('');
+    expect(onCommand).not.toHaveBeenCalled();
+
+    type(target, 'go to old tower');
+    expect(onCommand).toHaveBeenLastCalledWith([...saved, 'go to old tower']);
+    expect(target.querySelector<HTMLElement>('.play-ending')?.hidden).toBe(false);
+  });
+
   it('shows a plain message when the world cannot be generated', () => {
     vi.mocked(generateAdventureWorld).mockImplementationOnce(() => {
       throw new RangeError('World generation for cosy-mystery is not supported yet.');
     });
     const target = document.createElement('main');
 
-    renderPlayScreen(target, settingsFor('cosy-mystery'));
+    expect(renderPlayScreen(target, settingsFor('cosy-mystery'))).toBe(false);
 
     expect(target.querySelector('[role="alert"]')?.textContent).toBe(unplayableMessage);
     expect(target.querySelector('form')).toBeNull();
