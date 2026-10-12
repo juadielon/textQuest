@@ -1,0 +1,21 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+.status {
+  padding: 0.75rem 1rem;
+  border-left: 4px solid #c68a00;
+  background: rgb(198 138 0 / 12%);
+}
