@@ -95,7 +95,10 @@ and the cosy mystery pack
 ([issue #32](https://github.com/juadielon/textQuest/issues/32)) follow the same
 format and checks. The generator builds worlds from both
 ([issue #40](https://github.com/juadielon/textQuest/issues/40)), with the same
-tests and pinned worlds for each genre. Command handling remains planned.
+tests and pinned worlds for each genre. Later seeded draws move items and
+clues to reachable places before they are needed
+([issue #51](https://github.com/juadielon/textQuest/issues/51)), so most seeds
+of the same genre, plot and length give a different world. Command handling remains planned.
 The current rules only add progress; mutually exclusive
 choices will need later rules and their own checks.
 
