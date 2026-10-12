@@ -5,8 +5,10 @@ authored stories and game rules, without using an LLM while you play.
 
 This repository includes a Docker-run browser placeholder, the rules for
 repeatable adventure settings and share words, a world model with a
-winnability checker, deterministic light fantasy world generation, a standalone
-command parser and a save format. The game itself is not implemented.
+winnability checker, deterministic light fantasy world generation, a command
+parser and a save format. A pure play module that runs parsed commands against
+a world is also implemented on this branch. None of these is connected to the
+page, and the game itself is not implemented.
 
 ## Version 1 authored content
 
@@ -143,13 +145,14 @@ always gives the same result, whatever the time, locale or browser. Tests show
 long worlds with 28 places and 14 required steps finish within the limit. The
 limit is a cautious first value. Generator tests also check the authored
 light fantasy worlds, including every long plot, within this limit.
-There is no rendered story, command execution or playable adventure.
+There is no rendered story or playable adventure in the browser. Commands
+can be run against a world by the play module described below.
 
 ## Typed command parser
 
 [Issue #27](https://github.com/juadielon/textQuest/issues/27) adds
-`parseCommand(input, targets)` in `src/engine/commands.ts`. It is a standalone
-parser on this branch, not connected to the page or a play module.
+`parseCommand(input, targets)` in `src/engine/commands.ts`. The play module
+below uses it; neither is connected to the page.
 
 It handles movement, look/examine, inventory, take, use (an item alone or on
 a target), talk, authored story choices, hint, undo and help. Common short
@@ -173,8 +176,41 @@ because IDs may repeat across kinds. Ambiguous results also include discovered
 taking a person. It cannot check location, inventory, locked exits or puzzle
 success.
 The caller must exclude hidden names, hidden aliases and unavailable choices.
-Parsing never changes targets or player state. Execution, turn counting,
-suggestions, hint content and undo history remain unimplemented.
+Parsing never changes targets or player state.
+
+## Playing a world
+
+[Issue #36](https://github.com/juadielon/textQuest/issues/36) adds
+`src/engine/play.ts`. `startPlay(world)` begins at the start place.
+`playCommand(world, state, input)` parses typed input against
+`discoveredTargets(world, state)` and returns a new state and a short
+response. Neither the world nor the input state is changed.
+
+The state tracks the place, inventory, found clues, completed steps, opened
+exits, turn count, whether the goal is reached and the previous state for
+undo. Moves, takes and successful uses count as turns; look, examine,
+inventory, hint and help are free. `replayCommands(world, inputs)` always
+gives the same state, so saves can store a command list.
+
+Play follows the winnability checker's rules. Entering a place reveals its
+clues. Items must be taken. A step that needs items happens when the player
+uses one of them at the step's place; other steps happen by themselves once
+their conditions hold. Tests check that following hints wins worlds the
+checker calls winnable. Hints suggest taking a needed item, using something
+or the next place on a shortest winning route, without naming answers.
+
+Discovered targets never include puzzle steps, the goal, unfound clues, items
+elsewhere or places out of sight. Targets use world IDs with their kind, so a
+place and an item may share an ID. Names come from IDs until content packs are
+connected to play. Names that collide after parser normalisation get stable
+numbered suffixes, such as `red key (item 4)`. Look, inventory and hints use
+these same names. Names that clash with movement or item-use grammar get a
+short numbered name, such as `exit 4` or `item 5`, instead.
+Original names stay available as aliases, but can be
+ambiguous; use the displayed name to pick a particular target.
+Version 1 worlds have no compass directions, people or story choices, so
+those commands get a plain explanation. Prose, autocomplete, checkpoints and
+the browser screen are later steps.
 
 ## Save format and storage
 
