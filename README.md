@@ -204,7 +204,7 @@ response. Neither the world nor the input state is changed.
 The state tracks the place, inventory, found clues, completed steps, opened
 exits, turn count, whether the goal is reached and the previous state for
 undo. Moves, takes and successful uses count as turns; look, examine,
-inventory, hint and help are free. `replayCommands(world, inputs)` always
+inventory, talk, hint and help are free. `replayCommands(world, inputs)` always
 gives the same state, so saves can store a command list.
 
 Play follows the winnability checker's rules. Entering a place reveals its
@@ -216,13 +216,20 @@ or the next place on a shortest winning route, without naming answers.
 
 Discovered targets never include puzzle steps, the goal, unfound clues, items
 elsewhere or places out of sight. Targets use world IDs with their kind, so a
-place and an item may share an ID. Names come from IDs until content packs are
-connected to play. Names that collide after parser normalisation get stable
+place and an item may share an ID. Without content-pack names, names come
+from IDs. `worldNamesFrom(pack, world)` in `src/content/v1/world-names.ts`
+looks up pack names for any genre's world; pass them as the world's `names`
+to show and accept them. Shorter aliases are made from each name, so
+`Mara the miller` also answers to `mara` and `miller`; aliases that clash
+with a name, or read as a direction, are dropped. People appear only at
+their place, and you can examine and talk to them. A locked way is called
+`the locked way` until the player knows where it leads, so unknown places
+stay hidden. Names that collide after parser normalisation get stable
 numbered suffixes, such as `red key (item 4)`. Look, inventory and hints use
 these same names. Original names stay available as aliases, but can be
 ambiguous; use the displayed name to pick a particular target.
-Version 1 worlds have no compass directions, people or story choices, so
-those commands get a plain explanation. Prose, autocomplete and checkpoints
+Version 1 worlds have no compass directions or story choices, so those
+commands get a plain explanation. Prose, autocomplete and checkpoints
 are later steps.
 
 ## Play screen

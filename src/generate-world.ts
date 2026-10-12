@@ -9,6 +9,14 @@ const versionOnePacks: Readonly<Partial<Record<AdventureGenre, ContentPack>>> = 
 };
 
 /**
+ * The version 1 content pack the generator uses for a genre, so play can
+ * show that pack's names and text. Undefined while a genre has no pack.
+ */
+export function versionOnePack(genre: AdventureGenre): ContentPack | undefined {
+  return versionOnePacks[genre];
+}
+
+/**
  * Builds a detached world from version 1's authored light fantasy plans.
  *
  * @param settings - Valid settings whose genre matches the seed and version.
