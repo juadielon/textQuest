@@ -121,8 +121,8 @@ or import save files. Invalid files and storage errors are reported clearly.
 ### 7. Browser game
 
 **Status:** In progress — a start screen for new adventures and share words
-([issue #41](https://github.com/juadielon/textQuest/issues/41)) is awaiting
-review in [pull request #46](https://github.com/juadielon/textQuest/pull/46).
+([issue #41](https://github.com/juadielon/textQuest/issues/41)) is implemented
+in [pull request #46](https://github.com/juadielon/textQuest/pull/46).
 Play and saves are not in the browser yet.
 
 **Outcome:** A responsive, accessible browser app brings together adventure
