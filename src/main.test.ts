@@ -5,7 +5,7 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-it('mounts the placeholder when the browser entry point loads', async () => {
+it('mounts the start screen when the browser entry point loads', async () => {
   const app = document.createElement('main');
   app.id = 'app';
   document.body.append(app);
@@ -13,5 +13,6 @@ it('mounts the placeholder when the browser entry point loads', async () => {
   await import('./main');
 
   expect(app.querySelector('h1')?.textContent).toBe('textQuest');
-  expect(app.querySelector('.status')?.textContent).toContain('not playable yet');
+  expect(app.querySelector('#new-adventure')).not.toBeNull();
+  expect(app.querySelector('#open-share-word')).not.toBeNull();
 });

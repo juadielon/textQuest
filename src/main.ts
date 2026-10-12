@@ -1,8 +1,8 @@
 import './style.css';
-import { renderPlaceholder } from './status';
+import { renderStartScreen } from './start-screen';
 
 const app = document.querySelector<HTMLElement>('#app');
 
 if (app) {
-  renderPlaceholder(app);
+  renderStartScreen(app);
 }
