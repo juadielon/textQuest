@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AdventureWorld, Conditions, Effect } from './adventure-world';
-import { checkWinnability } from './winnability';
+import { checkWinnability, MAX_SEARCH_STATES } from './winnability';
 
 function sampleWorld(): AdventureWorld {
   return {
@@ -37,6 +37,85 @@ function sampleWorld(): AdventureWorld {
   };
 }
 
+const twoWay = (from: string, to: string) => [
+  { id: `${from}-${to}`, fromPlaceId: from, toPlaceId: to, locked: false },
+  { id: `${to}-${from}`, fromPlaceId: to, toPlaceId: from, locked: false },
+];
+
+// A long adventure: 27 rooms off one hall, with 14 chained steps needing items
+// from different rooms. Tracking each order of visits separately runs out of memory.
+function longHubWorld(): AdventureWorld {
+  const rooms = Array.from({ length: 27 }, (_, index) => `room-${index}`);
+  const steps = Array.from({ length: 14 }, (_, index) => ({
+    id: `step-${index}`, placeId: 'hall',
+    conditions: {
+      itemsHeld: [`item-${index}`],
+      stepsDone: index ? [`step-${index - 1}`] : [],
+    },
+    effects: [],
+  }));
+  return {
+    version: 1, startPlaceId: 'hall',
+    places: [{ id: 'hall' }, ...rooms.map((id) => ({ id }))],
+    exits: rooms.flatMap((room) => twoWay('hall', room)),
+    items: steps.map((_, index) => ({ id: `item-${index}`, placeId: `room-${index * 2}` })),
+    clues: [],
+    solution: { steps, goal: { placeId: 'hall', conditions: { stepsDone: ['step-13'] } } },
+  };
+}
+
+// A long adventure in 14 sections. Each section's step needs an item from its
+// side room and unlocks a one-way gate. Side rooms have one-way drops back.
+function longGatedWorld(): AdventureWorld {
+  const sections = Array.from({ length: 14 }, (_, index) => index);
+  return {
+    version: 1, startPlaceId: 'hall-0',
+    places: sections.flatMap((index) => [{ id: `hall-${index}` }, { id: `side-${index}` }]),
+    exits: sections.flatMap((index) => [
+      ...twoWay(`hall-${index}`, `side-${index}`),
+      ...(index < 13 ? [
+        { id: `gate-${index}`, fromPlaceId: `hall-${index}`, toPlaceId: `hall-${index + 1}`, locked: true },
+      ] : []),
+      ...(index > 0 ? [
+        { id: `drop-${index}`, fromPlaceId: `side-${index}`, toPlaceId: `hall-${index - 1}`, locked: false },
+      ] : []),
+    ]),
+    items: sections.map((index) => ({ id: `key-${index}`, placeId: `side-${index}` })),
+    clues: [],
+    solution: {
+      steps: sections.map((index) => ({
+        id: `open-${index}`, placeId: `hall-${index}`,
+        conditions: { itemsHeld: [`key-${index}`] },
+        effects: index < 13 ? [{ kind: 'unlock-exit' as const, exitId: `gate-${index}` }] : [],
+      })),
+      goal: { placeId: 'hall-13', conditions: { stepsDone: ['open-13'] } },
+    },
+  };
+}
+
+// Every level offers two one-way rooms with different items, so the number of
+// separate routes doubles each level.
+function branchingWorld(levels: number): AdventureWorld {
+  const indexes = Array.from({ length: levels }, (_, index) => index);
+  return {
+    version: 1, startPlaceId: 'junction-0',
+    places: [
+      ...indexes.flatMap((index) => [
+        { id: `junction-${index}` }, { id: `left-${index}` }, { id: `right-${index}` },
+      ]),
+      { id: `junction-${levels}` },
+    ],
+    exits: indexes.flatMap((index) => ['left', 'right'].flatMap((side) => [
+      { id: `to-${side}-${index}`, fromPlaceId: `junction-${index}`, toPlaceId: `${side}-${index}`, locked: false },
+      { id: `from-${side}-${index}`, fromPlaceId: `${side}-${index}`, toPlaceId: `junction-${index + 1}`, locked: false },
+    ])),
+    items: indexes.flatMap((index) => ['left', 'right'].map((side) => ({
+      id: `${side}-item-${index}`, placeId: `${side}-${index}`,
+    }))),
+    clues: [],
+    solution: { steps: [], goal: { placeId: `junction-${levels}`, conditions: {} } },
+  };
+}
 describe('checkWinnability', () => {
   it('wins a hand-built world with items, clues, steps, a return trip and an unlocked exit', () => {
     const world = sampleWorld();
@@ -217,5 +296,57 @@ describe('checkWinnability', () => {
       .toThrow('not supported');
     expect(() => checkWinnability(JSON.parse(data.replace('unlock-exit', 'remove-item'))))
       .toThrow('Unknown puzzle effect');
+  });
+
+  it('only joins places once a one-way route has an unlocked way back', () => {
+    const world: AdventureWorld = {
+      version: 1, startPlaceId: 'entry',
+      places: [{ id: 'entry' }, { id: 'cellar' }],
+      exits: [
+        { id: 'drop', fromPlaceId: 'entry', toPlaceId: 'cellar', locked: false },
+        { id: 'ladder', fromPlaceId: 'cellar', toPlaceId: 'entry', locked: true },
+      ],
+      items: [{ id: 'lamp', placeId: 'cellar' }], clues: [],
+      solution: {
+        steps: [{
+          id: 'lower-ladder', placeId: 'cellar', conditions: {},
+          effects: [{ kind: 'unlock-exit', exitId: 'ladder' }],
+        }],
+        goal: { placeId: 'entry', conditions: { itemsHeld: ['lamp'] } },
+      },
+    };
+    expect(checkWinnability(world)).toEqual({ winnable: true, unreachableStepIds: [] });
+    expect(checkWinnability({
+      ...world,
+      solution: { ...world.solution, steps: [{ ...world.solution.steps[0], effects: [] }] },
+    })).toEqual({ winnable: false, unreachableStepIds: [] });
+  });
+
+  it('checks long worlds with 28 places and 14 required steps within the limit', () => {
+    for (const world of [longHubWorld(), longGatedWorld()]) {
+      expect(world.places).toHaveLength(28);
+      expect(world.solution.steps).toHaveLength(14);
+      expect(checkWinnability(world)).toEqual({ winnable: true, unreachableStepIds: [] });
+    }
+  });
+
+  it('still reports unwinnable long worlds', () => {
+    const world = longGatedWorld();
+    expect(checkWinnability({
+      ...world, items: world.items.map((item) => item.id === 'key-6' ? { id: item.id } : item),
+    })).toEqual({
+      winnable: false,
+      unreachableStepIds: Array.from({ length: 8 }, (_, index) => `open-${index + 6}`),
+    });
+  });
+
+  it('reports a world over the search limit as too large, never winnable', () => {
+    expect(MAX_SEARCH_STATES).toBe(10_000);
+    expect(checkWinnability(branchingWorld(10))).toEqual({
+      winnable: true, unreachableStepIds: [],
+    });
+    const result = checkWinnability(branchingWorld(16));
+    expect(result).toEqual({ winnable: false, tooLarge: true });
+    expect(checkWinnability(branchingWorld(16))).toEqual(result);
   });
 });

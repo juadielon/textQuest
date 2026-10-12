@@ -52,9 +52,10 @@ not yet shown in the browser, and adventures are not generated from them yet.
 
 ### 4. Stories, places and puzzles
 
-**Status:** In progress — world model and winnability checker implemented on
-a branch; awaiting review:
-[issue #12](https://github.com/juadielon/textQuest/issues/12)
+**Status:** In progress — world model and winnability checker implemented
+([issue #12](https://github.com/juadielon/textQuest/issues/12)). A search
+limit for large worlds is on a branch, awaiting review:
+[issue #16](https://github.com/juadielon/textQuest/issues/16)
 
 **Outcome:** Adventures have connected places, story goals, clues, items and
 several kinds of solvable puzzles. The player can find optional details and
