@@ -8,7 +8,7 @@ import { summariseAdventure } from './start-screen-model';
 
 let app: HTMLElement;
 const settings = Array.from({ length: 100 }, (_, seed) =>
-  adventureSettings.createAdventureSettings(seed, 'long'))
+  adventureSettings.createAdventureSettings(seed, 'short'))
   .find((value) => value.genre === 'light-fantasy')!;
 
 beforeEach(async () => {
@@ -49,7 +49,7 @@ function expectPlay(): void {
   expect(shownDetails()).toEqual({
     'Share word': adventureSettings.encodeShareWord(settings),
     Genre: summariseAdventure(settings).genreLabel,
-    Length: 'Long',
+    Length: 'Short',
   });
   expect(document.activeElement).toBe(get('h1'));
   expect(get('h1').getAttribute('tabindex')).toBe('-1');
@@ -67,11 +67,11 @@ it('mounts the start screen and focuses its heading', () => {
 it('opens a new adventure in play with the selected settings', async () => {
   const module = await import('./adventure-settings');
   const create = vi.spyOn(module, 'createNewAdventureSettings').mockReturnValue(settings);
-  get<HTMLInputElement>('#length-long').checked = true;
+  get<HTMLInputElement>('#length-short').checked = true;
 
   get<HTMLFormElement>('#new-adventure').requestSubmit();
 
-  expect(create).toHaveBeenCalledExactlyOnceWith('long', undefined);
+  expect(create).toHaveBeenCalledExactlyOnceWith('short', undefined);
   expectPlay();
 });
 
