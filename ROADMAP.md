@@ -25,7 +25,7 @@ templates and pull request template.
 
 ### 2. Docker development setup
 
-**Status:** In progress — issue #2
+**Status:** Done — issue #2, pull request #5
 
 **Outcome:** Contributors can install project dependencies, run the browser
 placeholder, build it and run tests through Docker, without installing
