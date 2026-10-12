@@ -106,10 +106,11 @@ the whole game is finished. Keep later features in separate branches and
 pull requests. Fixes needed for the same review belong in its existing pull
 request.
 
-Copilot agents can review a change with the `code-review` skill in
-`.github/skills/code-review/SKILL.md`. It checks the change against these
-rules and reports problems without editing anything. Its report helps the
-reviewer but does not replace human approval.
+Copilot agents must run the `code-review` skill in
+`.github/skills/code-review/SKILL.md` before opening a pull request, and fix
+or explain what it finds. It checks the change against these rules and reports
+problems without editing anything. Its report helps the reviewer but does not
+replace human approval.
 
 If a step depends on an unmerged pull request, base it on that branch and
 target that branch so reviewers see only the new step. State the dependency
