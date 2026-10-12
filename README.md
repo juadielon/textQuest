@@ -5,10 +5,10 @@ authored stories and game rules, without using an LLM while you play.
 
 This repository includes a Docker-run browser placeholder, the rules for
 repeatable adventure settings and share words, a world model with a
-winnability checker, and deterministic light fantasy world generation.
-A command parser and a pure play module that runs parsed commands against a
-world are also implemented on this branch. Neither is connected to the page,
-and the game itself is not implemented.
+winnability checker, deterministic light fantasy world generation, a command
+parser and a save format. A pure play module that runs parsed commands against
+a world is also implemented on this branch. None of these is connected to the
+page, and the game itself is not implemented.
 
 ## Version 1 authored content
 
@@ -201,6 +201,22 @@ ambiguous; use the displayed name to pick a particular target.
 Version 1 worlds have no compass directions, people or story choices, so
 those commands get a plain explanation. Prose, autocomplete, checkpoints and
 the browser screen are later steps.
+
+## Save format and storage
+
+[Issue #34](https://github.com/juadielon/textQuest/issues/34) adds a
+versioned save format in `src/saves.ts`. A save holds an adventure name, the
+starting settings, every command the player typed and two timestamps.
+Progress will be rebuilt by replaying the commands, which is a later step.
+Saves never contain puzzle solutions.
+
+`createSaveStore(storage)` lists, adds, updates, loads and deletes saves in
+any `Storage`-like object, such as `localStorage`. Each save has its own key,
+so a failed write never damages another save. Export gives JSON text. Import
+treats the file as untrusted, rejects damaged, oversized (over 1,000,000
+characters) or newer-version files with a clear message, and stores a good
+file as a new save. A full or blocked storage is reported clearly. There are
+no save screens in the browser yet.
 
 ## Project documents
 
