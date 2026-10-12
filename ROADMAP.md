@@ -104,8 +104,9 @@ choices will need later rules and their own checks.
 
 ### 5. Commands and recovery
 
-**Status:** Planned — first step: parse typed player commands
-([issue #27](https://github.com/juadielon/textQuest/issues/27))
+**Status:** In progress — pure typed command parser
+([issue #27](https://github.com/juadielon/textQuest/issues/27)) is implemented in
+[pull request #29](https://github.com/juadielon/textQuest/pull/29)
 
 **Outcome:** Players can act through typed commands with suggestions, request
 hints, undo actions and return to checkpoints. Occasional non-graphic violent
@@ -113,14 +114,23 @@ choices can change the story; there is no turn-based combat system.
 
 **Depends on:** Milestones 3 and 4.
 
+The parser returns structured actions or clear errors using only discovered
+names supplied by its caller. It handles the planned verbs and common short
+forms without changing state. Command execution, turn counting, suggestions,
+hint content, undo history and checkpoints are not implemented.
+
 ### 6. Saves
 
-**Status:** Planned
+**Status:** In progress — save format and storage wrapper implemented
+([issue #34](https://github.com/juadielon/textQuest/issues/34)).
 
 **Outcome:** Players can save several adventures in their browser and export
 or import save files. Invalid files and storage errors are reported clearly.
 
 **Depends on:** Milestones 3 and 5.
+
+The first step stores settings and typed commands, with unit tests. Replaying
+commands into a world and the save screens are not implemented.
 
 ### 7. Browser game
 

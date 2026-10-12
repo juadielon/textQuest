@@ -164,7 +164,7 @@ export const cosyMystery = {
     { id: 'side-key', name: 'Side door key', description: ['A key to the hall side door, kept for the flower volunteers.'] },
   ],
   clues: [
-    { id: 'postmark-chart', placeId: 'post-office', name: 'Postmark chart', text: ['A round postmark means the village; a square one means the town sorting office.'] },
+    { id: 'postmark-chart', placeId: 'post-office', name: 'Postmark chart', text: ['The unsigned note has a round postmark. A round postmark means the village; a square one means the town sorting office.'] },
     { id: 'loan-card', placeId: 'library', name: 'Loan card', text: ['The book on fete history went out on Friday and came back on Saturday.'] },
     { id: 'bookmark', placeId: 'reading-room', name: 'Raffle bookmark', text: ['A Friday raffle ticket marks the page about the Silver Teapot.'] },
     { id: 'cabinet-note', placeId: 'church-hall', name: 'Cabinet notice', text: ['Open the cabinet only with ', { kind: 'item', id: 'cabinet-key' }, ', then return the key to the tent.'] },
@@ -173,8 +173,8 @@ export const cosyMystery = {
     { id: 'timetable', placeId: 'signal-box', name: 'Saturday timetable', text: ['The evening train left early, so the late post went out by bicycle.'] },
     { id: 'clock-note', placeId: 'clock-workshop', name: 'Repair tag', text: ['Wind with ', { kind: 'item', id: 'clock-key' }, '; the clock repeats the last hour it struck.'] },
     { id: 'sundial-motto', placeId: 'manor-garden', name: 'Sundial motto', text: ['Follow the noon shadow and you will face the sea.'] },
-    { id: 'fete-photo', placeId: 'lodge', name: 'Old fete photo', text: [{ kind: 'character', id: 'keeper' }, ' stands beside the teapot, holding a polishing cloth.'] },
-    { id: 'garden-photo', placeId: 'conservatory', name: 'Garden party photo', text: ['The teapot gleams on a table by the lighthouse steps.'] },
+    { id: 'fete-photo', placeId: 'lodge', name: 'Old fete photo', text: [{ kind: 'character', id: 'keeper' }, ' stands beside the teapot, holding a polishing cloth. The teapot has a crescent notch in its handle.'] },
+    { id: 'garden-photo', placeId: 'conservatory', name: 'Garden party photo', text: [{ kind: 'character', id: 'keeper' }, ' polishes the teapot on a table by the lighthouse steps. The teapot has a crescent notch in its handle.'] },
     { id: 'chest-note', placeId: 'cliff-path', name: 'Painted sign', text: ['Lighthouse treasures rest in the sea chest; ask before you borrow the key.'] },
     { id: 'old-rumour', name: 'Tea room rumour', text: ['The hall has a side door, and the flower volunteers keep a spare key.'] },
   ],
@@ -191,8 +191,8 @@ export const cosyMystery = {
     },
     {
       id: 'check-loans', placeId: 'library', family: 'compare-clues',
-      prompt: ['Who was reading about the Silver Teapot before it vanished?'],
-      completion: ['You compare ', { kind: 'clue', id: 'loan-card' }, ' with ', { kind: 'clue', id: 'bookmark' }, '; the reader was at the Friday raffle.'],
+      prompt: ['Which raffle does the ticket in the returned book come from?'],
+      completion: ['You compare ', { kind: 'clue', id: 'loan-card' }, ' with ', { kind: 'clue', id: 'bookmark' }, '; the ticket is from the Friday raffle.'],
     },
     {
       id: 'open-cabinet', placeId: 'church-hall', family: 'use-item',
@@ -206,7 +206,7 @@ export const cosyMystery = {
     },
     {
       id: 'compare-seeds', placeId: 'allotments', family: 'compare-clues',
-      prompt: ['What was swapped at the allotments on Saturday?'],
+      prompt: ['Where did the tin of polish swapped for sweet peas go?'],
       completion: ['You compare ', { kind: 'clue', id: 'seed-label' }, ' with ', { kind: 'clue', id: 'swap-ledger' }, '; a tin of polish went to the lighthouse.'],
     },
     {
@@ -216,8 +216,8 @@ export const cosyMystery = {
     },
     {
       id: 'wind-clock', placeId: 'clock-workshop', family: 'use-item',
-      prompt: ['Find out when the mantel clock from the hall stopped.'],
-      completion: ['You wind it with ', { kind: 'item', id: 'clock-key' }, '; it chimes the hour the hall was locked.'],
+      prompt: ['Find out which hour the mantel clock from the hall last struck.'],
+      completion: ['You wind it with ', { kind: 'item', id: 'clock-key' }, '; it repeats its last chime: seven.'],
     },
     {
       id: 'return-parcel', placeId: 'rose-cottage', family: 'help-character',
@@ -226,13 +226,13 @@ export const cosyMystery = {
     },
     {
       id: 'read-sundial', placeId: 'manor-garden', family: 'read-clue',
-      prompt: ['Read the sundial to learn which way the cyclist turned at noon.'],
+      prompt: ['Use the sundial motto to find the direction towards the sea.'],
       completion: ['Using ', { kind: 'clue', id: 'sundial-motto' }, ', you follow the noon shadow towards the sea.'],
     },
     {
       id: 'compare-photos', placeId: 'conservatory', family: 'compare-clues',
       prompt: ['Do the two photographs show the same teapot?'],
-      completion: ['You compare ', { kind: 'clue', id: 'fete-photo' }, ' with ', { kind: 'clue', id: 'garden-photo' }, '; both show the teapot in the care of ', { kind: 'character', id: 'keeper' }, '.'],
+      completion: ['You compare ', { kind: 'clue', id: 'fete-photo' }, ' with ', { kind: 'clue', id: 'garden-photo' }, '; the matching crescent notch identifies the same teapot, both times in the care of ', { kind: 'character', id: 'keeper' }, '.'],
     },
     {
       id: 'open-sea-chest', placeId: 'lamp-room', family: 'use-item',
