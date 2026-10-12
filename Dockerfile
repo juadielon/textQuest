@@ -5,6 +5,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY index.html tsconfig.json ./
 COPY src ./src
+COPY public ./public
 RUN npm run build
 
 FROM nginx:alpine
