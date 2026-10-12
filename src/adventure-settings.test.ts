@@ -82,6 +82,8 @@ describe('version 1 share words', () => {
     expect(encodeShareWord(settings)).toBe(word);
   });
 
+  // Checking every seed takes a few seconds, so a busy machine can push it past
+  // Vitest's 5-second default. Give it more room.
   it('round-trips every version 1 seed and length to one canonical word', () => {
     const words = new Set<string>();
 
@@ -96,7 +98,7 @@ describe('version 1 share words', () => {
     }
 
     expect(words.size).toBe(versionOneFirstWords.length * versionOneSecondWords.length);
-  });
+  }, 30_000);
 
   it('accepts capitals, spaces and hyphens but encodes them one way', () => {
     const settings = parseShareWord('silverlantern');
