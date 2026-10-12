@@ -90,12 +90,16 @@ choices can change the story; there is no turn-based combat system.
 
 ### 6. Saves
 
-**Status:** Planned
+**Status:** In progress — save format and storage wrapper awaiting review
+([issue #34](https://github.com/juadielon/textQuest/issues/34)).
 
 **Outcome:** Players can save several adventures in their browser and export
 or import save files. Invalid files and storage errors are reported clearly.
 
 **Depends on:** Milestones 3 and 5.
+
+The first step stores settings and typed commands, with unit tests. Replaying
+commands into a world and the save screens are not implemented.
 
 ### 7. Browser game
 

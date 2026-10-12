@@ -4,8 +4,8 @@ textQuest is a planned text adventure game. It will build adventures from
 authored stories and game rules, without using an LLM while you play.
 
 This repository includes a Docker-run browser placeholder, the rules for
-repeatable adventure settings and share words, and a world model with a
-winnability checker. The game itself is not implemented.
+repeatable adventure settings and share words, a world model with a
+winnability checker, and a save format. The game itself is not implemented.
 
 ## Adventure settings and share words
 
@@ -68,6 +68,22 @@ long worlds with 28 places and 14 required steps finish within the limit. The
 limit is a cautious first value and will be retuned once real generated
 worlds exist. Tests use hand-built data only.
 There is no generated story, player command handling or playable adventure.
+
+## Save format and storage
+
+[Issue #34](https://github.com/juadielon/textQuest/issues/34) adds a
+versioned save format in `src/saves.ts`. A save holds an adventure name, the
+starting settings, every command the player typed and two timestamps.
+Progress will be rebuilt by replaying the commands, which is a later step.
+Saves never contain puzzle solutions.
+
+`createSaveStore(storage)` lists, adds, updates, loads and deletes saves in
+any `Storage`-like object, such as `localStorage`. Each save has its own key,
+so a failed write never damages another save. Export gives JSON text. Import
+treats the file as untrusted, rejects damaged, oversized (over 1,000,000
+characters) or newer-version files with a clear message, and stores a good
+file as a new save. A full or blocked storage is reported clearly. There are
+no save screens in the browser yet.
 
 ## Project documents
 
