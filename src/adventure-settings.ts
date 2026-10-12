@@ -6,13 +6,25 @@ import { versionOneFirstWords, versionOneSecondWords } from './share-words';
  * and display titles are deliberately not part of this contract.
  */
 
-/** Adventure lengths a player can choose, in share-word order. Never reorder. */
+/**
+ * Adventure lengths a player can choose, in share-word order.
+ *
+ * @remarks
+ * Never add, remove, rename or reorder entries. Released version 1 share
+ * words depend on this exact list; a change needs a new version.
+ */
 export const adventureLengths = ['short', 'medium', 'long'] as const;
 
 /** How long an adventure is: short, medium or long. */
 export type AdventureLength = (typeof adventureLengths)[number];
 
-/** Every genre an adventure can have. */
+/**
+ * Every genre an adventure can have, in the order the seed picks from.
+ *
+ * @remarks
+ * Never add, remove, rename or reorder entries. Released version 1 share
+ * words depend on this exact list; a change needs a new version.
+ */
 export const adventureGenres = ['light-fantasy', 'cosy-mystery', 'science-fiction'] as const;
 
 /** The genre of an adventure, which is chosen from its seed. */
