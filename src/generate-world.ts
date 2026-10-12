@@ -1,19 +1,24 @@
 import { createAdventureSettings, type AdventureGenre, type AdventureSettings } from './adventure-settings';
 import type { AdventureWorld } from './adventure-world';
 import type { ContentPack } from './content/v1/format';
+import { cosyMystery } from './content/v1/cosy-mystery';
 import { lightFantasy } from './content/v1/light-fantasy';
+import { scienceFiction } from './content/v1/science-fiction';
 import { createSeededRandom } from './seeded-random';
 
-const versionOnePacks: Readonly<Partial<Record<AdventureGenre, ContentPack>>> = {
+// A full record makes the compiler reject a version 1 genre without a pack.
+const versionOnePacks: Readonly<Record<AdventureGenre, ContentPack>> = {
   'light-fantasy': lightFantasy,
+  'cosy-mystery': cosyMystery,
+  'science-fiction': scienceFiction,
 };
 
 /**
- * Builds a detached world from version 1's authored light fantasy plans.
+ * Builds a detached world from the version 1 content pack for the seed's genre.
  *
  * @param settings - Valid settings whose genre matches the seed and version.
  * @returns The same world for the same settings, without changing the content pack.
- * @throws RangeError for invalid settings or a genre without a content pack.
+ * @throws RangeError for invalid settings.
  * @remarks Changes to these selection rules require a new adventure version.
  */
 export function generateAdventureWorld(settings: AdventureSettings): AdventureWorld {
@@ -22,9 +27,6 @@ export function generateAdventureWorld(settings: AdventureSettings): AdventureWo
     throw new RangeError('The genre does not match this seed and version.');
   }
   const pack = versionOnePacks[settings.genre];
-  if (!pack) {
-    throw new RangeError(`World generation for ${settings.genre} is not supported yet.`);
-  }
 
   const random = createSeededRandom(settings.seed);
   // The first draw chose the genre; the next chooses the plot independently.
