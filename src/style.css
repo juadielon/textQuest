@@ -112,16 +112,10 @@ main {
   gap: 1rem;
 }
 
-.panel,
-.result:not(:empty) {
+.panel {
   padding: 1rem 1.25rem;
   border: 1px solid var(--border);
   border-radius: 0.5rem;
-}
-
-.result:not(:empty) {
-  margin-top: 1rem;
-  border-left: 4px solid var(--accent);
 }
 
 h2 {
@@ -212,9 +206,4 @@ dt {
 dd {
   margin: 0;
   overflow-wrap: anywhere;
-}
-
-.coming-soon {
-  margin: 0;
-  color: var(--muted);
 }

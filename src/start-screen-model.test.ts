@@ -69,14 +69,15 @@ describe('readShareWord', () => {
   it('reads a valid word typed with capitals and spaces', () => {
     const result = readShareWord('  Silver Lantern ');
 
-    expect(result).toEqual({ ok: true, summary: summariseAdventure(parseShareWord('silverlantern')) });
+    const settings = parseShareWord('silverlantern');
+    expect(result).toEqual({ ok: true, settings, summary: summariseAdventure(settings) });
   });
 
   it('gives the same settings back for a new adventure share word', () => {
     const settings = createAdventureSettings(1234, 'long');
     const { shareWord } = summariseAdventure(settings);
 
-    expect(readShareWord(shareWord)).toEqual({ ok: true, summary: summariseAdventure(settings) });
+    expect(readShareWord(shareWord)).toEqual({ ok: true, settings, summary: summariseAdventure(settings) });
   });
 
   it('uses the existing message for a misspelt word', () => {

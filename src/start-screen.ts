@@ -1,6 +1,7 @@
 import {
   adventureLengths,
   createNewAdventureSettings,
+  type AdventureSettings,
   type RandomValueSource,
 } from './adventure-settings';
 import {
@@ -8,19 +9,15 @@ import {
   isAdventureLength,
   lengthLabels,
   readShareWord,
-  summariseAdventure,
-  type AdventureSummary,
 } from './start-screen-model';
 
 /** The game's name, shown as the page heading. */
 export const gameTitle = 'textQuest';
 
-/** Explains that play isn't in the browser yet, so the screen doesn't fake it. */
-export const comingSoonMessage =
-  'Playing adventures is coming soon. Keep your share word so you can start this adventure when play arrives.';
-
 /** Options for {@link renderStartScreen}. */
 export interface StartScreenOptions {
+  /** Opens play with the chosen or shared adventure's settings. */
+  readonly onStart: (settings: AdventureSettings) => void;
   /** Where new seeds get random numbers. Defaults to browser cryptographic randomness. */
   readonly randomSource?: RandomValueSource;
 }
@@ -83,43 +80,22 @@ function buildShareWordForm(): HTMLFormElement {
   );
 }
 
-function showSummary(result: HTMLElement, heading: string, summary: AdventureSummary): void {
-  const details = create('dl');
-  for (const [term, value] of [
-    ['Share word', summary.shareWord],
-    ['Genre', summary.genreLabel],
-    ['Length', summary.lengthLabel],
-  ]) {
-    details.append(create('dt', {}, term), create('dd', {}, value));
-  }
-  result.replaceChildren(
-    create('h2', {}, heading),
-    details,
-    create('p', { className: 'coming-soon' }, comingSoonMessage),
-  );
-}
-
 /**
  * Replaces the contents of `target` with the start screen. Players can start
- * a new adventure of a chosen length or type a share word to see its settings.
+ * a new adventure of a chosen length or open a share word through `onStart`.
  *
  * @remarks
- * Only settings are shown; play and saves are not part of this screen yet.
- * Typed text is only ever shown with `textContent`, never as HTML.
+ * Focus moves to the heading. Invalid share words stay on this screen with
+ * a plain-text error; typed text is never inserted as HTML.
  *
  * @param target - The element to render into, usually `#app`.
- * @param options - Optional test hooks, such as a fixed random source.
+ * @param options - The navigation callback and optional fixed random source.
  */
-export function renderStartScreen(target: HTMLElement, options: StartScreenOptions = {}): void {
+export function renderStartScreen(target: HTMLElement, options: StartScreenOptions): void {
   const newForm = buildNewAdventureForm();
   const shareForm = buildShareWordForm();
   const shareInput = shareForm.querySelector<HTMLInputElement>('#share-word')!;
   const shareError = shareForm.querySelector<HTMLElement>('#share-word-error')!;
-
-  // A polite live region so screen readers hear the new settings.
-  const result = create('section', { className: 'result', id: 'adventure-result' });
-  result.setAttribute('aria-live', 'polite');
-  result.setAttribute('aria-label', 'Adventure settings');
 
   const clearError = (): void => {
     shareError.textContent = '';
@@ -133,7 +109,7 @@ export function renderStartScreen(target: HTMLElement, options: StartScreenOptio
       return;
     }
     clearError();
-    showSummary(result, 'Your new adventure', summariseAdventure(createNewAdventureSettings(length, options.randomSource)));
+    options.onStart(createNewAdventureSettings(length, options.randomSource));
   });
 
   shareForm.addEventListener('submit', (event) => {
@@ -141,20 +117,19 @@ export function renderStartScreen(target: HTMLElement, options: StartScreenOptio
     const outcome = readShareWord(shareInput.value);
     if (outcome.ok) {
       clearError();
-      showSummary(result, 'Shared adventure', outcome.summary);
+      options.onStart(outcome.settings);
       return;
     }
-    // Remove old settings so they can't be mistaken for this word's.
-    result.replaceChildren();
     shareError.textContent = outcome.message;
     shareInput.setAttribute('aria-invalid', 'true');
     shareInput.focus();
   });
 
+  const heading = create('h1', { tabIndex: -1 }, gameTitle);
   target.replaceChildren(
-    create('h1', {}, gameTitle),
+    heading,
     create('p', { className: 'intro' }, 'Start a new text adventure, or type a share word to open one a friend made.'),
     create('div', { className: 'panels' }, newForm, shareForm),
-    result,
   );
+  heading.focus();
 }

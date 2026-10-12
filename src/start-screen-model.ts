@@ -42,9 +42,9 @@ export interface AdventureSummary {
   readonly lengthLabel: string;
 }
 
-/** The result of reading a typed share word: a summary, or a message to show. */
+/** Settings and their summary from a typed share word, or a message to show. */
 export type ShareWordResult =
-  | { readonly ok: true; readonly summary: AdventureSummary }
+  | { readonly ok: true; readonly settings: AdventureSettings; readonly summary: AdventureSummary }
   | { readonly ok: false; readonly message: string };
 
 /**
@@ -76,7 +76,7 @@ export function summariseAdventure(settings: AdventureSettings): AdventureSummar
  * Reads a share word the player typed, without throwing for bad input.
  *
  * @param input - The text the player entered.
- * @returns The adventure summary, or the plain-English message from
+ * @returns The settings and summary, or the plain-English message from
  * {@link parseShareWord} (or {@link emptyShareWordMessage} for blank input).
  */
 export function readShareWord(input: string): ShareWordResult {
@@ -84,7 +84,8 @@ export function readShareWord(input: string): ShareWordResult {
     return { ok: false, message: emptyShareWordMessage };
   }
   try {
-    return { ok: true, summary: summariseAdventure(parseShareWord(input)) };
+    const settings = parseShareWord(input);
+    return { ok: true, settings, summary: summariseAdventure(settings) };
   } catch (error) {
     if (error instanceof ShareWordError) {
       return { ok: false, message: error.message };
