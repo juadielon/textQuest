@@ -5,13 +5,13 @@ authored content and game rules, without using an LLM while you play.
 
 This repository includes a Docker-run browser start screen, the rules for
 repeatable adventure settings and share words, a world model with a
-winnability checker, deterministic world generation for all three
-genres, a command parser and a save format. A pure play module that runs parsed commands against
-a world is also implemented, with a browser play screen built on it.
-New adventures use version 2's seeded item and clue placement; version 1
-share words and saves keep their original worlds. All three genres can be
-played from the start screen. Play uses each version's authored names and
-story text. The save/load screens remain planned.
+winnability checker, deterministic world generation for all three genres, a
+command parser and a save format. A pure play module runs parsed commands
+against a world, with a browser play screen built on it. New adventures use
+version 2's seeded item and clue placement; version 1 share words and saves
+keep their original worlds. All three genres can be played from the start
+screen, saved and resumed later. Play uses each version's authored names and
+story text, and saved commands retain their ID or content-name replay mode.
 
 ## Start screen
 
@@ -21,8 +21,8 @@ type a share word to open the same starting adventure as a friend.
 [Issue #54](https://github.com/juadielon/textQuest/issues/54) connects both
 forms to play. Invalid words show a clear message beside the field.
 The play screen shows the share word, genre and length and a **Back to start**
-button. Going back ends the current session; opening its share word starts
-again with no progress. There is no save or load interface yet.
+button. Going back ends the current session; opening its share word starts a
+fresh adventure. Use **Saves** → **Resume** to continue saved progress.
 Focus moves to the new screen's heading on navigation. Both screens work by
 keyboard and screen reader, on narrow and wide screens.
 
@@ -156,7 +156,9 @@ Saved-command replay tests cover both versions, all genres and lengths,
 including failed commands and undo. Version 1 ID-based command histories
 remain unchanged; new histories record whether each command used ID or
 content names, including failed commands. Version 1 saves migrate to save
-format 2 with ID replay modes. A browser save/load screen is still planned.
+format 2 with ID replay modes. Format 1 did not record naming mode, so
+programmatically created histories that used authored names cannot always be
+inferred and are replayed as ID-based.
 
 ## Adventure settings and share words
 
@@ -355,8 +357,8 @@ opening play are rethrown rather than hidden as an unplayable adventure
 The screen shows authored place and plot text, people at the current place,
 items where found, discovered clue text, puzzle prompts and the ending.
 References resolve to names only after their entities are discovered. All
-player-facing text is inserted as plain text. The screen doesn't use the
-save format yet; the saves screen is planned in
+player-facing text is inserted as plain text. The saves screen can save,
+resume, delete, export and import adventures through
 [issue #43](https://github.com/juadielon/textQuest/issues/43).
 
 ## Save format and storage
@@ -368,14 +370,102 @@ timestamps. Save format 2 reads format 1 files as ID-based command histories,
 matching the released player UI. Format 1 did not record naming mode, so
 programmatically created histories that used authored names cannot always be
 inferred and are replayed as ID-based. Saves never contain puzzle solutions.
+Progress is rebuilt by replaying the commands. Saves never contain puzzle
+solutions.
 
 `createSaveStore(storage)` lists, adds, updates, loads and deletes saves in
 any `Storage`-like object, such as `localStorage`. Each save has its own key,
 so a failed write never damages another save. Export gives JSON text. Import
 treats the file as untrusted, rejects damaged, oversized (over 1,200,000
 characters) or newer-version files with a clear message, and stores a good
-file as a new save. A full or blocked storage is reported clearly. There are
-no save screens in the browser yet.
+file as a new save. A full or blocked storage is reported clearly.
+
+## Saves screen
+
+[Issue #43](https://github.com/juadielon/textQuest/issues/43) adds saving to
+the browser. During play, a **Save adventure** form stores the adventure in
+`localStorage` under a name the player chooses. Saving again, or saving a
+resumed adventure, updates that save. Each submission keeps the commands
+present when Save was pressed, not commands typed later while waiting for
+storage. While saves are waiting or being written, **Back to start** is
+unavailable. Play stays open after success or failure;
+errors remain visible so the player can retry, and returning to start always
+requires another choice after saving finishes. Closing or reloading the tab
+can still interrupt saving and lose unsaved progress. A Saved message is shown
+only after the last queued save succeeds. Before leaving, wait for that message
+and for Back to start to become available; any commands typed after the last
+save submission still need another save.
+Name-validation errors and unacknowledged save failures are shown together.
+Correcting a name while older saves wait does not acknowledge their later
+failures. After a conflict, already-queued submissions are skipped; press Save
+again after the queue finishes to retry explicitly.
+
+Play rejects commands before execution or recording if they would exceed
+10,000 saved commands or the 1,000,000-character JSON file limit, including
+escaped characters and room for any allowed save name. The same guard applies
+to undo: it adds a command rather than shortening the saved history. Existing
+valid saves still replay unchanged, and rejected commands leave that progress
+saveable. A file-limit warning may allow a shorter command; at the command-count
+limit no further commands can be recorded.
+Rejected control characters and capacity errors are shown visibly and announced
+in the live region without entering command history. A valid command clears
+the visible error; normal responses appear only in the log.
+The file guard reserves room for the largest valid name: 60 unpaired UTF-16
+surrogate code units, each escaped as six JSON characters. A one-character
+plain name can therefore reach the guard up to 359 characters before its actual
+file reaches the limit. This conservative allowance lets players rename later
+without making their progress too large to save. Existing near-limit saves
+with shorter names still replay and can be saved unchanged.
+
+**Your saves** on the start screen
+lists every save with its name, genre, length and last saved time, newest
+first. While a deletion waits for storage, Back and Resume are unavailable,
+but Keep still cancels it. When another deletion refreshes the list, other
+live confirmations retain their original Keep controls and focus. Their
+confirmed snapshots are still checked when the lock arrives.
+Keep cancels the request and refreshes its row, so changes or deletion in another
+tab are reflected. If reading the list fails, existing rows are retained and the
+error is reported; the cancelled request remains cancelled.
+Other keyboard focus is preserved too, using the equivalent refreshed control
+when its unchanged row is replaced; results receive focus only if the old
+focused control has gone and has no suitable replacement.
+Overlapping deletion results are kept together, so a later success cannot
+hide an earlier conflict or lock failure.
+Last saved changes only when Save is pressed successfully, not on Resume
+or unsaved play. Tracking when a save was last played remains unfinished
+under issue #43 and needs a separate safe follow-up.
+
+An update only goes ahead if the stored save is still exactly the version
+that tab last loaded or wrote. Updates and deletes take turns through a Web
+Locks lock shared by every tab, so a stale or simultaneous tab never
+overwrites newer progress or brings back a deleted save. Instead it says the
+save was changed or deleted elsewhere, and saving again keeps its progress as
+a new save. Submissions already waiting when the conflict is reported do not
+create a copy or replace the warning; a new submission is needed.
+Browsers without Web Locks save a resumed adventure as a new save
+rather than updating it.
+Deletion checks the exact save shown in the list, including unreadable files.
+If it changed, it is kept and the refreshed list needs a new confirmation.
+Browsers without Web Locks cannot safely delete saves, so deletion is refused.
+Lock failures are reported without changing storage.
+
+**Resume** regenerates the world from the save's settings and replays its
+commands through the play module, so the place, inventory, clues, turns, undo
+history and response log match where the player left off. **Delete** asks for
+confirmation first; **Keep** also cancels a deletion waiting for the shared
+lock. Pasted control characters are rejected before a command is played or
+recorded, so they cannot make later saves fail.
+A save that can't be read is listed with the reason and
+kept; it is only removed if the player deletes it. Storage problems are shown
+as plain messages. Keyboard navigation, focus and screen-reader attributes
+are covered by unit tests; a real screen reader has not been checked.
+All names are added as plain text. **Export** downloads a readable save as a
+`.json` file. Choose a **Save file** and select **Import save** to add it as
+a new save, even if its name matches an existing one. Damaged, oversized
+and newer-version files show a clear message without changing existing
+saves. Imported progress is rebuilt when the player resumes it.
+Import and export have their own announced statuses, so overlapping save-list results remain
+visible. Finishing a file read does not take focus from a newer interaction.
 
 ## Project documents
 
@@ -436,10 +526,10 @@ textQuest builds to plain static files: HTML, CSS, JavaScript and an icon.
 It needs no game server, database, API key or LLM, so any static web host
 can serve it. The current build connects the start and play screens for
 light fantasy, cosy mystery and science fiction. All three genres are
-playable, with each version's authored names and prose shown during play. The
-save/load interface remains unfinished. Going back to start or reloading
-loses progress; a share word recreates the starting adventure, not a saved
-session.
+playable, with each version's authored names and prose shown during play.
+Save before going back to start or reloading to keep progress. A share word
+recreates the starting adventure, not a saved session. Browser save-file
+export and import keep progress in a separate file without sharing it in a link.
 
 ### Build
 

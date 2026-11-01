@@ -61,6 +61,7 @@ export interface AdventureSave {
  * - `future-version`: a newer copy of textQuest made the file.
  * - `unsupported-adventure`: the adventure version isn't supported here.
  * - `not-found`: no save has that ID.
+ * - `changed`: the stored save no longer matches the version being updated.
  * - `storage-full`: the browser has no room left for saves.
  * - `storage-unavailable`: the browser refused to read or write saves.
  */
@@ -70,6 +71,7 @@ export type SaveProblem =
   | 'future-version'
   | 'unsupported-adventure'
   | 'not-found'
+  | 'changed'
   | 'storage-full'
   | 'storage-unavailable';
 
@@ -318,10 +320,11 @@ export function importSaveFile(text: string): AdventureSave {
  */
 export type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'key' | 'length'>;
 
-/** A short description of one stored save, for a list of saves. */
+/** A listed save and its exact stored text, used to confirm deletion without losing later changes. */
 export type SaveListEntry =
   | {
       readonly id: string;
+      readonly snapshot: string;
       readonly status: 'ready';
       readonly name: string;
       readonly settings: AdventureSettings;
@@ -332,6 +335,7 @@ export type SaveListEntry =
   | {
       /** A stored save that can't be read. It is left in place, never deleted. */
       readonly id: string;
+      readonly snapshot: string;
       readonly status: 'unreadable';
       readonly message: string;
     };
@@ -352,10 +356,22 @@ export interface SaveStore {
   add(save: AdventureSave): string;
   /** Stores a save under this ID, replacing any earlier version. On failure the old version is kept. */
   put(id: string, save: AdventureSave): void;
+  /**
+   * Stores a save under this ID only if the stored save still matches
+   * `expected` exactly, so newer progress is never overwritten. Throws a
+   * `not-found` error if the save was deleted, or `changed` if it differs,
+   * and then leaves storage as it was. Run it under a lock shared by every
+   * tab, or another tab could still write between the check and the write.
+   */
+  replace(id: string, expected: AdventureSave, save: AdventureSave): void;
   /** Loads the save with this ID. */
   load(id: string): AdventureSave;
-  /** Deletes the save with this ID. Deleting a save that is already gone does nothing. */
-  remove(id: string): void;
+  /**
+   * Deletes a save, optionally only if its stored text still matches the listed
+   * snapshot. A mismatch throws `changed` and keeps it. Already deleted saves
+   * are ignored. Use a shared lock around checked deletions.
+   */
+  remove(id: string, snapshot?: string): void;
   /** Returns export file text for the save with this ID. */
   exportSave(id: string): string;
   /** Checks an import file and stores it as a new save. Existing saves are never changed. */
@@ -380,7 +396,7 @@ function storageError(error: unknown): SaveError {
   if (isQuotaError(error)) {
     return new SaveError(
       'storage-full',
-      'Your browser has no room left for saves. Delete or export an old save, then try again. Your other saves are safe.',
+      'Your browser has no room left for saves. Try deleting an old save or freeing browser storage, then try again. Your other saves are safe.',
     );
   }
   return new SaveError(
@@ -454,6 +470,29 @@ export function createSaveStore(
     write(keyFor(id), exportSaveFile(save));
   }
 
+  function replace(id: string, expected: AdventureSave, save: AdventureSave): void {
+    const key = keyFor(id);
+    const text = exportSaveFile(save);
+    const stored = read(key);
+    if (stored === null) {
+      throw notFound();
+    }
+    let unchanged = false;
+    try {
+      // Compare whole saves, not times: two edits can share a timestamp.
+      unchanged = exportSaveFile(importSaveFile(stored)) === exportSaveFile(expected);
+    } catch {
+      // A stored save that can't be read is kept, never overwritten.
+    }
+    if (!unchanged) {
+      throw new SaveError(
+        'changed',
+        'This save was changed in another tab or window, so it was not overwritten.',
+      );
+    }
+    write(key, text);
+  }
+
   function add(save: AdventureSave): string {
     // Check the save before picking an ID, so a bad save writes nothing.
     const text = exportSaveFile(save);
@@ -482,10 +521,13 @@ export function createSaveStore(
       const ready: ReadySave[] = [];
       const unreadable: SaveListEntry[] = [];
       for (const id of storedIds()) {
+        const snapshot = read(keyFor(id));
+        if (snapshot === null) continue;
         try {
-          const save = load(id);
+          const save = importSaveFile(snapshot);
           ready.push({
             id,
+            snapshot,
             status: 'ready',
             name: save.name,
             settings: save.settings,
@@ -498,7 +540,7 @@ export function createSaveStore(
             throw error;
           }
           const message = error instanceof SaveError ? error.message : 'This save could not be read.';
-          unreadable.push({ id, status: 'unreadable', message });
+          unreadable.push({ id, snapshot, status: 'unreadable', message });
         }
       }
       // Plain comparisons, not localeCompare, keep the order the same everywhere.
@@ -509,9 +551,17 @@ export function createSaveStore(
     },
     add,
     put,
+    replace,
     load,
-    remove(id) {
+    remove(id, snapshot) {
       const key = keyFor(id);
+      if (snapshot !== undefined) {
+        const stored = read(key);
+        if (stored === null) return;
+        if (stored !== snapshot) {
+          throw new SaveError('changed', 'This save changed after it was listed and was not deleted. Review the refreshed list and confirm Delete again.');
+        }
+      }
       try {
         storage.removeItem(key);
       } catch (error) {
