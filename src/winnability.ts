@@ -373,6 +373,7 @@ export function checkWinnability(world: AdventureWorld): WinnabilityResult {
     }
     for (const step of decisions) {
       if (!inArea.has(step.placeId) || !canTakeStep(world, state, step)) continue;
+      if (statesCreated >= MAX_SEARCH_STATES) return { winnable: false, tooLarge: true };
       const chosen = copyState(state, step.placeId);
       const endingId = completeStep(chosen, step);
       if (endingId === undefined) {
@@ -380,6 +381,7 @@ export function checkWinnability(world: AdventureWorld): WinnabilityResult {
         continue;
       }
       // An ending stops the adventure, so there is no later state to search.
+      statesCreated++;
       reachableSteps.add(step.id);
       reachedEndings.add(endingId);
       if (winningOutcome.has(endingId)) wins = true;

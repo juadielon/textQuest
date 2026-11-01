@@ -403,6 +403,49 @@ const withGoal = (world: AdventureWorld, goal: AdventureWorld['solution']['goal'
   ({ ...world, solution: { ...world.solution, goal } });
 
 describe('world version 2 choices and endings', () => {
+  it('reports the trap route when the player skips a returnable place or its key', () => {
+    const world: AdventureWorld = {
+      version: 2, startPlaceId: 'square',
+      places: [{ id: 'square' }, { id: 'shed' }, { id: 'vault' }],
+      exits: [
+        ...twoWay('square', 'shed'),
+        { id: 'enter-vault', fromPlaceId: 'square', toPlaceId: 'vault', locked: false },
+      ],
+      items: [{ id: 'key', placeId: 'shed' }], clues: [],
+      solution: {
+        steps: [], goal: { placeId: 'vault', conditions: { itemsHeld: ['key'] } },
+      },
+    };
+    expect(checkWinnability(world)).toEqual({
+      winnable: true, unreachableStepIds: [], reachableEndingIds: [], canGetStuck: true,
+    });
+    expect(checkWinnability({ ...world, version: 1 }))
+      .toEqual({ winnable: true, unreachableStepIds: [] });
+  });
+
+  it('counts terminal option copies towards the search-state limit', () => {
+    const endingSteps: AdventureWorld['solution']['steps'] = Array.from(
+      { length: MAX_SEARCH_STATES + 1 }, (_, index) => ({
+        id: `end-${index}`, placeId: 'start', conditions: {},
+        effects: [{ kind: 'end-adventure', endingId: 'escape' }],
+      }),
+    );
+    const world: AdventureWorld = {
+      version: 2, startPlaceId: 'start', places: [{ id: 'start' }, { id: 'goal' }],
+      exits: [], items: [], clues: [],
+      solution: {
+        steps: endingSteps, goal: { placeId: 'goal', conditions: {} },
+        endings: [{ id: 'escape', outcome: 'win' }],
+      },
+    };
+    expect(checkWinnability(world)).toEqual({ winnable: false, tooLarge: true });
+    expect(checkWinnability({
+      ...world, solution: { ...world.solution, steps: endingSteps.slice(0, MAX_SEARCH_STATES - 1) },
+    })).toEqual({
+      winnable: true, unreachableStepIds: [], reachableEndingIds: ['escape'], canGetStuck: false,
+    });
+  });
+
   function goalWorld(): AdventureWorld {
     return {
       version: 2, startPlaceId: 'start',

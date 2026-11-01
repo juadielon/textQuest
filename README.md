@@ -235,7 +235,8 @@ supports choices and checkpoint recovery
 
 [Issue #16](https://github.com/juadielon/textQuest/issues/16) limits the
 search to `MAX_SEARCH_STATES` (10,000) states, so a large world cannot freeze
-the page. A world that needs more returns `{ winnable: false, tooLarge: true }`
+the page. Version 2 terminal-option copies count towards this limit as well.
+A world that needs more returns `{ winnable: false, tooLarge: true }`
 instead. It must be treated as rejected, never as winnable. The same world
 always gives the same result, whatever the time, locale or browser. Tests show
 long worlds with 28 places and 14 required steps finish within the limit. The
