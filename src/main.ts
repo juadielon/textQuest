@@ -23,12 +23,14 @@ const browserStorage: StorageLike = {
 
 if (app) {
   const store = createSaveStore(browserStorage);
+  let refreshSaves: (() => void) | undefined;
 
   const showStart = (shareWord?: string): void => {
     renderStartScreen(app, { onStart: showPlay, onOpenSaves: showSaves, shareWord });
   };
 
   const backToStart = (): void => {
+    refreshSaves = undefined;
     const url = new URL(window.location.href);
     url.searchParams.delete('adventure');
     window.history.replaceState(null, '', url);
@@ -36,16 +38,37 @@ if (app) {
   };
 
   const showSaves = (): void => {
-    renderSavesScreen(app, {
-      store, onBack: backToStart, onResume: (saved) => showPlay(saved.save.settings, saved),
+    refreshSaves = renderSavesScreen(app, {
+      store,
+      onBack: backToStart,
+      onResume: (saved) => showPlay(saved.save.settings, saved),
     });
   };
 
   const showPlay = (settings: AdventureSettings, resumed?: StoredSave): void => {
+    refreshSaves = undefined;
     let commands: readonly string[] = resumed?.save.commands ?? [];
     let playing = resumed?.id;
+    let pendingPlayTime: Date | undefined;
+    const trackingStatus = document.createElement('p');
+    trackingStatus.className = 'hint';
+    trackingStatus.setAttribute('role', 'status');
+    const record = (id: string, time: Date): void => {
+      recordPlayed(store, id, {
+        now: time,
+        isCurrent: () => playing === id,
+        onResult: (recorded) => {
+          trackingStatus.textContent = recorded
+            ? ''
+            : 'Last played time could not be recorded. Your save is safe, and you can keep playing.';
+          if (recorded) refreshSaves?.();
+        },
+      });
+    };
     const markPlayed = (): void => {
-      if (playing !== undefined) recordPlayed(store, playing);
+      const time = new Date();
+      if (playing === undefined) pendingPlayTime = time;
+      else record(playing, time);
     };
     const playable = renderPlayScreen(app, settings, {
       commands,
@@ -126,12 +149,21 @@ if (app) {
     notice.textContent = playable
       ? 'Going back ends this play session. Save first to carry on later.'
       : 'Going back ends this play session. Keep the share word to start again.';
-    header.append(details, back, notice, sharing);
+    header.append(details, back, notice, trackingStatus, sharing);
     if (playable) {
       header.append(buildSaveForm({
         store, settings, resumed, suggestedName: summary.shareWord, commands: () => commands,
         onPendingChange: (pending) => { back.disabled = pending; },
-        onStoredChange: (saved) => { playing = saved?.id; },
+        onStoredChange: (saved) => {
+          playing = saved?.id;
+          if (!saved) {
+            pendingPlayTime = undefined;
+          } else if (pendingPlayTime) {
+            const time = pendingPlayTime;
+            pendingPlayTime = undefined;
+            record(saved.id, time);
+          }
+        },
       }));
     }
     heading.after(header);

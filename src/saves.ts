@@ -61,6 +61,7 @@ export interface AdventureSave {
  * - `changed`: the stored save no longer matches the version being updated.
  * - `storage-full`: the browser has no room left for saves.
  * - `storage-unavailable`: the browser refused to read or write saves.
+ * - `metadata-cleanup`: the save was deleted, but its play-time metadata remains.
  */
 export type SaveProblem =
   | 'malformed'
@@ -70,7 +71,8 @@ export type SaveProblem =
   | 'not-found'
   | 'changed'
   | 'storage-full'
-  | 'storage-unavailable';
+  | 'storage-unavailable'
+  | 'metadata-cleanup';
 
 /** Thrown by save functions with a message a player can read. */
 export class SaveError extends Error {
@@ -310,10 +312,9 @@ export type SaveListEntry =
       readonly updatedAt: string;
       /**
        * When the save was last played in this browser, as an ISO 8601 UTC
-       * time. Never earlier than `updatedAt`, which it falls back to when no
-       * play has been recorded, such as for older or imported saves.
+       * time. Missing when play time was never recorded or could not be read.
        */
-      readonly lastPlayedAt: string;
+      readonly lastPlayedAt?: string;
     }
   | {
       /** A stored save that can't be read. It is left in place, never deleted. */
@@ -360,8 +361,8 @@ export interface SaveStore {
   /**
    * Deletes a save, optionally only if its stored text still matches the listed
    * snapshot. A mismatch throws `changed` and keeps it. Already deleted saves
-   * are ignored. Its last-played time is removed too. Use a shared lock
-   * around checked deletions.
+   * are ignored. Its last-played time is removed too; a `metadata-cleanup`
+   * error means the save is gone but that metadata remains.
    */
   remove(id: string, snapshot?: string): void;
   /** Returns export file text for the save with this ID. */
@@ -563,12 +564,16 @@ export function createSaveStore(
           createdAt: save.createdAt,
           updatedAt: save.updatedAt,
           // Saving happens during play, so a later save counts as playing too.
-          lastPlayedAt: played !== undefined && played > save.updatedAt ? played : save.updatedAt,
+          ...(played ? { lastPlayedAt: played } : {}),
         });
       }
-      // Plain comparisons, not localeCompare, keep the order the same everywhere.
+      // Saves without a recorded play time go last; plain comparisons keep order stable.
       const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-      ready.sort((a, b) => compare(b.lastPlayedAt, a.lastPlayedAt) || compare(a.id, b.id));
+      ready.sort((a, b) => {
+        if (!a.lastPlayedAt) return b.lastPlayedAt ? 1 : compare(a.id, b.id);
+        if (!b.lastPlayedAt) return -1;
+        return compare(b.lastPlayedAt, a.lastPlayedAt) || compare(a.id, b.id);
+      });
       unreadable.sort((a, b) => compare(a.id, b.id));
       return [...ready, ...unreadable];
     },
@@ -594,7 +599,10 @@ export function createSaveStore(
       try {
         storage.removeItem(playedKeyFor(id));
       } catch {
-        // The save is already gone; a leftover time is never listed.
+        throw new SaveError(
+          'metadata-cleanup',
+          'The save was deleted, but its Last played time could not be removed. The leftover time is ignored.',
+        );
       }
     },
     exportSave(id) {

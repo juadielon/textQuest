@@ -58,6 +58,10 @@ export interface RecordPlayedOptions {
   readonly now?: Date;
   /** Locks shared between tabs. Defaults to the browser's Web Locks, if it has them. */
   readonly locks?: SaveLocks;
+  /** Checks that this play still belongs to the save when its lock is granted. */
+  readonly isCurrent?: () => boolean;
+  /** Called after the time is recorded, or when tracking is unavailable. */
+  readonly onResult?: (recorded: boolean) => void;
 }
 
 /**
@@ -68,25 +72,31 @@ export interface RecordPlayedOptions {
  * The time is written under the lock that saves and deletes already share
  * across tabs, so two tabs can't both read the old time and then move it
  * backwards, and a save deleted at the same moment never keeps a time.
- * Browsers without Web Locks record nothing, so Last played falls back to
- * the last saved time. Failures are ignored: a missed time loses no progress,
- * so play carries on and the save itself never changes.
+ * Browsers without Web Locks record nothing. Failures do not stop play; the
+ * caller is told so it can explain that Last played is unavailable. A queued
+ * write checks `isCurrent` again when its lock is granted.
  *
  * @param store - Where saves are kept.
  * @param id - The ID of the save being played.
  * @param options - The play time and locks to use.
+ * @returns Nothing; `onResult` reports whether tracking succeeded.
  */
 export function recordPlayed(store: SaveStore, id: string, options: RecordPlayedOptions = {}): void {
   const time = options.now ?? new Date();
   const locks = 'locks' in options ? options.locks : browserLocks();
-  if (!locks) return;
+  if (!locks) {
+    options.onResult?.(false);
+    return;
+  }
   withSaveLock(locks, () => {
+    if (options.isCurrent && !options.isCurrent()) return;
     try {
       store.markPlayed(id, time);
+      options.onResult?.(true);
     } catch {
-      // A missed play time loses no progress.
+      options.onResult?.(false);
     }
-  }, () => undefined);
+  }, () => options.onResult?.(false));
 }
 
 /** A save the player is playing, and the ID it is stored under. */
@@ -269,7 +279,8 @@ export interface SavesScreenOptions {
 /**
  * Replaces the contents of `target` with the list of saves, most recently
  * played first. Each save shows its name, genre, length, last played time and
- * last saved time, with Resume and Delete.
+ * last saved time, with Resume and Delete. Unrecorded play times are labelled
+ * "Not recorded", not shown as saved times.
  *
  * @remarks
  * Delete confirms the exact listed save under a shared lock; changed saves
@@ -280,8 +291,12 @@ export interface SavesScreenOptions {
  * Saves that can't be read are listed
  * with the reason and kept; only the player can delete them. All text goes in
  * through `textContent`. Focus moves to the heading.
+ *
+ * @param target - The element to render into.
+ * @param options - The save store and navigation actions.
+ * @returns A focus-preserving refresh function for later metadata updates.
  */
-export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptions): void {
+export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptions): () => void {
   const locks = 'locks' in options ? options.locks : browserLocks();
   const heading = create('h1', { tabIndex: -1 }, 'Your saves');
   const status = create('p', { className: 'saves-status', tabIndex: -1 });
@@ -356,7 +371,7 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
       item.append(details([
         ['Genre', genreLabels[entry.settings.genre]],
         ['Length', lengthLabels[entry.settings.length]],
-        ['Last played', formatSaveTime(entry.lastPlayedAt)],
+        ['Last played', entry.lastPlayedAt ? formatSaveTime(entry.lastPlayedAt) : 'Not recorded'],
         ['Last saved', formatSaveTime(entry.updatedAt)],
       ]));
       actions.append(button('Resume', name, () => {
@@ -417,7 +432,10 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
             item.remove();
             reportDeletion(`Deleted “${name}”.`);
           } catch (error) {
-            reportDeletion(messageFor(error));
+            const message = error instanceof SaveError && error.problem === 'metadata-cleanup'
+              ? `Deleted “${name}”, but its Last played time could not be removed. The leftover time is ignored.`
+              : messageFor(error);
+            reportDeletion(message);
           }
           refresh(focused);
         }, () => {
@@ -444,6 +462,7 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
   target.replaceChildren(heading, status, list, back);
   heading.focus();
   refresh();
+  return () => refresh();
 }
 
 function messageFor(error: unknown): string {

@@ -221,7 +221,7 @@ it.each([1, 2])('saves and resumes version %i from a share link without sharing 
   get<HTMLButtonElement>('header button').click();
   get<HTMLButtonElement>('#open-saves').click();
   expect(app.querySelectorAll('.save-item')).toHaveLength(1);
-  expect(request).toHaveBeenCalledTimes(4);
+  expect(request).toHaveBeenCalledTimes(5);
   const key = localStorage.key(0)!;
   const saved = localStorage.getItem(key);
 
@@ -574,7 +574,7 @@ it('records Last played on Resume and each command without changing the stored s
   const id = store.add(saved);
   const text = localStorage.getItem(SAVE_KEY_PREFIX + id);
   get<HTMLButtonElement>('#open-saves').click();
-  expect(shownDetails()['Last played']).toBe(formatSaveTime(saved.updatedAt));
+  expect(shownDetails()['Last played']).toBe('Not recorded');
   expect(shownDetails()['Last saved']).toBe(formatSaveTime(saved.updatedAt));
 
   const times = [new Date('2026-10-05T01:00:00.000Z'), new Date('2026-10-05T02:00:00.000Z')];
@@ -633,6 +633,130 @@ it('records play for a new save once saved, and stops after a conflict', async (
   expect(store.load(id).name).toBe('Other tab');
 });
 
+it('does not record a queued command after the save changes while the lock waits', () => {
+  const waiting: (() => void)[] = [];
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: (_name: string, task: () => void) => new Promise<void>((resolve) => {
+      waiting.push(() => { task(); resolve(); });
+    }) },
+  });
+  const store = createSaveStore(localStorage);
+  const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
+  const id = store.add(saved);
+  get<HTMLButtonElement>('#open-saves').click();
+  get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+  waiting.shift()!();
+  localStorage.removeItem(PLAYED_KEY_PREFIX + id);
+
+  get<HTMLFormElement>('.save-form').requestSubmit();
+  get<HTMLInputElement>('#play-command').value = 'look';
+  get<HTMLFormElement>('.play-command').requestSubmit();
+  const changed = { ...saved, name: 'Other tab', commands: ['north'] };
+  store.put(id, changed);
+  waiting.shift()!();
+  waiting.shift()!();
+
+  expect(store.load(id)).toEqual(changed);
+  expect(localStorage.getItem(PLAYED_KEY_PREFIX + id)).toBeNull();
+});
+
+it('keeps a command played while the first save waits for its lock', () => {
+  const waiting: (() => void)[] = [];
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: (_name: string, task: () => void) => new Promise<void>((resolve) => {
+      waiting.push(() => { task(); resolve(); });
+    }) },
+  });
+  const first = new Date('2026-10-05T01:00:00.000Z');
+  const second = new Date('2026-10-05T02:00:00.000Z');
+  vi.useFakeTimers({ toFake: ['Date'], now: first });
+  try {
+    openAdventure(adventureSettings.encodeShareWord(settings));
+    const play = (command: string) => {
+      get<HTMLInputElement>('#play-command').value = command;
+      get<HTMLFormElement>('.play-command').requestSubmit();
+    };
+    play('look');
+    vi.setSystemTime(new Date('2026-10-05T01:30:00.000Z'));
+    get<HTMLFormElement>('.save-form').requestSubmit();
+    vi.setSystemTime(second);
+    play('inventory');
+    expect(localStorage.length).toBe(0);
+
+    waiting.shift()!();
+    waiting.shift()!();
+
+    const store = createSaveStore(localStorage);
+    const [entry] = store.list();
+    expect(entry.status).toBe('ready');
+    if (entry.status !== 'ready') throw new Error('Expected the new save to be readable.');
+    expect(entry.lastPlayedAt).toBe(second.toISOString());
+    expect(store.load(entry.id).commands).toEqual(['look']);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('does not record queued play time when the first save fails', () => {
+  const waiting: (() => void)[] = [];
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: (_name: string, task: () => void) => new Promise<void>((resolve) => {
+      waiting.push(() => { task(); resolve(); });
+    }) },
+  });
+  openAdventure(adventureSettings.encodeShareWord(settings));
+  const play = (command: string) => {
+    get<HTMLInputElement>('#play-command').value = command;
+    get<HTMLFormElement>('.play-command').requestSubmit();
+  };
+  play('look');
+  get<HTMLFormElement>('.save-form').requestSubmit();
+  play('inventory');
+  const write = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+    throw new DOMException('full', 'QuotaExceededError');
+  });
+  try {
+    waiting.shift()!();
+    expect(localStorage.length).toBe(0);
+    expect(get('#save-status').textContent).toContain('no room left');
+    expect(get('.play-log').children).toHaveLength(2);
+  } finally {
+    write.mockRestore();
+  }
+});
+
+it('refreshes the reopened saves list when a queued Resume time is recorded', () => {
+  const waiting: (() => void)[] = [];
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: (_name: string, task: () => void) => new Promise<void>((resolve) => {
+      waiting.push(() => { task(); resolve(); });
+    }) },
+  });
+  const store = createSaveStore(localStorage);
+  const first = store.add(createSave('First', settings, [], new Date('2026-10-01T09:00:00.000Z')));
+  const second = store.add(createSave('Second', settings, [], new Date('2026-10-02T09:00:00.000Z')));
+  get<HTMLButtonElement>('#open-saves').click();
+  const initialOrder = [...app.querySelectorAll('.save-item h2')].map((node) => node.textContent!);
+  const playedName = initialOrder[1]!;
+  const otherName = initialOrder[0]!;
+  get<HTMLButtonElement>(`button[aria-label="Resume: ${playedName}"]`).click();
+  get<HTMLButtonElement>('header button').click();
+  get<HTMLButtonElement>('#open-saves').click();
+  const focused = get<HTMLButtonElement>(`button[aria-label="Delete: ${otherName}"]`);
+  focused.focus();
+  expect([...app.querySelectorAll('.save-item h2')].map((node) => node.textContent)).toEqual(initialOrder);
+
+  waiting.shift()!();
+
+  expect([...app.querySelectorAll('.save-item h2')].map((node) => node.textContent)).toEqual([playedName, otherName]);
+  expect(document.activeElement?.getAttribute('aria-label')).toBe(`Delete: ${otherName}`);
+  expect(store.list()[0]).toMatchObject({ id: playedName === 'First' ? first : second, lastPlayedAt: expect.any(String) });
+});
+
 it('keeps playing when the browser cannot record Last played', () => {
   Object.defineProperty(navigator, 'locks', {
     configurable: true,
@@ -654,12 +778,13 @@ it('keeps playing when the browser cannot record Last played', () => {
     expect([...app.querySelectorAll('.play-typed')].map((node) => node.textContent)).toEqual(['> look']);
     expect(localStorage.getItem(PLAYED_KEY_PREFIX + id)).toBeNull();
     expect(store.load(id)).toEqual(saved);
+    expect(get('.hint[role="status"]').textContent).toContain('Last played time could not be recorded');
   } finally {
     write.mockRestore();
   }
 });
 
-it('keeps playing without Web Locks and leaves Last played at the saved time', () => {
+it('keeps playing without Web Locks and announces that Last played is unavailable', () => {
   const store = createSaveStore(localStorage);
   const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
   const id = store.add(saved);
@@ -672,7 +797,27 @@ it('keeps playing without Web Locks and leaves Last played at the saved time', (
   expect([...app.querySelectorAll('.play-typed')].map((node) => node.textContent)).toEqual(['> look']);
   expect(localStorage.getItem(PLAYED_KEY_PREFIX + id)).toBeNull();
   expect(store.load(id)).toEqual(saved);
-  expect(store.list()[0]).toMatchObject({ lastPlayedAt: saved.updatedAt });
+  expect(store.list()[0]).not.toHaveProperty('lastPlayedAt');
+  expect(get('.hint[role="status"]').textContent).toContain('Last played time could not be recorded');
+});
+
+it('announces a rejected play-time lock without stopping play', async () => {
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: () => Promise.reject(new DOMException('blocked', 'SecurityError')) },
+  });
+  const store = createSaveStore(localStorage);
+  const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
+  const id = store.add(saved);
+  get<HTMLButtonElement>('#open-saves').click();
+  get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+  await vi.waitFor(() => expect(get('.hint[role="status"]').textContent).toContain('Last played time could not be recorded'));
+  get<HTMLInputElement>('#play-command').value = 'look';
+  get<HTMLFormElement>('.play-command').requestSubmit();
+
+  expect([...app.querySelectorAll('.play-typed')].map((node) => node.textContent)).toEqual(['> look']);
+  expect(store.load(id)).toEqual(saved);
+  expect(store.list()[0]).not.toHaveProperty('lastPlayedAt');
 });
 
 it.each([1, 2])('opens version %i links in fresh play for all genres and lengths', async (version) => {
@@ -716,7 +861,7 @@ it('copies the link and announces success without including any progress', async
   get<HTMLInputElement>('#play-command').value = 'look';
   get<HTMLFormElement>('.play-command').requestSubmit();
   get<HTMLButtonElement>('.share-link button').click();
-  await vi.waitFor(() => expect(get('[role="status"]').textContent).toBe('Adventure link copied.'));
+  await vi.waitFor(() => expect(get('.share-link [role="status"]').textContent).toBe('Adventure link copied.'));
   expect(writeText).toHaveBeenCalledExactlyOnceWith(originalLink);
   const link = new URL(originalLink);
   expect(link.pathname).toBe('/games/textQuest/index.html');
@@ -744,7 +889,7 @@ it.each(['missing', 'denied'] as const)('offers an accessible manual link when c
   expect(get('label[for="adventure-link"]').textContent).toBe('Adventure link');
   expect(link.getAttribute('aria-describedby')).toBe('adventure-link-hint');
   get<HTMLButtonElement>('.share-link button').click();
-  await vi.waitFor(() => expect(get('[role="status"]').textContent).toContain('Could not copy'));
+  await vi.waitFor(() => expect(get('.share-link [role="status"]').textContent).toContain('Could not copy'));
   expect(document.activeElement).toBe(link);
   expect(link.selectionStart).toBe(0);
   expect(link.selectionEnd).toBe(link.value.length);

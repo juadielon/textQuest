@@ -13,6 +13,7 @@ import { genreLabels, lengthLabels } from './start-screen-model';
 class MemoryStorage implements StorageLike {
   readonly items = new Map<string, string>();
   failWrites = false;
+  failRemoveKey: string | null = null;
   get length() { return this.items.size; }
   key(index: number) { return [...this.items.keys()][index] ?? null; }
   getItem(key: string) { return this.items.get(key) ?? null; }
@@ -20,7 +21,10 @@ class MemoryStorage implements StorageLike {
     if (this.failWrites) throw Object.assign(new Error('full'), { name: 'QuotaExceededError' });
     this.items.set(key, value);
   }
-  removeItem(key: string) { this.items.delete(key); }
+  removeItem(key: string) {
+    if (key === this.failRemoveKey) throw new DOMException('blocked', 'SecurityError');
+    this.items.delete(key);
+  }
 }
 
 // Counts up, so new save IDs are predictable.
@@ -131,25 +135,30 @@ describe('recordPlayed', () => {
     expect(playedTime(id)).toBe(firstPlay.toISOString());
   });
 
-  it('records nothing without Web Locks, so Last played shows the last saved time', () => {
+  it('reports unavailable tracking without Web Locks and leaves Last played unknown', () => {
     const id = addSave();
     const markPlayed = vi.spyOn(store, 'markPlayed');
-    recordPlayed(store, id, { now: firstPlay, locks: undefined });
+    const result = vi.fn();
+    recordPlayed(store, id, { now: firstPlay, locks: undefined, onResult: result });
     expect(markPlayed).not.toHaveBeenCalled();
-    expect(store.list()[0]).toMatchObject({ lastPlayedAt: earlier.toISOString() });
+    expect(store.list()[0]).not.toHaveProperty('lastPlayedAt');
+    expect(result).toHaveBeenCalledWith(false);
   });
 
   it('never throws when storage or the lock fails', async () => {
     const id = addSave();
+    const result = vi.fn();
     storage.failWrites = true;
-    expect(() => recordPlayed(store, id, { now: firstPlay, locks: lock.locks })).not.toThrow();
+    expect(() => recordPlayed(store, id, { now: firstPlay, locks: lock.locks, onResult: result })).not.toThrow();
     await lock.settled();
+    expect(result).toHaveBeenLastCalledWith(false);
     storage.failWrites = false;
     const rejecting = { request: vi.fn(() => Promise.reject(new Error('no lock'))) } as unknown as SaveLocks;
     const throwing = { request: vi.fn(() => { throw new Error('no lock'); }) } as unknown as SaveLocks;
-    expect(() => recordPlayed(store, id, { now: firstPlay, locks: rejecting })).not.toThrow();
-    expect(() => recordPlayed(store, id, { now: firstPlay, locks: throwing })).not.toThrow();
+    expect(() => recordPlayed(store, id, { now: firstPlay, locks: rejecting, onResult: result })).not.toThrow();
+    expect(() => recordPlayed(store, id, { now: firstPlay, locks: throwing, onResult: result })).not.toThrow();
     await Promise.resolve();
+    expect(result).toHaveBeenLastCalledWith(false);
     expect(playedTime(id)).toBeUndefined();
   });
 });
@@ -461,13 +470,13 @@ describe('renderSavesScreen', () => {
 
     render();
 
-    expect(texts('.save-item h2')).toEqual(['<b>Second</b>', 'First']);
+    expect(texts('.save-item h2')).toEqual(['First', '<b>Second</b>']);
     expect(app.querySelector('b')).toBeNull();
-    const first = app.querySelectorAll('.save-item')[1];
+    const first = app.querySelectorAll('.save-item')[0];
     expect([...first.querySelectorAll('dt, dd')].map((node) => node.textContent)).toEqual([
       'Genre', genreLabels[settings.genre],
       'Length', lengthLabels.long,
-      'Last played', formatSaveTime(earlier.toISOString()),
+      'Last played', 'Not recorded',
       'Last saved', formatSaveTime(earlier.toISOString()),
     ]);
     expect(first.getAttribute('aria-labelledby')).toBe(first.querySelector('h2')?.id);
@@ -482,6 +491,25 @@ describe('renderSavesScreen', () => {
         genreLabels[settings.genre], lengthLabels.long,
         formatSaveTime(played.toISOString()), formatSaveTime(earlier.toISOString()),
       ]);
+  });
+
+  it('refreshes after a played time is recorded without moving keyboard focus', async () => {
+    const first = store.add(createSave('First', settings, [], earlier));
+    store.add(createSave('Second', settings, [], later));
+    const refresh = renderSavesScreen(app, { store, onResume, onBack, locks: lock.locks });
+    const focused = buttonNamed('Resume: Second');
+    focused.focus();
+    recordPlayed(store, first, {
+      now: new Date('2026-10-04T08:00:00.000Z'),
+      locks: lock.locks,
+      onResult: (recorded) => { if (recorded) refresh(); },
+    });
+
+    await lock.settled();
+
+    expect(texts('.save-item h2')).toEqual(['First', 'Second']);
+    expect(app.querySelectorAll('.save-item')[1].querySelectorAll('dd')[2].textContent).toBe('Not recorded');
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Resume: Second');
   });
 
   it('resumes a loaded save', () => {
@@ -923,6 +951,23 @@ describe('renderSavesScreen', () => {
 
     expect(app.querySelector('[role="status"]')?.textContent).toMatch(/can’t safely delete.*kept/);
     expect(store.load(id)).toEqual(save);
+  });
+
+  it('says the save was deleted when its play-time metadata could not be removed', async () => {
+    const save = createSave('Trip', settings, [], earlier);
+    const id = store.add(save);
+    store.markPlayed(id, later);
+    storage.failRemoveKey = PLAYED_KEY_PREFIX + id;
+    render();
+    buttonNamed('Delete: Trip').click();
+    buttonNamed('Yes, delete: Trip').click();
+    await lock.settled();
+
+    expect(store.list()).toEqual([]);
+    expect(storage.items.has(PLAYED_KEY_PREFIX + id)).toBe(true);
+    expect(app.querySelector('[role="status"]')?.textContent)
+      .toContain('Deleted “Trip”, but its Last played time could not be removed');
+    expect(app.querySelector('[role="status"]')?.textContent).toContain('leftover time is ignored');
   });
 
   it('reports a save that became unreadable before resuming', () => {

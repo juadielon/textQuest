@@ -419,20 +419,23 @@ when its unchanged row is replaced; results receive focus only if the old
 focused control has gone and has no suitable replacement.
 Overlapping deletion results are kept together, so a later success cannot
 hide an earlier conflict or lock failure.
-Last saved changes only when Save is pressed successfully. Last played also
-changes when a save is resumed and after each command played from it, even
-if that play is never saved, so a Last played time later than Last saved
-means some play was not saved. It is kept under its own
-`textquest:played:<id>` key, never inside the save, so Resume and play never
-change stored progress, deletion snapshots, conflict checks or exported files.
+Last saved changes only when Save is pressed successfully. Last played changes
+when a save is resumed and after each command played from it, even if that play
+is never saved. A Last played time later than Last saved means the save was
+resumed or played after saving; it does not show whether progress was saved.
+It is kept under its own `textquest:played:<id>` key, never inside the save,
+so Resume and play never change stored progress, deletion snapshots, conflict
+checks or exported files.
 The time is written under the same Web Locks lock that updates and deletes
 share, so two tabs playing at once can't move it backwards and a save deleted
 elsewhere never keeps a time. Deleting a save removes its time too. Browsers
-without Web Locks record no play time. Older and imported saves, saves with
-a damaged or earlier time, and saves in browsers without Web Locks show their
-last saved time as Last played. After a save conflict, play is no longer
-recorded against that save. If the browser cannot store the time, play carries
-on and only the time is missed.
+without Web Locks record no play time. Older and imported saves, and saves
+with missing or damaged times, show **Not recorded** for Last played rather
+than treating Last saved as a play time. If tracking is unavailable, the play
+screen says so without stopping the adventure. If a save is deleted but its
+play-time metadata cannot be cleaned up, the screen says the save is gone and
+the leftover metadata is ignored. After a save conflict, play is no longer
+recorded against that save.
 
 An update only goes ahead if the stored save is still exactly the version
 that tab last loaded or wrote. Updates and deletes take turns through a Web

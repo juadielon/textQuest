@@ -34,6 +34,7 @@ class MemoryStorage implements StorageLike {
   readonly items = new Map<string, string>();
   failWrites: unknown = null;
   failReads: unknown = null;
+  failRemoveKey: string | null = null;
 
   get length() {
     return this.items.size;
@@ -54,6 +55,7 @@ class MemoryStorage implements StorageLike {
   }
 
   removeItem(key: string) {
+    if (key === this.failRemoveKey) throw new DOMException('blocked', 'SecurityError');
     if (this.failWrites) throw this.failWrites;
     this.items.delete(key);
   }
@@ -289,17 +291,6 @@ describe('save store', () => {
     expect(store.load(first)).toEqual(sampleSave('First'));
     expect(store.list()).toEqual([
       {
-        id: second,
-        snapshot: storage.items.get(SAVE_KEY_PREFIX + second),
-        status: 'ready',
-        name: 'Second',
-        settings,
-        commandCount: 0,
-        createdAt: '2026-10-13T00:00:00.000Z',
-        updatedAt: '2026-10-13T00:00:00.000Z',
-        lastPlayedAt: '2026-10-13T00:00:00.000Z',
-      },
-      {
         id: first,
         snapshot: storage.items.get(SAVE_KEY_PREFIX + first),
         status: 'ready',
@@ -308,7 +299,16 @@ describe('save store', () => {
         commandCount: 2,
         createdAt: '2026-10-12T04:00:00.000Z',
         updatedAt: '2026-10-12T04:00:00.000Z',
-        lastPlayedAt: '2026-10-12T04:00:00.000Z',
+      },
+      {
+        id: second,
+        snapshot: storage.items.get(SAVE_KEY_PREFIX + second),
+        status: 'ready',
+        name: 'Second',
+        settings,
+        commandCount: 0,
+        createdAt: '2026-10-13T00:00:00.000Z',
+        updatedAt: '2026-10-13T00:00:00.000Z',
       },
     ]);
 
@@ -503,7 +503,7 @@ describe('save store', () => {
       // Import makes a new save with no play recorded.
       const copy = store.importSave(file);
       expect(storage.items.has(PLAYED_KEY_PREFIX + copy)).toBe(false);
-      expect(store.list().find((entry) => entry.id === copy)).toMatchObject({ lastPlayedAt: save.updatedAt });
+      expect(store.list().find((entry) => entry.id === copy)).not.toHaveProperty('lastPlayedAt');
     });
 
     it('never replaces a later time with an earlier one, such as from a clock set back', () => {
@@ -517,26 +517,28 @@ describe('save store', () => {
       expect(storage.items.get(PLAYED_KEY_PREFIX + id)).toBe(later.toISOString());
     });
 
-    it('falls back to the saved time for older saves, damaged times and times before the last save', () => {
+    it('leaves Last played unrecorded for older saves and damaged times', () => {
       const { storage, store } = setUp();
       const id = store.add(sampleSave());
       const listed = () => store.list()[0];
-      expect(listed()).toMatchObject({ status: 'ready', lastPlayedAt: createdTime.toISOString() });
-      for (const text of ['broken', '2026-02-31T00:00:00.000Z', '2026-10-01T00:00:00.000Z']) {
+      expect(listed()).not.toHaveProperty('lastPlayedAt');
+      for (const text of ['broken', '2026-02-31T00:00:00.000Z']) {
         storage.items.set(PLAYED_KEY_PREFIX + id, text);
-        expect(listed()).toMatchObject({ status: 'ready', lastPlayedAt: createdTime.toISOString() });
+        expect(listed()).not.toHaveProperty('lastPlayedAt');
       }
       // A damaged time is replaced by the next real one.
       storage.items.set(PLAYED_KEY_PREFIX + id, 'broken');
       store.markPlayed(id, played);
       expect(listed()).toMatchObject({ lastPlayedAt: played.toISOString() });
+      storage.items.set(PLAYED_KEY_PREFIX + id, '2026-10-01T00:00:00.000Z');
+      expect(listed()).toMatchObject({ lastPlayedAt: '2026-10-01T00:00:00.000Z' });
     });
 
     it('lists the most recently played save first', () => {
       const { store } = setUp();
       const older = store.add(sampleSave('Older'));
       const newer = store.add(createSave('Newer', settings, [], new Date('2026-10-13T00:00:00.000Z')));
-      expect(store.list().map((entry) => entry.id)).toEqual([newer, older]);
+      expect(store.list().map((entry) => entry.id)).toEqual([older, newer]);
       store.markPlayed(older, played);
       expect(store.list().map((entry) => entry.id)).toEqual([older, newer]);
     });
@@ -556,6 +558,26 @@ describe('save store', () => {
       store.markPlayed(id, played);
       store.remove(id, listed.snapshot);
       expect(storage.items.size).toBe(0);
+    });
+
+    it('reports when deletion succeeded but play-time cleanup failed', () => {
+      const { storage, store } = setUp();
+      const id = store.add(sampleSave());
+      store.markPlayed(id, played);
+      storage.failRemoveKey = PLAYED_KEY_PREFIX + id;
+
+      let failure: unknown;
+      try {
+        store.remove(id);
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toMatchObject({
+        problem: 'metadata-cleanup',
+        message: expect.stringContaining('save was deleted'),
+      });
+      expect(storage.items.has(SAVE_KEY_PREFIX + id)).toBe(false);
+      expect(storage.items.has(PLAYED_KEY_PREFIX + id)).toBe(true);
     });
 
     it('reports a full storage and leaves the save as it was', () => {
