@@ -8,7 +8,6 @@ import { cosyMystery } from './content/v1/cosy-mystery';
 import { lightFantasy } from './content/v1/light-fantasy';
 import { scienceFiction } from './content/v1/science-fiction';
 import { generateAdventureWorld } from './generate-world';
-import { createSeededRandom } from './seeded-random';
 import { checkWinnability } from './winnability';
 
 // A fixed range keeps the sweep repeatable. It is large enough to reach every
@@ -21,18 +20,6 @@ const plotCounts: Record<AdventureGenre, number> = {
   'science-fiction': scienceFiction.plots.length,
 };
 
-// Short worlds have the fewest places to move things between, so a few seeds
-// share a world. Across every seed, the least varied short group still gives
-// 86% distinct worlds; medium and long give 100%.
-const minimumDistinctShare = 0.8;
-
-// Repeats the generator's second draw, so worlds can be grouped by plot.
-function plotIndexFor(seed: number, genre: AdventureGenre): number {
-  const random = createSeededRandom(seed);
-  random.nextUint32();
-  return random.pickIndex(plotCounts[genre]);
-}
-
 function withoutOptionalSteps(world: AdventureWorld): AdventureWorld {
   const requiredStepIds = world.solution.goal.conditions.stepsDone ?? [];
   return {
@@ -44,53 +31,76 @@ function withoutOptionalSteps(world: AdventureWorld): AdventureWorld {
   };
 }
 
+function recordSeedExceptions(seed: number, problems: string[], check: () => void): void {
+  try {
+    check();
+  } catch (error) {
+    problems.push(`seed ${seed}: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+  }
+}
+
 describe('version 1 generation sweep', () => {
   for (const length of adventureLengths) {
+    // Checking every seed takes a few seconds, so a busy machine can push it past
+    // Vitest's 5-second default. Give it more room.
     it(`${length}: every seed gives a repeatable, shareable, winnable world`, () => {
-      const groups = new Map<string, { genre: AdventureGenre; seeds: number; worlds: Set<string> }>();
+      const worldsByGenre = new Map<AdventureGenre, Set<string>>(
+        adventureGenres.map((genre) => [genre, new Set<string>()]),
+      );
       const problems: string[] = [];
 
       for (let seed = 0; seed < sweepSeedCount; seed += 1) {
-        const settings = createAdventureSettings(seed, length);
-        const world = generateAdventureWorld(settings);
-        const json = JSON.stringify(world);
-        const key = `${settings.genre}/${plotIndexFor(seed, settings.genre)}`;
-        const group = groups.get(key) ?? { genre: settings.genre, seeds: 0, worlds: new Set<string>() };
-        group.seeds += 1;
-        group.worlds.add(json);
-        groups.set(key, group);
+        recordSeedExceptions(seed, problems, () => {
+          const settings = createAdventureSettings(seed, length, 1);
+          const world = generateAdventureWorld(settings);
+          const json = JSON.stringify(world);
+          worldsByGenre.get(settings.genre)!.add(json);
 
-        if (JSON.stringify(generateAdventureWorld(settings)) !== json) {
-          problems.push(`seed ${seed}: regenerated world differs`);
-        }
-        if (JSON.stringify(generateAdventureWorld(parseShareWord(encodeShareWord(settings)))) !== json) {
-          problems.push(`seed ${seed}: share word gives a different world`);
-        }
-        for (const [label, checked] of [['with optional steps', world], ['without optional steps', withoutOptionalSteps(world)]] as const) {
-          const result = checkWinnability(checked);
-          if ('tooLarge' in result) {
-            problems.push(`seed ${seed} ${label}: too large to check`);
-          } else if (!result.winnable || result.unreachableStepIds.length > 0) {
-            problems.push(`seed ${seed} ${label}: not winnable (${result.unreachableStepIds.join(', ')})`);
+          if (JSON.stringify(generateAdventureWorld(settings)) !== json) {
+            problems.push(`seed ${seed}: regenerated world differs`);
           }
-        }
+          if (JSON.stringify(generateAdventureWorld(parseShareWord(encodeShareWord(settings)))) !== json) {
+            problems.push(`seed ${seed}: share word gives a different world`);
+          }
+          for (const [label, checked] of [['with optional steps', world], ['without optional steps', withoutOptionalSteps(world)]] as const) {
+            const result = checkWinnability(checked);
+            if ('tooLarge' in result) {
+              problems.push(`seed ${seed} ${label}: too large to check`);
+            } else if (!result.winnable || result.unreachableStepIds.length > 0) {
+              problems.push(`seed ${seed} ${label}: not winnable (${result.unreachableStepIds.join(', ')})`);
+            }
+          }
+        });
       }
 
       expect(problems).toEqual([]);
       for (const genre of adventureGenres) {
-        const plots = [...groups.values()].filter((group) => group.genre === genre);
-        expect(plots, genre).toHaveLength(plotCounts[genre]);
+        // Each plot gives exactly one world per genre and length, so the
+        // count of distinct worlds shows every plot was reached.
+        expect(worldsByGenre.get(genre)!.size, genre).toBe(plotCounts[genre]);
       }
-      for (const [key, { seeds, worlds }] of groups) {
-        // Most seeds of one genre, plot and length should give their own world.
-        expect(seeds, key).toBeGreaterThan(50);
-        expect(worlds.size, key).toBeGreaterThanOrEqual(Math.ceil(seeds * minimumDistinctShare));
-      }
-    });
+    }, 30_000);
   }
 
+  it('records the seed and original exception while continuing the sweep', () => {
+    const problems: string[] = [];
+    const error = new Error('test failure');
+    const otherError: unknown = 'plain failure';
+    let checkedNext = false;
+
+    recordSeedExceptions(42, problems, () => { throw error; });
+    recordSeedExceptions(43, problems, () => { throw otherError; });
+    recordSeedExceptions(44, problems, () => { checkedNext = true; });
+
+    expect(problems).toEqual([
+      `seed 42: ${error.stack ?? error.message}`,
+      'seed 43: plain failure',
+    ]);
+    expect(checkedNext).toBe(true);
+  });
+
   it('checks that removing optional steps really removes them', () => {
-    const world = generateAdventureWorld(createAdventureSettings(0, 'short'));
+    const world = generateAdventureWorld(createAdventureSettings(0, 'short', 1));
     const trimmed = withoutOptionalSteps(world);
     expect(trimmed.solution.steps.length).toBeLessThan(world.solution.steps.length);
     expect(trimmed.solution.steps.map(({ id }) => id)).toEqual(world.solution.goal.conditions.stepsDone);

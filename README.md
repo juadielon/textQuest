@@ -1,13 +1,29 @@
 # textQuest
 
-textQuest is a planned text adventure game. It will build adventures from
-authored stories and game rules, without using an LLM while you play.
+textQuest is a text adventure game in development. It builds adventures from
+authored content and game rules, without using an LLM while you play.
 
-This repository includes a Docker-run browser placeholder, the rules for
+This repository includes a Docker-run browser start screen, the rules for
 repeatable adventure settings and share words, a world model with a
 winnability checker, deterministic world generation for all three version 1
-genres, a standalone command parser and a save format. The game itself is not
-implemented.
+genres, a command parser and a save format. A pure play module that runs parsed commands against
+a world is also implemented, with a browser play screen built on it.
+All three genres can be played from the start screen. Names still
+come from IDs; authored story text and the saves screen remain
+planned.
+
+## Start screen
+
+[Issue #41](https://github.com/juadielon/textQuest/issues/41) adds the first
+browser screen. Players can choose a short, medium or long adventure, or
+type a share word to open the same starting adventure as a friend.
+[Issue #54](https://github.com/juadielon/textQuest/issues/54) connects both
+forms to play. Invalid words show a clear message beside the field.
+The play screen shows the share word, genre and length and a **Back to start**
+button. Going back ends the current session; opening its share word starts
+again with no progress. There is no save or load interface yet.
+Focus moves to the new screen's heading on navigation. Both screens work by
+keyboard and screen reader, on narrow and wide screens.
 
 ## Version 1 authored content
 
@@ -76,43 +92,48 @@ places remain available. Plot dependencies are added to each step's local
 conditions, and the goal requires **all** selected required steps as well as
 its authored conditions.
 
-Later draws from the same seeded generator
-([issue #51](https://github.com/juadielon/textQuest/issues/51)) move each
-item and clue that starts in a selected place. It goes to a place the player
-can reach from the start without unlocking anything, and no further away than
-the first selected step that needs it. Items and clues that no step needs, or
-that only a step gives, stay as authored. So the same genre, plot and length
-usually gives a different world: across every version 1 seed, all medium and
-long worlds differ, and 86% to 98% of short worlds differ within each genre
-and plot.
-
 The returned world contains engine data, not plot prose, character
 descriptions or player progress. It is a detached copy: generation and callers
 cannot change the pack through it. For each genre, unit tests cover all nine
-plot/length combinations, optional routes and winnability, where items and
-clues may move, seed variation, share-word round trips, and pinned complete
-worlds. A sweep test generates seeds 0 to 999 at every length and checks each
-world is repeatable, survives a share-word round trip, and is winnable with
-and without its optional steps. It also checks that every genre and plot is
-reached, and that at least 80% of the seeds for each genre, plot and length
-give distinct worlds. Changes to these
-generator rules require a new adventure version. This is not command handling, browser
-rendering or a playable game.
+plot/length combinations, optional routes and winnability, seed variation,
+share-word round trips, and pinned complete worlds. A sweep test generates
+seeds 0 to 999 at every length and checks each world is repeatable, survives
+a share-word round trip, and is winnable with and without its optional steps.
+It also checks that every genre and plot is reached. Changes to these
+generator rules require a new adventure version. The generator supplies the
+browser play screen; command handling and player progress live in the play module.
+
+### Seeded placement preparation
+
+[Issue #51](https://github.com/juadielon/textQuest/issues/51) is partly addressed
+by `src/seeded-placement.ts`. It prepares item and clue placement for a future
+adventure version; no player-facing code calls it. Tests supply a seeded
+stream after the genre and plot draws and check repeatability, placement
+rules, winnability with and without optional steps, and at least 80% distinct
+worlds in each genre/plot/length group across seeds 0 to 999.
+
+Version 1 is released and stays exactly as authored: it has 27 distinct
+worlds. Its world and content digests, share words and saved-command replay
+must not change. Seeded placement cannot be activated until a new adventure
+version has distinct share words and final matching content. The prose work
+in [#63](https://github.com/juadielon/textQuest/pull/63) must use new content
+rather than edit released version 1. Activation belongs in a later layer
+above that work; it is not implemented here.
 
 ## Adventure settings and share words
 
 [Issue #3](https://github.com/juadielon/textQuest/issues/3) adds the code that
-describes how an adventure starts. It is not yet connected to the page, and it
-does not create stories on its own.
+describes how an adventure starts. The start screen shows these settings, but
+it does not create stories on its own.
 
 - A new adventure gets a random seed from the browser's cryptographic random
   numbers. The player chooses a short, medium or long adventure.
 - The seed and version always choose the same genre: light fantasy, cosy
   mystery or science fiction.
 - A share word, such as `silverlantern`, joins two words from fixed lists. It
-  holds the seed and length, so there are about 65,000 share words. Nearly
-  all of them lead to a different starting world (see version 1 world
-  generation above). It never includes player progress or save data.
+  holds the seed and length, so there are about 65,000 share words, but
+  version 1 maps them to only 27 distinct starting worlds. More variety needs
+  a new adventure version. It never includes player progress or save data.
 - Share words ignore capitals, spaces and hyphens. Misspelt words, and words
   from newer versions such as `silverlantern2`, are rejected with a clear
   message.
@@ -160,13 +181,14 @@ always gives the same result, whatever the time, locale or browser. Tests show
 long worlds with 28 places and 14 required steps finish within the limit. The
 limit is a cautious first value. Generator tests also check the authored
 light fantasy worlds, including every long plot, within this limit.
-There is no rendered story, command execution or playable adventure.
+Authored story text is not rendered yet. Commands run against generated
+worlds in the browser through the play module described below.
 
 ## Typed command parser
 
 [Issue #27](https://github.com/juadielon/textQuest/issues/27) adds
-`parseCommand(input, targets)` in `src/engine/commands.ts`. It is a standalone
-parser on this branch, not connected to the page or a play module.
+`parseCommand(input, targets)` in `src/engine/commands.ts`. The play module
+below uses it for commands typed into the browser play screen.
 
 It handles movement, look/examine, inventory, take, use (an item alone or on
 a target), talk, authored story choices, hint, undo and help. Common short
@@ -174,8 +196,9 @@ forms include `n`, `x`, `i`, `h` and `u`; `u` means undo, so use `up` to move
 upwards. `commandHelp` provides grammar help without puzzle advice.
 
 The caller supplies only discovered targets with IDs, names, kinds and optional
-discovered aliases. Names match exactly after ignoring case, extra whitespace
-and the articles `a`, `an` and `the`; there is no fuzzy or partial matching.
+discovered aliases. Names and aliases match exactly after ignoring case, extra
+whitespace, trailing `.`, `!` or `?` and the articles `a`, `an` and `the`;
+there is no fuzzy or partial matching. Punctuation inside a command is kept.
 For example, two discovered keys may both have the alias `key`. The parser
 reports both options rather than choosing one. Choice numbers such as `choose 1`
 work only when supplied as discovered aliases for authored options.
@@ -190,8 +213,80 @@ because IDs may repeat across kinds. Ambiguous results also include discovered
 taking a person. It cannot check location, inventory, locked exits or puzzle
 success.
 The caller must exclude hidden names, hidden aliases and unavailable choices.
-Parsing never changes targets or player state. Execution, turn counting,
-suggestions, hint content and undo history remain unimplemented.
+Parsing never changes targets or player state.
+
+## Playing a world
+
+[Issue #36](https://github.com/juadielon/textQuest/issues/36) adds
+`src/engine/play.ts`. `startPlay(world)` begins at the start place.
+`playCommand(world, state, input)` parses typed input against
+`discoveredTargets(world, state)` and returns a new state and a short
+response. Neither the world nor the input state is changed.
+
+The state tracks the place, inventory, found clues, completed steps, opened
+exits, turn count, whether the goal is reached and the previous state for
+undo. Moves, takes and successful uses count as turns; look, examine,
+inventory, talk, hint and help are free. `replayCommands(world, inputs)` always
+gives the same state, so saves can store a command list.
+
+Play follows the winnability checker's rules. Entering a place reveals its
+clues. Items must be taken. A step that needs items happens when the player
+uses one of them at the step's place; other steps happen by themselves once
+their conditions hold. Tests check that following hints wins worlds the
+checker calls winnable. Hints suggest taking a needed item, using something
+or the next place on a shortest winning route, without naming answers.
+
+Discovered targets never include puzzle steps, the goal, unfound clues, items
+elsewhere or places out of sight. Targets use world IDs with their kind, so a
+place and an item may share an ID. Without content-pack names, names come
+from IDs. `worldNamesFrom(pack, world)` in `src/content/v1/world-names.ts`
+looks up pack names for any genre's world; pass them as the world's `names`
+to show and accept them. Shorter aliases are made from each name, so
+`Mara the miller` also answers to `mara` and `miller`; aliases that clash
+with a name, or read as a direction, are dropped. People appear only at
+their place, and you can examine and talk to them. A locked way is called
+`the locked way` until the player knows where it leads, so unknown places
+stay hidden. Names that collide after parser normalisation get stable
+numbered suffixes, such as `red key (item 4)`. Look, inventory and hints use
+these same names. Names that clash with movement or item-use grammar get a
+short numbered name, such as `exit 4` or `item 5`, instead.
+Original names stay available as aliases, but can be
+ambiguous; use the displayed name to pick a particular target.
+Names are checked together after renaming, so movement and item use remain
+unambiguous even when a fallback name is already occupied.
+Worlds have no compass directions or story choices; without pack names, they
+also have no people. Those commands get a plain explanation. Prose,
+autocomplete and checkpoints
+are later steps.
+
+## Play screen
+
+[Issue #44](https://github.com/juadielon/textQuest/issues/44) adds
+`renderPlayScreen(target, settings)` in `src/play-screen.ts`. It generates
+the world, then shows the current place, a log of typed commands and
+responses, a command box, the inventory, found clues and the turn count.
+Commands, including help, hint and undo, run through the play module. When
+the goal is reached, an ending says how many turns it took; undo still works.
+
+Everything can be done with the keyboard: type a command and press Enter.
+The screen starts with one "Your adventure" heading, focused on navigation.
+The share word and navigation controls sit immediately below it.
+Each new response is announced through a polite live region. The layout is
+one column on narrow screens, with a progress column on wide ones. Typed and
+world text is always added as plain text, never as markup. Light fantasy,
+cosy mystery and science fiction worlds can all be played. If a world can't
+be generated from the settings, a plain message is shown instead.
+
+The start screen opens play for new adventures and share words
+([issue #54](https://github.com/juadielon/textQuest/issues/54)).
+Unsupported worlds show a clear message, their share word and a way back
+to the start screen rather than substituting a different adventure.
+Invalid settings or worlds still show that message; unexpected errors while
+opening play are rethrown rather than hidden as an unplayable adventure
+([issue #74](https://github.com/juadielon/textQuest/issues/74)).
+Names still come from IDs. The screen doesn't use the save format yet; the
+saves screen is planned in
+[issue #43](https://github.com/juadielon/textQuest/issues/43).
 
 ## Save format and storage
 
