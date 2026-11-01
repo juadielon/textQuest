@@ -238,7 +238,7 @@ export interface SavesScreenOptions {
  * through `textContent`. Export downloads JSON; import validates a file and
  * adds a new save without changing existing ones. Results are announced without
  * taking focus from an interaction started while the file was being read.
- * Separate import and save-list status regions keep overlapping results visible.
+ * Separate import, export and save-list status regions keep overlapping results visible.
  * Focus moves to the heading.
  */
 export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptions): void {
@@ -246,6 +246,8 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
   const heading = create('h1', { tabIndex: -1 }, 'Your saves');
   const status = create('p', { className: 'saves-status', id: 'saves-status', tabIndex: -1 });
   status.setAttribute('role', 'status');
+  const exportStatus = create('p', { className: 'saves-status', id: 'export-status' });
+  exportStatus.setAttribute('role', 'status');
   const list = create('ul', { className: 'saves-list' });
   list.setAttribute('aria-label', 'Saved adventures');
   const back = create('button', { type: 'button' }, 'Back to start');
@@ -393,9 +395,9 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
         try {
           const save = options.store.load(entry.id);
           downloadSave(exportSaveFile(save), save.name);
-          status.textContent = `Save file download started for “${save.name}”.`;
+          exportStatus.textContent = `Save file download started for “${save.name}”.`;
         } catch (error) {
-          status.textContent = messageFor(error);
+          exportStatus.textContent = messageFor(error);
         }
       }));
     } else {
@@ -469,7 +471,7 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
     return item;
   };
 
-  target.replaceChildren(heading, status, importForm, list, back);
+  target.replaceChildren(heading, status, exportStatus, importForm, list, back);
   heading.focus();
   refresh();
 }

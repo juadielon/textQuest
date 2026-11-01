@@ -879,7 +879,7 @@ describe('renderSavesScreen', () => {
     expect(click).toHaveBeenCalledOnce();
     expect(blob?.type).toBe('application/json');
     expect(await blob?.text()).toBe(store.exportSave(id));
-    expect(app.querySelector('[role="status"]')?.textContent).toContain('download started');
+    expect(app.querySelector('#export-status')?.textContent).toContain('download started');
     expect(document.querySelector('a[download]')).toBeNull();
     expect(revoke).not.toHaveBeenCalled();
     vi.runAllTimers();
@@ -907,7 +907,7 @@ describe('renderSavesScreen', () => {
     buttonNamed('Export: Old trip').click();
 
     expect(await blob?.text()).toBe(store.exportSave(id));
-    expect(app.querySelector('#saves-status')?.textContent).toBe('Save file download started for “New trip”.');
+    expect(app.querySelector('#export-status')?.textContent).toBe('Save file download started for “New trip”.');
     expect(storage.items).toEqual(before);
     vi.runAllTimers();
   });
@@ -920,8 +920,47 @@ describe('renderSavesScreen', () => {
 
     buttonNamed('Export: Trip').click();
 
-    expect(app.querySelector('[role="status"]')?.textContent).toMatch(/Something went wrong/);
+    expect(app.querySelector('#export-status')?.textContent).toMatch(/Something went wrong/);
     expect(storage.items).toEqual(before);
+  });
+
+  it.each(['success', 'failure'])('keeps a delete failure after export %s and cancellation of another deletion', async (result) => {
+    for (const name of ['A', 'B', 'C']) store.add(createSave(name, settings, [], earlier));
+    const before = new Map(storage.items);
+    const waiting: { run: () => void; reject: (error: Error) => void }[] = [];
+    lock.request.mockImplementation((_name: string, task: () => unknown) => new Promise<void>((resolve, reject) => {
+      waiting.push({ run: () => { task(); resolve(); }, reject });
+    }));
+    vi.useFakeTimers();
+    vi.spyOn(URL, 'createObjectURL').mockImplementation(() => {
+      if (result === 'failure') throw new Error('blocked');
+      return 'blob:save-file';
+    });
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    render();
+    for (const name of ['A', 'B']) {
+      buttonNamed(`Delete: ${name}`).click();
+      buttonNamed(`Yes, delete: ${name}`).click();
+    }
+    waiting.shift()!.reject(new DOMException('blocked', 'SecurityError'));
+    await Promise.resolve();
+    const warning = app.querySelector('#saves-status')!.textContent!;
+    expect(warning).toContain('could not lock');
+
+    buttonNamed('Export: C').click();
+    buttonNamed('Keep: B').click();
+    waiting.shift()!.run();
+
+    expect(app.querySelector('#saves-status')?.textContent).toBe(warning);
+    expect(app.querySelector('#export-status')?.textContent).toMatch(
+      result === 'success' ? /download started for “C”/ : /Something went wrong/,
+    );
+    expect(app.querySelector('#export-status')?.getAttribute('role')).toBe('status');
+    expect([...app.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === 'Back to start')?.disabled).toBe(false);
+    expect(storage.items).toEqual(before);
+    vi.runAllTimers();
   });
 
   function chooseFile(text: string) {
@@ -1017,6 +1056,8 @@ describe('renderSavesScreen', () => {
     ['conflict', 'read failure', 'delete first'],
     ['conflict', 'read failure', 'import first'],
     ['success', 'read failure', 'import first'],
+    ['success', 'success', 'delete first'],
+    ['success', 'success', 'import first'],
   ])('keeps both results for delete %s, import %s, %s', async (failure, result, order) => {
     const save = createSave('Trip', settings, ['look'], earlier);
     const id = store.add(save);
@@ -1060,7 +1101,15 @@ describe('renderSavesScreen', () => {
       result === 'success' ? /Imported the save as a new save/ : /could not be read/,
     );
     expect(app.querySelector('#import-status')?.getAttribute('role')).toBe('status');
-    if (failure === 'success') expect(store.list()).toEqual([]);
+    if (failure === 'success') {
+      expect(storage.items.has(SAVE_KEY_PREFIX + id)).toBe(false);
+      if (result === 'success') {
+        const entries = store.list();
+        expect(entries).toHaveLength(1);
+        expect(entries[0].id).not.toBe(id);
+        expect(store.load(entries[0].id)).toEqual(save);
+      } else expect(store.list()).toEqual([]);
+    }
     else if (result === 'success') {
       expect(store.list()).toHaveLength(2);
       expect(storage.items.get(SAVE_KEY_PREFIX + id)).toBe(beforeImport.get(SAVE_KEY_PREFIX + id));

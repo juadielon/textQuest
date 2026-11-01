@@ -451,7 +451,7 @@ All names are added as plain text. **Export** downloads a readable save as a
 a new save, even if its name matches an existing one. Damaged, oversized
 and newer-version files show a clear message without changing existing
 saves. Imported progress is rebuilt when the player resumes it.
-Import has its own announced status, so overlapping save-list results remain
+Import and export have their own announced statuses, so overlapping save-list results remain
 visible. Finishing a file read does not take focus from a newer interaction.
 
 ## Project documents
