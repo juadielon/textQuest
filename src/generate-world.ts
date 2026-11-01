@@ -13,6 +13,11 @@ const versionOnePacks: Readonly<Record<AdventureGenre, ContentPack>> = {
   'science-fiction': scienceFiction,
 };
 
+/** Returns the version 1 content pack used for a genre. */
+export function versionOnePack(genre: AdventureGenre): ContentPack {
+  return versionOnePacks[genre];
+}
+
 /**
  * Builds a detached world from the version 1 content pack for the seed's genre.
  *

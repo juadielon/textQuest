@@ -40,7 +40,13 @@ interface SearchState {
   unlockedExits: Set<string>;
 }
 
-function validateWorld(world: AdventureWorld): void {
+/**
+ * Checks that a world uses a supported version, has unique non-empty IDs and
+ * only refers to things that exist. The world is not changed.
+ *
+ * @throws RangeError when the world is invalid, with a message naming the problem.
+ */
+export function validateWorld(world: AdventureWorld): void {
   if (world.version !== 1) {
     throw new RangeError(`World version ${world.version} is not supported.`);
   }
