@@ -212,7 +212,12 @@ dd {
   margin-top: 1rem;
 }
 
-.save-form label {
+.share-link {
+  margin: 1rem 0;
+}
+
+.save-form label,
+.share-link label {
   display: block;
   font-weight: 600;
 }
@@ -241,4 +246,10 @@ dd {
 .save-actions p {
   flex-basis: 100%;
   margin: 0;
+}
+
+.share-link a {
+  display: inline-block;
+  margin: 0.5rem 0 0.5rem 1rem;
+  color: var(--accent);
 }
