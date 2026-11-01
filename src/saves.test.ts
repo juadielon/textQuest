@@ -506,7 +506,7 @@ describe('save store', () => {
       expect(store.list().find((entry) => entry.id === copy)).toMatchObject({ lastPlayedAt: save.updatedAt });
     });
 
-    it('never moves back, even when another tab or the clock records an earlier time', () => {
+    it('never replaces a later time with an earlier one, such as from a clock set back', () => {
       const { storage, store } = setUp();
       const id = store.add(sampleSave());
       store.markPlayed(id, played);

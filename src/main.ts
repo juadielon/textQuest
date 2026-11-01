@@ -1,7 +1,7 @@
 import './style.css';
 import { renderStartScreen } from './start-screen';
 import { renderPlayScreen } from './play-screen';
-import { buildSaveForm, renderSavesScreen, type StoredSave } from './saves-screen';
+import { buildSaveForm, recordPlayed, renderSavesScreen, type StoredSave } from './saves-screen';
 import { createSaveStore, type StorageLike } from './saves';
 import { summariseAdventure } from './start-screen-model';
 import type { AdventureSettings } from './adventure-settings';
@@ -45,12 +45,7 @@ if (app) {
     let commands: readonly string[] = resumed?.save.commands ?? [];
     let playing = resumed?.id;
     const markPlayed = (): void => {
-      if (playing === undefined) return;
-      try {
-        store.markPlayed(playing);
-      } catch {
-        // A missed play time loses no progress, so play carries on.
-      }
+      if (playing !== undefined) recordPlayed(store, playing);
     };
     const playable = renderPlayScreen(app, settings, {
       commands,

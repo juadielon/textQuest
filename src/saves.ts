@@ -339,7 +339,8 @@ export interface SaveStore {
    * Records that the save with this ID was played at `now`, defaulting to the
    * clock. The time is kept under its own key, so the save, its snapshot and
    * its export never change. An earlier time never replaces a later one, and
-   * nothing is written if the save has gone.
+   * nothing is written if the save has gone. Run it under the lock shared by
+   * every tab, or another tab could write between the check and the write.
    */
   markPlayed(id: string, now?: Date): void;
   /** Stores a new save and returns its new ID. */

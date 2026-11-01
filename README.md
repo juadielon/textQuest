@@ -425,10 +425,12 @@ if that play is never saved, so a Last played time later than Last saved
 means some play was not saved. It is kept under its own
 `textquest:played:<id>` key, never inside the save, so Resume and play never
 change stored progress, deletion snapshots, conflict checks or exported files.
-Each tab only moves the time forward, and nothing is recorded for a save
-deleted elsewhere. Deleting a save removes its time too. Older and imported
-saves, and saves with a damaged or earlier time, show their last saved time
-as Last played until they are played. After a save conflict, play is no longer
+The time is written under the same Web Locks lock that updates and deletes
+share, so two tabs playing at once can't move it backwards and a save deleted
+elsewhere never keeps a time. Deleting a save removes its time too. Browsers
+without Web Locks record no play time. Older and imported saves, saves with
+a damaged or earlier time, and saves in browsers without Web Locks show their
+last saved time as Last played. After a save conflict, play is no longer
 recorded against that save. If the browser cannot store the time, play carries
 on and only the time is missed.
 

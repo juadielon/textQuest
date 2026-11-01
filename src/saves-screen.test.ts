@@ -2,11 +2,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAdventureSettings, type RandomValueSource } from './adventure-settings';
 import {
-  createSave, createSaveStore, SAVE_KEY_PREFIX, type SaveStore, type StorageLike,
+  createSave, createSaveStore, PLAYED_KEY_PREFIX, SAVE_KEY_PREFIX, type SaveStore, type StorageLike,
 } from './saves';
 import {
-  buildSaveForm, formatSaveTime, noLocksMessage, noSavesMessage, renderSavesScreen, SAVE_LOCK_NAME,
-  saveNameMessage, type SaveLocks,
+  buildSaveForm, formatSaveTime, noLocksMessage, noSavesMessage, recordPlayed, renderSavesScreen,
+  SAVE_LOCK_NAME, saveNameMessage, type SaveLocks,
 } from './saves-screen';
 import { genreLabels, lengthLabels } from './start-screen-model';
 
@@ -69,6 +69,76 @@ describe('formatSaveTime', () => {
     expect(formatSaveTime(later.toISOString())).toBe(
       new Intl.DateTimeFormat('en-AU', { dateStyle: 'medium', timeStyle: 'short' }).format(later),
     );
+  });
+});
+
+describe('recordPlayed', () => {
+  const firstPlay = new Date('2026-10-05T01:00:00.000Z');
+  const secondPlay = new Date('2026-10-05T02:00:00.000Z');
+  const addSave = () => store.add(createSave('Trip', settings, [], earlier));
+  const playedTime = (id: string) => storage.items.get(PLAYED_KEY_PREFIX + id);
+  function holdLock() {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    void lock.request(SAVE_LOCK_NAME, () => held);
+    return release;
+  }
+
+  it('writes the time it was called under the lock every tab shares', async () => {
+    const id = addSave();
+    recordPlayed(store, id, { now: firstPlay, locks: lock.locks });
+    expect(lock.request).toHaveBeenCalledWith(SAVE_LOCK_NAME, expect.any(Function));
+    expect(playedTime(id)).toBeUndefined();
+    await lock.settled();
+    expect(playedTime(id)).toBe(firstPlay.toISOString());
+  });
+
+  it('cannot move the time back when another tab records a later play at the same moment', async () => {
+    // Regression: two tabs could both read the old time, then the earlier write could land last.
+    const id = addSave();
+    const release = holdLock();
+    const markPlayed = vi.spyOn(store, 'markPlayed');
+    recordPlayed(store, id, { now: firstPlay, locks: lock.locks });
+    await Promise.resolve();
+    expect(markPlayed).not.toHaveBeenCalled();
+    createSaveStore(storage).markPlayed(id, secondPlay);
+    release();
+    await lock.settled();
+    expect(markPlayed).toHaveBeenCalledOnce();
+    expect(playedTime(id)).toBe(secondPlay.toISOString());
+  });
+
+  it('leaves no time behind for a save deleted in another tab while it waited', async () => {
+    const id = addSave();
+    const [listed] = store.list();
+    const release = holdLock();
+    recordPlayed(store, id, { now: firstPlay, locks: lock.locks });
+    createSaveStore(storage).remove(id, listed.snapshot);
+    release();
+    await lock.settled();
+    expect(storage.items.size).toBe(0);
+  });
+
+  it('records nothing without Web Locks, so Last played shows the last saved time', () => {
+    const id = addSave();
+    const markPlayed = vi.spyOn(store, 'markPlayed');
+    recordPlayed(store, id, { now: firstPlay, locks: undefined });
+    expect(markPlayed).not.toHaveBeenCalled();
+    expect(store.list()[0]).toMatchObject({ lastPlayedAt: earlier.toISOString() });
+  });
+
+  it('never throws when storage or the lock fails', async () => {
+    const id = addSave();
+    storage.failWrites = true;
+    expect(() => recordPlayed(store, id, { now: firstPlay, locks: lock.locks })).not.toThrow();
+    await lock.settled();
+    storage.failWrites = false;
+    const rejecting = { request: vi.fn(() => Promise.reject(new Error('no lock'))) } as unknown as SaveLocks;
+    const throwing = { request: vi.fn(() => { throw new Error('no lock'); }) } as unknown as SaveLocks;
+    expect(() => recordPlayed(store, id, { now: firstPlay, locks: rejecting })).not.toThrow();
+    expect(() => recordPlayed(store, id, { now: firstPlay, locks: throwing })).not.toThrow();
+    await Promise.resolve();
+    expect(playedTime(id)).toBeUndefined();
   });
 });
 

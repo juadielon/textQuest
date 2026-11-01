@@ -52,6 +52,43 @@ function browserLocks(): SaveLocks | undefined {
   return globalThis.navigator?.locks ?? undefined;
 }
 
+/** Options for {@link recordPlayed}. */
+export interface RecordPlayedOptions {
+  /** When the save was played. Defaults to the clock when called, not when the lock arrives. */
+  readonly now?: Date;
+  /** Locks shared between tabs. Defaults to the browser's Web Locks, if it has them. */
+  readonly locks?: SaveLocks;
+}
+
+/**
+ * Records that the save with this ID was just played, so the saves list can
+ * show its Last played time.
+ *
+ * @remarks
+ * The time is written under the lock that saves and deletes already share
+ * across tabs, so two tabs can't both read the old time and then move it
+ * backwards, and a save deleted at the same moment never keeps a time.
+ * Browsers without Web Locks record nothing, so Last played falls back to
+ * the last saved time. Failures are ignored: a missed time loses no progress,
+ * so play carries on and the save itself never changes.
+ *
+ * @param store - Where saves are kept.
+ * @param id - The ID of the save being played.
+ * @param options - The play time and locks to use.
+ */
+export function recordPlayed(store: SaveStore, id: string, options: RecordPlayedOptions = {}): void {
+  const time = options.now ?? new Date();
+  const locks = 'locks' in options ? options.locks : browserLocks();
+  if (!locks) return;
+  withSaveLock(locks, () => {
+    try {
+      store.markPlayed(id, time);
+    } catch {
+      // A missed play time loses no progress.
+    }
+  }, () => undefined);
+}
+
 /** A save the player is playing, and the ID it is stored under. */
 export interface StoredSave {
   readonly id: string;

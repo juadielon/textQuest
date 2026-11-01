@@ -562,7 +562,11 @@ async function openLink(word: string, path = '/textQuest/'): Promise<void> {
   await import('./main');
 }
 
-it('records Last played on Resume and each command without changing the stored save', () => {
+it('records Last played on Resume and each command without changing the stored save', async () => {
+  // Like Web Locks shared by every tab: tasks run one at a time, later, in order.
+  let queue: Promise<unknown> = Promise.resolve();
+  const request = vi.fn((_name: string, task: () => unknown) => (queue = queue.then(task)));
+  Object.defineProperty(navigator, 'locks', { configurable: true, value: { request } });
   const store = createSaveStore(localStorage);
   const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
   const id = store.add(saved);
@@ -575,11 +579,16 @@ it('records Last played on Resume and each command without changing the stored s
   vi.useFakeTimers({ toFake: ['Date'], now: times[0] });
   try {
     get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+    // Written under the lock every tab shares, never straight away.
+    expect(localStorage.getItem(PLAYED_KEY_PREFIX + id)).toBeNull();
+    await queue;
     expect(localStorage.getItem(PLAYED_KEY_PREFIX + id)).toBe(times[0].toISOString());
     vi.setSystemTime(times[1]);
     get<HTMLInputElement>('#play-command').value = 'look';
     get<HTMLFormElement>('.play-command').requestSubmit();
+    await queue;
     expect(localStorage.getItem(PLAYED_KEY_PREFIX + id)).toBe(times[1].toISOString());
+    expect(request.mock.calls.map(([name]) => name)).toEqual([SAVE_LOCK_NAME, SAVE_LOCK_NAME]);
   } finally {
     vi.useRealTimers();
   }
@@ -623,6 +632,10 @@ it('records play for a new save once saved, and stops after a conflict', async (
 });
 
 it('keeps playing when the browser cannot record Last played', () => {
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: async (_name: string, task: () => void) => { task(); } },
+  });
   const store = createSaveStore(localStorage);
   const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
   const id = store.add(saved);
