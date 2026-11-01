@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AdventureWorld, Conditions, Effect } from './adventure-world';
+import type { AdventureWorld, Conditions, Effect, PuzzleStep } from './adventure-world';
 import { checkWinnability, MAX_SEARCH_STATES, validateWorld } from './winnability';
 
 function sampleWorld(): AdventureWorld {
@@ -292,7 +292,7 @@ describe('checkWinnability', () => {
 
   it('rejects unsupported versions and unknown effects in serialised data', () => {
     const data = JSON.stringify(sampleWorld());
-    expect(() => checkWinnability(JSON.parse(data.replace('"version":1', '"version":2'))))
+    expect(() => checkWinnability(JSON.parse(data.replace('"version":1', '"version":3'))))
       .toThrow('not supported');
     expect(() => checkWinnability(JSON.parse(data.replace('unlock-exit', 'remove-item'))))
       .toThrow('Unknown puzzle effect');
@@ -358,5 +358,450 @@ describe('validateWorld', () => {
     expect(() => validateWorld(sampleWorld())).not.toThrow();
     expect(() => validateWorld({ ...sampleWorld(), startPlaceId: 'nowhere' }))
       .toThrow('Unknown place ID "nowhere".');
+  });
+});
+
+// A world version 2 square with two mutually exclusive ways out. The bridge
+// has a failure ending and the tunnel a winning one; both lead to the castle.
+function choiceWorld(): AdventureWorld {
+  return {
+    version: 2, startPlaceId: 'square',
+    places: [{ id: 'square' }, { id: 'bridge' }, { id: 'tunnel' }, { id: 'castle' }],
+    exits: [
+      { id: 'bridge-gate', fromPlaceId: 'square', toPlaceId: 'bridge', locked: true },
+      { id: 'tunnel-gate', fromPlaceId: 'square', toPlaceId: 'tunnel', locked: true },
+      { id: 'bridge-end', fromPlaceId: 'bridge', toPlaceId: 'castle', locked: false },
+      { id: 'tunnel-end', fromPlaceId: 'tunnel', toPlaceId: 'castle', locked: false },
+    ],
+    items: [], clues: [],
+    solution: {
+      steps: [
+        {
+          id: 'cross-bridge', placeId: 'square', choiceId: 'route', conditions: {},
+          effects: [{ kind: 'unlock-exit', exitId: 'bridge-gate' }],
+        },
+        {
+          id: 'dig-tunnel', placeId: 'square', choiceId: 'route', conditions: {},
+          effects: [{ kind: 'unlock-exit', exitId: 'tunnel-gate' }],
+        },
+        {
+          id: 'jump', placeId: 'bridge', conditions: {},
+          effects: [{ kind: 'end-adventure', endingId: 'fall' }],
+        },
+        {
+          id: 'slip-away', placeId: 'tunnel', conditions: {},
+          effects: [{ kind: 'end-adventure', endingId: 'escape' }],
+        },
+      ],
+      goal: { placeId: 'castle', conditions: {} },
+      endings: [{ id: 'fall', outcome: 'failure' }, { id: 'escape', outcome: 'win' }],
+    },
+  };
+}
+
+const withGoal = (world: AdventureWorld, goal: AdventureWorld['solution']['goal']): AdventureWorld =>
+  ({ ...world, solution: { ...world.solution, goal } });
+
+describe('world version 2 choices and endings', () => {
+  it('reports the trap route when the player skips a returnable place or its key', () => {
+    const world: AdventureWorld = {
+      version: 2, startPlaceId: 'square',
+      places: [{ id: 'square' }, { id: 'shed' }, { id: 'vault' }],
+      exits: [
+        ...twoWay('square', 'shed'),
+        { id: 'enter-vault', fromPlaceId: 'square', toPlaceId: 'vault', locked: false },
+      ],
+      items: [{ id: 'key', placeId: 'shed' }], clues: [],
+      solution: {
+        steps: [], goal: { placeId: 'vault', conditions: { itemsHeld: ['key'] } },
+      },
+    };
+    expect(checkWinnability(world)).toEqual({
+      winnable: true, unreachableStepIds: [], reachableEndingIds: [], canGetStuck: true,
+    });
+    expect(checkWinnability({ ...world, version: 1 }))
+      .toEqual({ winnable: true, unreachableStepIds: [] });
+  });
+
+  it('counts terminal option copies towards the search-state limit', () => {
+    const endingSteps: AdventureWorld['solution']['steps'] = Array.from(
+      { length: MAX_SEARCH_STATES + 1 }, (_, index) => ({
+        id: `end-${index}`, placeId: 'start', conditions: {},
+        effects: [{ kind: 'end-adventure', endingId: 'escape' }],
+      }),
+    );
+    const world: AdventureWorld = {
+      version: 2, startPlaceId: 'start', places: [{ id: 'start' }, { id: 'goal' }],
+      exits: [], items: [], clues: [],
+      solution: {
+        steps: endingSteps, goal: { placeId: 'goal', conditions: {} },
+        endings: [{ id: 'escape', outcome: 'win' }],
+      },
+    };
+    expect(checkWinnability(world)).toEqual({ winnable: false, tooLarge: true });
+    expect(checkWinnability({
+      ...world, solution: { ...world.solution, steps: endingSteps.slice(0, MAX_SEARCH_STATES - 1) },
+    })).toEqual({
+      winnable: true, unreachableStepIds: [], reachableEndingIds: ['escape'], canGetStuck: false,
+    });
+  });
+
+  function goalWorld(): AdventureWorld {
+    return {
+      version: 2, startPlaceId: 'start',
+      places: [{ id: 'start' }, { id: 'goal' }, { id: 'beyond' }],
+      exits: [
+        ...twoWay('start', 'goal'), ...twoWay('goal', 'beyond'),
+      ],
+      items: [], clues: [],
+      solution: {
+        steps: [{
+          id: 'leave', placeId: 'beyond', conditions: {},
+          effects: [{ kind: 'end-adventure', endingId: 'escape' }],
+        }],
+        goal: { placeId: 'start', conditions: {} },
+        endings: [{ id: 'escape', outcome: 'win' }],
+      },
+    };
+  }
+
+  it('does not follow a one-way exit after winning at the start', () => {
+    const world = goalWorld();
+    expect(checkWinnability({
+      ...world, exits: [{ id: 'out', fromPlaceId: 'start', toPlaceId: 'beyond', locked: false }],
+      solution: { ...world.solution, steps: [] },
+    })).toEqual({
+      winnable: true, unreachableStepIds: [], reachableEndingIds: [], canGetStuck: false,
+    });
+  });
+
+  it('does not visit returnable places or take an ending after winning at the start', () => {
+    expect(checkWinnability(goalWorld())).toEqual({
+      winnable: true, unreachableStepIds: ['leave'], reachableEndingIds: [], canGetStuck: false,
+    });
+  });
+
+  it('stops at a goal midway along a returnable route', () => {
+    expect(checkWinnability(withGoal(goalWorld(), { placeId: 'goal', conditions: {} }))).toEqual({
+      winnable: true, unreachableStepIds: ['leave'], reachableEndingIds: [], canGetStuck: false,
+    });
+  });
+
+  it('still explores routes that avoid the goal', () => {
+    const world = withGoal(goalWorld(), { placeId: 'goal', conditions: {} });
+    expect(checkWinnability({
+      ...world, exits: [...world.exits, ...twoWay('start', 'beyond')],
+    })).toEqual({
+      winnable: true, unreachableStepIds: [], reachableEndingIds: ['escape'], canGetStuck: false,
+    });
+  });
+
+  it.each<Conditions>([
+    { itemsHeld: ['token'] }, { cluesRevealed: ['note'] },
+    { stepsDone: ['prepare'] }, { placesVisited: ['goal'] },
+  ])('can leave an unmet goal and return when its conditions hold: %j', (conditions) => {
+    const world = withGoal(goalWorld(), { placeId: 'start', conditions });
+    expect(checkWinnability({
+      ...world,
+      items: [{ id: 'token', placeId: 'goal' }],
+      clues: [{ id: 'note', placeId: 'goal' }],
+      solution: {
+        ...world.solution,
+        steps: [...world.solution.steps, {
+          id: 'prepare', placeId: 'goal', conditions: {}, effects: [],
+        }],
+      },
+    })).toEqual({
+      winnable: true, unreachableStepIds: [], reachableEndingIds: ['escape'], canGetStuck: false,
+    });
+  });
+
+  it('stops when a decision at the goal meets its conditions', () => {
+    const world = withGoal(goalWorld(), { placeId: 'start', conditions: { stepsDone: ['finish'] } });
+    expect(checkWinnability({
+      ...world,
+      solution: {
+        ...world.solution,
+        steps: [...world.solution.steps,
+          { id: 'finish', placeId: 'start', choiceId: 'plan', conditions: {}, effects: [] },
+          { id: 'wait', placeId: 'start', choiceId: 'plan', conditions: {}, effects: [] },
+          {
+            id: 'too-late', placeId: 'start', conditions: { stepsDone: ['finish'] },
+            effects: [{ kind: 'end-adventure', endingId: 'escape' }],
+          },
+        ],
+      },
+    })).toEqual({
+      winnable: true, unreachableStepIds: ['too-late'],
+      reachableEndingIds: ['escape'], canGetStuck: false,
+    });
+  });
+
+  it('preserves version 1 exploration beyond a reached goal and its result shape', () => {
+    const world = goalWorld();
+    expect(checkWinnability({
+      ...world, version: 1,
+      solution: {
+        goal: world.solution.goal,
+        steps: [{ id: 'after-goal', placeId: 'beyond', conditions: {}, effects: [] }],
+      },
+    })).toEqual({ winnable: true, unreachableStepIds: [] });
+  });
+
+  it.each(['take', 'use'] as const)('preserves an early ending before %s wins at the goal', (action) => {
+    const world: AdventureWorld = {
+      version: 2, startPlaceId: 'room', places: [{ id: 'room' }], exits: [],
+      items: [{ id: 'key', placeId: 'room' }], clues: [],
+      solution: {
+        goal: {
+          placeId: 'room',
+          conditions: action === 'take' ? { itemsHeld: ['key'] } : { stepsDone: ['finish'] },
+        },
+        steps: [
+          {
+            id: 'leave-early', placeId: 'room', conditions: {},
+            effects: [{ kind: 'end-adventure', endingId: 'early' }],
+          },
+          {
+            id: 'leave-late', placeId: 'room',
+            conditions: action === 'take' ? { itemsHeld: ['key'] } : { stepsDone: ['finish'] },
+            effects: [{ kind: 'end-adventure', endingId: 'late' }],
+          },
+          {
+            id: 'leave-holding-key', placeId: 'room', conditions: { itemsHeld: ['key'] },
+            effects: [{ kind: 'end-adventure', endingId: 'holding-key' }],
+          },
+          {
+            id: 'finish', placeId: 'room', conditions: { itemsHeld: ['key'] }, effects: [],
+          },
+        ],
+        endings: [
+          { id: 'early', outcome: 'failure' }, { id: 'late', outcome: 'failure' },
+          { id: 'holding-key', outcome: 'failure' },
+        ],
+      },
+    };
+    expect(checkWinnability(world)).toEqual({
+      winnable: true,
+      unreachableStepIds: action === 'take'
+        ? ['leave-late', 'leave-holding-key', 'finish'] : ['leave-late'],
+      reachableEndingIds: action === 'take' ? ['early'] : ['early', 'holding-key'],
+      canGetStuck: false,
+    });
+  });
+
+  it('settles automatic steps and clues at the current place before checking the goal', () => {
+    const world = withGoal(goalWorld(), { placeId: 'start', conditions: { stepsDone: ['finish'] } });
+    expect(checkWinnability({
+      ...world,
+      clues: [{ id: 'note', placeId: 'start' }],
+      solution: {
+        ...world.solution,
+        steps: [...world.solution.steps, {
+          id: 'finish', placeId: 'start', conditions: { cluesRevealed: ['note'] }, effects: [],
+        }],
+      },
+    })).toEqual({
+      winnable: true, unreachableStepIds: ['leave'], reachableEndingIds: [], canGetStuck: false,
+    });
+  });
+
+  it('searches every choice and reports each reachable ending without changing the world', () => {
+    const world = choiceWorld();
+    const before = JSON.stringify(world);
+    expect(checkWinnability(world)).toEqual({
+      winnable: true, unreachableStepIds: [],
+      reachableEndingIds: ['fall', 'escape'], canGetStuck: false,
+    });
+    expect(JSON.stringify(world)).toBe(before);
+    expect(checkWinnability(JSON.parse(before))).toEqual(checkWinnability(world));
+  });
+
+  it('never lets one route take both options of a choice', () => {
+    const world = withGoal(choiceWorld(), {
+      placeId: 'castle', conditions: { stepsDone: ['cross-bridge', 'dig-tunnel'] },
+    });
+    const result = checkWinnability({
+      ...world,
+      solution: {
+        ...world.solution,
+        endings: [{ id: 'fall', outcome: 'failure' }, { id: 'escape', outcome: 'failure' }],
+      },
+    });
+    expect(result).toEqual({
+      winnable: false, unreachableStepIds: [],
+      reachableEndingIds: ['fall', 'escape'], canGetStuck: true,
+    });
+  });
+
+  it('reports a choice that leaves the player unable to win', () => {
+    const world = withGoal(choiceWorld(), { placeId: 'castle', conditions: { placesVisited: ['tunnel'] } });
+    expect(checkWinnability(world)).toMatchObject({ winnable: true, canGetStuck: true });
+  });
+
+  it('keeps independent choice groups open and tries terminal options after another choice', () => {
+    const step = (id: string, choiceId: string, conditions: Conditions = {}, effects: Effect[] = []) =>
+      ({ id, placeId: 'hall', choiceId, conditions, effects });
+    expect(checkWinnability({
+      version: 2, startPlaceId: 'hall', places: [{ id: 'hall' }],
+      exits: [], items: [], clues: [],
+      solution: {
+        steps: [
+          step('left', 'door'), step('right', 'door'),
+          step('fall', 'floor', { stepsDone: ['left'] }, [{ kind: 'end-adventure', endingId: 'pit' }]),
+          step('stay', 'floor'),
+        ],
+        goal: { placeId: 'hall', conditions: { stepsDone: ['left', 'stay'] } },
+        endings: [{ id: 'pit', outcome: 'failure' }],
+      },
+    })).toEqual({ winnable: true, unreachableStepIds: [], reachableEndingIds: ['pit'], canGetStuck: true });
+  });
+
+  it.each([
+    ['only options', undefined],
+    ['options and automatic steps ready together', () => ({ cluesRevealed: ['mark'] })],
+    ['options and automatic steps listed in reverse dependency order', (index: number, size: number) =>
+      (index === size - 1 ? { cluesRevealed: ['mark'] } : { stepsDone: [`auto-${index + 1}`] })],
+  ] as const)('checks a large choice group with %s without rescanning every step', (_, needs) => {
+    const size = 100;
+    let reads = 0;
+    // Counts every read of a step field, so the test bounds work without timing it.
+    const counted = (step: PuzzleStep): PuzzleStep => {
+      const copy = {} as PuzzleStep;
+      for (const [key, value] of Object.entries(step)) {
+        Object.defineProperty(copy, key, {
+          enumerable: true,
+          get: () => {
+            reads++;
+            return value;
+          },
+        });
+      }
+      return copy;
+    };
+    const options = Array.from({ length: size }, (_, index): PuzzleStep => ({
+      id: `option-${index}`, placeId: 'start', choiceId: 'large', conditions: {},
+      effects: [{ kind: 'reveal-clue', clueId: 'mark' }],
+    }));
+    const automatic = needs === undefined ? [] : Array.from({ length: size }, (_, index): PuzzleStep => ({
+      id: `auto-${index}`, placeId: 'start', conditions: needs(index, size), effects: [],
+    }));
+    expect(checkWinnability({
+      version: 2, startPlaceId: 'start', places: [{ id: 'start' }, { id: 'goal' }],
+      exits: [], items: [], clues: [{ id: 'mark' }],
+      solution: { steps: [...options, ...automatic].map(counted), goal: { placeId: 'goal', conditions: {} } },
+    })).toEqual({ winnable: false, unreachableStepIds: [], reachableEndingIds: [], canGetStuck: true });
+    // About 101 states each read every step a few times, roughly 100,000 reads.
+    // Rescanning every step per option or per automatic step reads at least a million.
+    expect(reads).toBeLessThan(20 * size * size);
+  });
+
+  it('counts a winning ending as a win when the goal cannot be reached', () => {
+    const world = withGoal(choiceWorld(), { placeId: 'castle', conditions: { stepsDone: ['jump'] } });
+    expect(checkWinnability(world)).toEqual({
+      winnable: true, unreachableStepIds: [],
+      reachableEndingIds: ['fall', 'escape'], canGetStuck: true,
+    });
+  });
+
+  it('allows a failure only when the player could still have won instead', () => {
+    const world = choiceWorld();
+    const onlyFailure: AdventureWorld = {
+      ...world,
+      exits: world.exits.filter(({ id }) => id !== 'bridge-end'),
+      solution: {
+        ...world.solution,
+        steps: world.solution.steps.filter(({ id }) => id !== 'slip-away'),
+      },
+    };
+    // The bridge leads nowhere but the fall, so recovering to just before it can't help.
+    expect(checkWinnability(onlyFailure)).toEqual({
+      winnable: true, unreachableStepIds: [],
+      reachableEndingIds: ['fall'], canGetStuck: true,
+    });
+    expect(checkWinnability({ ...onlyFailure, exits: [...onlyFailure.exits, world.exits[2]] }))
+      .toMatchObject({ winnable: true, canGetStuck: false });
+  });
+
+  it('reports a world whose only outcome is failure as unwinnable', () => {
+    expect(checkWinnability({
+      version: 2, startPlaceId: 'cliff', places: [{ id: 'cliff' }, { id: 'sea' }],
+      exits: [], items: [], clues: [],
+      solution: {
+        steps: [{
+          id: 'leap', placeId: 'cliff', conditions: {},
+          effects: [{ kind: 'end-adventure', endingId: 'fall' }],
+        }],
+        goal: { placeId: 'sea', conditions: {} },
+        endings: [{ id: 'fall', outcome: 'failure' }],
+      },
+    })).toEqual({
+      winnable: false, unreachableStepIds: [], reachableEndingIds: ['fall'], canGetStuck: true,
+    });
+  });
+
+  it('adds only the extra fields when a version 2 world has no choices', () => {
+    expect(checkWinnability({ ...sampleWorld(), version: 2 })).toEqual({
+      winnable: true, unreachableStepIds: [], reachableEndingIds: [], canGetStuck: false,
+    });
+  });
+
+  it.each<(world: AdventureWorld) => AdventureWorld>([
+    (world) => ({ ...world, solution: { ...world.solution, endings: [] } }),
+    (world) => ({
+      ...world, solution: {
+        ...world.solution,
+        steps: world.solution.steps.map((step) => ({ ...step, choiceId: 'pick' })),
+      },
+    }),
+    (world) => ({
+      ...world, solution: {
+        ...world.solution,
+        steps: world.solution.steps.map((step, index) => index ? step
+          : { ...step, effects: [{ kind: 'end-adventure' as const, endingId: 'x' }] }),
+      },
+    }),
+  ])('keeps choices and endings out of world version 1 %#', (change) => {
+    expect(() => checkWinnability(change(sampleWorld()))).toThrow('need world version 2');
+  });
+
+  it.each<[string, (world: AdventureWorld) => AdventureWorld, string]>([
+    ['a one-option choice', (world) => ({
+      ...world, solution: {
+        ...world.solution,
+        steps: world.solution.steps.map((step) =>
+          step.id === 'dig-tunnel' ? { ...step, choiceId: 'other' } : step),
+      },
+    }), 'needs at least two steps'],
+    ['an empty choice ID', (world) => ({
+      ...world, solution: {
+        ...world.solution,
+        steps: world.solution.steps.map((step) => ({ ...step, choiceId: ' ' })),
+      },
+    }), 'empty choice ID'],
+    ['an unknown ending', (world) => ({
+      ...world, solution: {
+        ...world.solution,
+        steps: world.solution.steps.map((step) => step.id === 'jump'
+          ? { ...step, effects: [{ kind: 'end-adventure' as const, endingId: 'missing' }] } : step),
+      },
+    }), 'Unknown ending ID "missing"'],
+    ['two endings from one step', (world) => ({
+      ...world, solution: {
+        ...world.solution,
+        steps: world.solution.steps.map((step) => step.id === 'jump' ? {
+          ...step, effects: [...step.effects, { kind: 'end-adventure' as const, endingId: 'escape' }],
+        } : step),
+      },
+    }), 'more than once'],
+    ['a repeated ending ID', (world) => ({
+      ...world, solution: {
+        ...world.solution, endings: [...world.solution.endings!, world.solution.endings![0]],
+      },
+    }), 'ending ID "fall" is empty or repeated'],
+    ['an unknown outcome', (world) => JSON.parse(JSON.stringify(world).replace('"failure"', '"draw"')),
+      'unknown outcome'],
+  ])('rejects %s', (_, change, message) => {
+    expect(() => validateWorld(change(choiceWorld()))).toThrow(message);
   });
 });
