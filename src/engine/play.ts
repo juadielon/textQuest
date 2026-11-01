@@ -420,14 +420,24 @@ const itemsHere = (world: PlayWorld, progress: Progress) => world.items
   .filter((item) => item.placeId === progress.placeId && !progress.itemsHeld.has(item.id))
   .map(({ id }) => id);
 
+// Play only knows version 1 rules. Version 2 choices and failure endings stay
+// out of play until it can handle them and checkpoint recovery exists.
+function validatePlayWorld(world: PlayWorld): void {
+  validateWorld(world);
+  if (world.version !== 1) {
+    throw new RangeError(`World version ${world.version} cannot be played yet.`);
+  }
+}
+
 /**
  * Starts a new play of a world at its starting place. Clues there are found
  * and any steps that need no items happen straight away. The world is not changed.
  *
- * @throws RangeError when the world is invalid, as `checkWinnability` would report.
+ * @throws RangeError when the world is invalid, as `checkWinnability` would
+ * report, or uses world version 2, which play does not support yet.
  */
 export function startPlay(world: PlayWorld): PlayState {
-  validateWorld(world);
+  validatePlayWorld(world);
   const progress: Progress = {
     placeId: world.startPlaceId, itemsHeld: new Set(), placesVisited: new Set(),
     cluesRevealed: new Set(), stepsDone: new Set(), unlockedExits: new Set(),
@@ -718,10 +728,10 @@ function hint(world: PlayWorld, progress: Progress, canUndo: boolean): string {
  * Hints point at the next useful step without naming puzzle answers, and
  * suggest undo at a dead end only when a previous turn exists.
  *
- * @throws RangeError when the world is invalid.
+ * @throws RangeError when the world is invalid or uses world version 2.
  */
 export function runAction(world: PlayWorld, state: PlayState, action: CommandAction): PlayTurn {
-  validateWorld(world);
+  validatePlayWorld(world);
   const progress = progressFrom(state);
   const reply = (message: string): PlayTurn => ({ state, message });
   switch (action.kind) {

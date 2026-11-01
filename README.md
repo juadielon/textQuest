@@ -214,9 +214,34 @@ paths. Places the player can walk to and back from are checked together as
 one area, because visiting them all only adds progress. Choices between
 one-way paths still create separate routes.
 
+[Issue #79](https://github.com/juadielon/textQuest/issues/79) prepares world
+format version 2 for consequential choices. Steps that share a `choiceId` are
+mutually exclusive: once one is done, the others can never be done. A step
+can also end the adventure early with an `end-adventure` effect naming one of
+the world's `endings`, each a `win` or a `failure`. Version 1 worlds reject
+these fields, so released worlds, share words, saves and replays are
+unchanged. For version 2 the checker visits one place at a time and tries
+moves, item takes, uses, choices and endings separately. Only clues and
+steps needing no items or decision happen automatically at the current place.
+After those automatic changes, reaching the goal stops the route before any
+further action. This keeps endings available before taking or using an item
+that would win, without counting actions taken after a win. For version 2
+it also returns `reachableEndingIds` and `canGetStuck`, which is true when a
+route reaches a point where the player can no longer win. The point just
+before a failure must still be able to win, so recovery from it works. No
+released adventure generates version 2 worlds, and play refuses them until it
+supports choices and checkpoint recovery
+([issue #82](https://github.com/juadielon/textQuest/issues/82)).
+
 [Issue #16](https://github.com/juadielon/textQuest/issues/16) limits the
-search to `MAX_SEARCH_STATES` (10,000) states, so a large world cannot freeze
-the page. A world that needs more returns `{ winnable: false, tooLarge: true }`
+search to `MAX_SEARCH_STATES` (10,000) states. Version 2 terminal-option
+copies count towards this limit as well. The limit caps how many states are
+created, not how long it takes to read a very large world, so it does not
+promise that any input finishes instantly. Version 2 choice checks look up
+already-taken choices once per state instead of rescanning every step for each
+option, and arrival takes automatic steps as their conditions are met instead
+of rescanning the step list after each one.
+A world that needs more returns `{ winnable: false, tooLarge: true }`
 instead. It must be treated as rejected, never as winnable. The same world
 always gives the same result, whatever the time, locale or browser. Tests show
 long worlds with 28 places and 14 required steps finish within the limit. The
@@ -347,16 +372,55 @@ file as a new save. A full or blocked storage is reported clearly.
 [Issue #43](https://github.com/juadielon/textQuest/issues/43) adds saving to
 the browser. During play, a **Save adventure** form stores the adventure in
 `localStorage` under a name the player chooses. Saving again, or saving a
-resumed adventure, updates that save. While saves are waiting or being written,
-**Back to start** is unavailable. Play stays open after success or failure;
+resumed adventure, updates that save. Each submission keeps the commands
+present when Save was pressed, not commands typed later while waiting for
+storage. While saves are waiting or being written, **Back to start** is
+unavailable. Play stays open after success or failure;
 errors remain visible so the player can retry, and returning to start always
 requires another choice after saving finishes. Closing or reloading the tab
-can still interrupt saving and lose unsaved progress; wait for the Saved message
-before leaving the page.
+can still interrupt saving and lose unsaved progress. A Saved message is shown
+only after the last queued save succeeds. Before leaving, wait for that message
+and for Back to start to become available; any commands typed after the last
+save submission still need another save.
+Name-validation errors and unacknowledged save failures are shown together.
+Correcting a name while older saves wait does not acknowledge their later
+failures. After a conflict, already-queued submissions are skipped; press Save
+again after the queue finishes to retry explicitly.
+
+Play rejects commands before execution or recording if they would exceed
+10,000 saved commands or the 1,000,000-character JSON file limit, including
+escaped characters and room for any allowed save name. The same guard applies
+to undo: it adds a command rather than shortening the saved history. Existing
+valid saves still replay unchanged, and rejected commands leave that progress
+saveable. A file-limit warning may allow a shorter command; at the command-count
+limit no further commands can be recorded.
+Rejected control characters and capacity errors are shown visibly and announced
+in the live region without entering command history. A valid command clears
+the visible error; normal responses appear only in the log.
+The file guard reserves room for the largest valid name: 60 unpaired UTF-16
+surrogate code units, each escaped as six JSON characters. A one-character
+plain name can therefore reach the guard up to 359 characters before its actual
+file reaches the limit. This conservative allowance lets players rename later
+without making their progress too large to save. Existing near-limit saves
+with shorter names still replay and can be saved unchanged.
 
 **Your saves** on the start screen
-lists every save with its name, genre, length and last played time, newest
-first.
+lists every save with its name, genre, length and last saved time, newest
+first. While a deletion waits for storage, Back and Resume are unavailable,
+but Keep still cancels it. When another deletion refreshes the list, other
+live confirmations retain their original Keep controls and focus. Their
+confirmed snapshots are still checked when the lock arrives.
+Keep cancels the request and refreshes its row, so changes or deletion in another
+tab are reflected. If reading the list fails, existing rows are retained and the
+error is reported; the cancelled request remains cancelled.
+Other keyboard focus is preserved too, using the equivalent refreshed control
+when its unchanged row is replaced; results receive focus only if the old
+focused control has gone and has no suitable replacement.
+Overlapping deletion results are kept together, so a later success cannot
+hide an earlier conflict or lock failure.
+Last saved changes only when Save is pressed successfully, not on Resume
+or unsaved play. Tracking when a save was last played remains unfinished
+under issue #43 and needs a separate safe follow-up.
 
 An update only goes ahead if the stored save is still exactly the version
 that tab last loaded or wrote. Updates and deletes take turns through a Web

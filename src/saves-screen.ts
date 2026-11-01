@@ -20,10 +20,10 @@ export const noSavesMessage = 'You have no saves yet. Save during an adventure t
 const controlCharacterPattern = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
 
 /**
- * Turns a save's ISO time into a short, readable local date and time,
+ * Turns a save's last-saved ISO time into a short, readable local date and time,
  * such as "12 Oct 2026, 3:40 pm".
  */
-export function formatLastPlayed(isoTime: string): string {
+export function formatLastSaved(isoTime: string): string {
   return new Intl.DateTimeFormat('en-AU', { dateStyle: 'medium', timeStyle: 'short' })
     .format(new Date(isoTime));
 }
@@ -94,6 +94,9 @@ export interface SaveFormOptions {
  * Results and problems go to a polite status message as plain text.
  * A failed save leaves any stored version as it was.
  * Pending changes let the caller keep this form visible until all requests finish.
+ * Success is announced only when no other save is waiting; errors remain visible.
+ * Name errors and unacknowledged save failures remain visible together until
+ * corrected and explicitly retried after the queue finishes.
  */
 export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
   const now = options.now ?? (() => new Date());
@@ -101,6 +104,10 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
   let current = options.resumed;
   let conflictCount = 0;
   let pending = 0;
+  let validationCount = 0;
+  let nameProblem = '';
+  let failures: string[] = [];
+  let savedMessage = '';
 
   const input = create('input', {
     type: 'text', id: 'save-name', maxLength: MAX_SAVE_NAME_LENGTH, autocomplete: 'off',
@@ -112,30 +119,46 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
   const form = create('form', { className: 'save-form', noValidate: true },
     create('label', { htmlFor: input.id }, 'Save name'), input,
     create('button', { type: 'submit' }, 'Save adventure'), status);
+  const showStatus = (): void => {
+    const problems = [nameProblem, ...failures].filter(Boolean);
+    status.textContent = problems.length ? problems.join(' ')
+      : pending > 0 ? 'Saving the commands from when Save was pressed. Stay here until saving finishes.'
+        : savedMessage;
+  };
+  const reportFailure = (message: string): void => {
+    if (!failures.includes(message)) failures.push(message);
+  };
 
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     const name = input.value.trim();
     if (!name || name.length > MAX_SAVE_NAME_LENGTH || controlCharacterPattern.test(name)) {
-      status.textContent = saveNameMessage;
+      validationCount += 1;
+      nameProblem = saveNameMessage;
+      showStatus();
       input.setAttribute('aria-invalid', 'true');
       input.focus();
       return;
     }
     input.removeAttribute('aria-invalid');
+    nameProblem = '';
+    if (pending === 0) failures = [];
+    savedMessage = '';
     // Take the commands now, so a save matches the moment the player chose.
     const commands = [...options.commands()];
     const time = now();
     const conflictsAtSubmit = conflictCount;
+    const validationAtSubmit = validationCount;
     pending += 1;
     options.onPendingChange?.(true);
-    status.textContent = 'Saving adventure. Stay here until saving finishes.';
+    showStatus();
     let finished = false;
     const finish = (): void => {
       if (finished) return;
       finished = true;
       pending -= 1;
       options.onPendingChange?.(pending > 0);
+      showStatus();
     };
     withSaveLock(locks, () => {
       try {
@@ -148,11 +171,13 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
           const save = { ...fresh, createdAt, updatedAt: fresh.updatedAt < updatedAt ? updatedAt : fresh.updatedAt };
           options.store.replace(current.id, current.save, save);
           current = { id: current.id, save };
-          status.textContent = `Saved “${name}”.`;
+          if (pending === 1 && validationAtSubmit === validationCount) savedMessage = `Saved “${name}”.`;
         } else {
           const copied = current !== undefined;
           current = { id: options.store.add(fresh), save: fresh };
-          status.textContent = copied ? `Saved “${name}” as a new save. ${noLocksMessage}` : `Saved “${name}”.`;
+          if (pending === 1 && validationAtSubmit === validationCount) {
+            savedMessage = copied ? `Saved “${name}” as a new save. ${noLocksMessage}` : `Saved “${name}”.`;
+          }
         }
       } catch (error) {
         const conflict = conflictMessage(error);
@@ -160,12 +185,14 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
           current = undefined;
           conflictCount += 1;
         }
-        status.textContent = conflict ?? messageFor(error);
+        reportFailure(conflict ?? messageFor(error));
       } finally {
         finish();
       }
     }, () => {
-      if (conflictsAtSubmit === conflictCount) status.textContent = lockFailureMessage;
+      if (conflictsAtSubmit === conflictCount) {
+        reportFailure(lockFailureMessage);
+      }
       finish();
     });
   });
@@ -180,7 +207,7 @@ function conflictMessage(error: unknown): string | undefined {
     return undefined;
   }
   const what = error.problem === 'changed' ? 'changed' : 'deleted';
-  return `This save was ${what} in another tab or window, so it was not overwritten. Choose Save adventure again to keep this progress as a new save.`;
+  return `This save was ${what} in another tab or window, so it was not overwritten. Saves queued before this warning will not be written. Choose Save adventure again to keep this progress as a new save.`;
 }
 
 /** Options for {@link renderSavesScreen}. */
@@ -197,12 +224,14 @@ export interface SavesScreenOptions {
 
 /**
  * Replaces the contents of `target` with the list of saves. Each save shows
- * its name, genre, length and last played time, with Resume, Export and Delete.
+ * its name, genre, length and last saved time, with Resume, Export and Delete.
  *
  * @remarks
  * Delete confirms the exact listed save under a shared lock; changed saves
  * stay stored and need fresh confirmation. Without a lock, deletion is refused.
  * Keep cancels deletion even while it is waiting for the lock.
+ * Refresh preserves live confirmations and focus. Pending deletes keep Back and Resume
+ * unavailable, so failures remain visible until completion or cancellation.
  * Saves that can't be read are listed
  * with the reason and kept; only the player can delete them. All text goes in
  * through `textContent`. Export downloads JSON; import validates a file and
@@ -268,17 +297,57 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
     }
   });
 
-  const refresh = (): boolean => {
+  const confirmations = new Map<string, HTMLLIElement>();
+  let pendingDeletes = 0;
+  let deletionOutcomes: string[] = [];
+  const reportDeletion = (message: string): void => {
+    deletionOutcomes.push(message);
+    status.textContent = deletionOutcomes.join(' ');
+  };
+  const updateNavigation = (): void => {
+    back.disabled = pendingDeletes > 0;
+    for (const resume of list.querySelectorAll<HTMLButtonElement>('button[aria-label^="Resume:"]')) {
+      resume.disabled = pendingDeletes > 0;
+    }
+  };
+
+  const refresh = (focused: Element | null = document.activeElement): boolean => {
+    const focusId = focused instanceof HTMLElement ? focused.closest('.save-item')?.getAttribute('aria-labelledby') : null;
+    const focusLabel = focused?.getAttribute('aria-label');
+    const focusText = focused?.textContent;
     let entries: SaveListEntry[];
     try {
       entries = options.store.list();
     } catch (error) {
-      list.replaceChildren();
-      status.textContent = messageFor(error);
+      reportDeletion(messageFor(error));
+      if (focused instanceof HTMLElement && !focused.isConnected) status.focus();
       return false;
     }
-    list.replaceChildren(...entries.map((entry) => saveItem(entry)));
-    if (!entries.length) list.append(create('li', {}, noSavesMessage));
+    const items = entries.map((entry) => confirmations.get(entry.id) ?? saveItem(entry));
+    for (const [id, item] of confirmations) {
+      if (!entries.some((entry) => entry.id === id)) items.push(item);
+    }
+    if (!items.length) items.push(create('li', {}, noSavesMessage));
+    for (const old of [...list.children]) {
+      if (!items.some((item) => item === old)) old.remove();
+    }
+    items.forEach((item, index) => {
+      if (list.children[index] !== item) list.insertBefore(item, list.children[index] ?? null);
+    });
+    updateNavigation();
+    if (focused instanceof HTMLElement) {
+      if (focused.isConnected) {
+        if (document.activeElement !== focused) focused.focus();
+      } else {
+        const replacement = [...list.querySelectorAll<HTMLElement>('.save-item')]
+          .find((item) => item.getAttribute('aria-labelledby') === focusId)
+          ?.querySelectorAll<HTMLElement>('[aria-label]');
+        const control = [...replacement ?? []].find((node) =>
+          node.getAttribute('aria-label') === focusLabel || node.textContent === focusText);
+        if (control instanceof HTMLButtonElement && !control.disabled) control.focus();
+        else status.focus();
+      }
+    }
     return true;
   };
 
@@ -293,7 +362,7 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
       item.append(details([
         ['Genre', genreLabels[entry.settings.genre]],
         ['Length', lengthLabels[entry.settings.length]],
-        ['Last played', formatLastPlayed(entry.updatedAt)],
+        ['Last saved', formatLastSaved(entry.updatedAt)],
       ]));
       actions.append(button('Resume', name, () => {
         let save: AdventureSave;
@@ -321,10 +390,23 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
 
     const remove = button('Delete', name, () => {
       let cancelled = false;
-      const keep = button('Keep', name, () => {
+      let pending = false;
+      const cancel = (): void => {
         cancelled = true;
+        confirmations.delete(entry.id);
+        if (pending) {
+          pending = false;
+          pendingDeletes -= 1;
+          updateNavigation();
+        }
+      };
+      confirmations.set(entry.id, item);
+      const keep = button('Keep', name, () => {
+        cancel();
         confirmation.replaceWith(actions);
+        updateNavigation();
         remove.focus();
+        refresh();
       });
       // Delete waits for any save in progress in another tab, so that save can't bring it back.
       const confirm = button('Yes, delete', name, () => {
@@ -333,21 +415,31 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
           status.focus();
           return;
         }
+        if (pending || cancelled) return;
+        if (pendingDeletes === 0) deletionOutcomes = [];
+        pending = true;
+        pendingDeletes += 1;
+        updateNavigation();
         withSaveLock(locks, () => {
           if (cancelled) return;
-          cancelled = true;
+          const focused = document.activeElement;
+          cancel();
+          confirmation.replaceWith(actions);
           try {
             options.store.remove(entry.id, entry.snapshot);
-            status.textContent = `Deleted “${name}”.`;
+            item.remove();
+            reportDeletion(`Deleted “${name}”.`);
           } catch (error) {
-            status.textContent = messageFor(error);
+            reportDeletion(messageFor(error));
           }
-          refresh();
-          status.focus();
+          refresh(focused);
         }, () => {
           if (cancelled) return;
-          status.textContent = lockFailureMessage;
-          status.focus();
+          const focused = document.activeElement;
+          cancel();
+          confirmation.replaceWith(actions);
+          reportDeletion(lockFailureMessage);
+          refresh(focused);
         });
       });
       const question = create('p', { id: `delete-question-${entry.id}` }, `Delete “${name}”? This can’t be undone.`);
