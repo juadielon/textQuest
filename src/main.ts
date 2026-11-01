@@ -41,9 +41,7 @@ if (app) {
     });
 
     const header = document.createElement('header');
-    const heading = document.createElement('h1');
-    heading.textContent = 'Your adventure';
-    heading.tabIndex = -1;
+    const heading = app.querySelector('h1')!;
     const details = document.createElement('dl');
     const summary = summariseAdventure(settings);
     for (const [label, value] of [
@@ -66,13 +64,13 @@ if (app) {
     notice.textContent = playable
       ? 'Going back ends this play session. Save first to carry on later.'
       : 'Going back ends this play session. Keep the share word to start again.';
-    header.append(heading, details, back, notice);
+    header.append(details, back, notice);
     if (playable) {
       header.append(buildSaveForm({
         store, settings, resumed, suggestedName: summary.shareWord, commands: () => commands,
       }));
     }
-    app.prepend(header);
+    heading.after(header);
     heading.focus();
   };
 

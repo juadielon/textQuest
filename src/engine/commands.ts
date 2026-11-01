@@ -67,7 +67,11 @@ function normalise(input: string): string {
   return input.toLowerCase().trim().replace(/\s+/g, ' ');
 }
 
-function normaliseName(input: string): string {
+/**
+ * Puts a name in the form the parser matches: lower case, single spaces and
+ * no `a`, `an` or `the`. Two names clash when this gives the same result.
+ */
+export function normaliseName(input: string): string {
   return normalise(input).split(' ').filter((word) => !['a', 'an', 'the'].includes(word)).join(' ');
 }
 
@@ -85,7 +89,9 @@ function action(value: CommandAction): CommandResult {
 function matchingTargets(input: string, targets: readonly CommandTarget[]): CommandTarget[] {
   const name = normaliseName(input);
   return name ? targets.filter((target) =>
-    [target.name, ...(target.aliases ?? [])].some((label) => normaliseName(label) === name),
+    [target.name, ...(target.aliases ?? [])].some((label) =>
+      // Typed input loses its trailing punctuation, so names must too.
+      normaliseName(label.replace(/[\s.!?]+$/, '')) === name),
   ) : [];
 }
 
@@ -145,12 +151,13 @@ function findTarget(
 }
 
 /** Parse typed input using only caller-supplied discovered names, without changing them.
- * Names and aliases match exactly after case, whitespace and article normalisation.
+ * Trailing `.`, `!` and `?` are ignored after the first character, so `?` and `??` ask for help.
+ * Names and aliases match exactly after case, whitespace, trailing punctuation and article normalisation.
  * Distinct complete use actions are ambiguous; repeated aliases for one action are not.
  * The caller must exclude hidden names, hidden aliases and unavailable story options.
  */
 export function parseCommand(input: string, targets: readonly CommandTarget[]): CommandResult {
-  const text = normalise(input);
+  const text = normalise(input).replace(/(?<=.)\s*[.!?]+$/, '');
   if (!text) {
     return error('incomplete', 'Type a command. Type help for commands.');
   }
