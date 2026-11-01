@@ -87,22 +87,26 @@ function nameTargets(world: AdventureWorld): CommandTarget[] {
         && result.action.targetKind === target.kind;
     });
   };
-  return targets.map((target, index) => {
-    if (reachable(target, original)) return target;
-    let name = `${target.name} (${target.kind} ${index + 1})`;
-    let named = { ...target, name, aliases: [target.name] };
-    const withCandidate = () => targets.map((entry, position) => position === index ? named : entry);
-    if (!reachable(named, withCandidate())) name = `${target.kind} ${index + 1}`;
+  // A later rename can change how an earlier item's use command is parsed.
+  while (true) {
+    const index = targets.findIndex((target) => !reachable(target, targets));
+    if (index < 0) return targets;
+    const target = original[index];
+    let attempt = 0;
     while (true) {
+      const name = attempt === 0 ? `${target.name} (${target.kind} ${index + 1})`
+        : `${target.kind} ${index + 1}${attempt > 1 ? ` ${attempt - 1}` : ''}`;
+      const named = { ...target, name, aliases: [target.name] };
       const candidate = parseCommand(`examine ${name}`, targets);
-      named = { ...target, name, aliases: [target.name] };
+      const withCandidate = targets.map((entry, position) => position === index ? named : entry);
       if (!candidate.ok && candidate.problem === 'unknown-target'
-        && reachable(named, withCandidate())) break;
-      name += '!';
+        && reachable(named, withCandidate)) {
+        targets[index] = named;
+        break;
+      }
+      attempt++;
     }
-    targets[index] = named;
-    return named;
-  });
+  }
 }
 
 function nameOf(world: AdventureWorld, kind: Target['kind'], id: string): string {
@@ -417,7 +421,9 @@ function progressKey(progress: Progress): string {
 }
 
 // Finds the first place to head for on a shortest route to the goal.
-function nextPlaceToGoal(world: AdventureWorld, start: Progress): string | null | 'too-large' {
+const searchLimitReached = Symbol('search-limit');
+
+function nextPlaceToGoal(world: AdventureWorld, start: Progress): string | null | typeof searchLimitReached {
   const first = cloneProgress(start);
   settleGreedily(world, first);
   const queue: { progress: Progress; firstPlaceId: string | null }[] = [{ progress: first, firstPlaceId: null }];
@@ -433,7 +439,7 @@ function nextPlaceToGoal(world: AdventureWorld, start: Progress): string | null 
       if (goalMet(world, next)) return placeId;
       const key = progressKey(next);
       if (seen.has(key)) continue;
-      if (seen.size >= MAX_SEARCH_STATES) return 'too-large';
+      if (seen.size >= MAX_SEARCH_STATES) return searchLimitReached;
       seen.add(key);
       queue.push({ progress: next, firstPlaceId: placeId });
     }
@@ -451,7 +457,7 @@ function hint(world: AdventureWorld, progress: Progress, canUndo: boolean): stri
     return 'Something you are carrying could be useful here.';
   }
   const next = nextPlaceToGoal(world, progress);
-  if (next === 'too-large') return 'Try exploring somewhere you have not been yet.';
+  if (next === searchLimitReached) return 'Try exploring somewhere you have not been yet.';
   if (next === null) {
     return `There seems to be no way forward from here.${canUndo ? ' Try undo.' : ''}`;
   }

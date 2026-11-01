@@ -211,6 +211,8 @@ these same names. Names that clash with movement or item-use grammar get a
 short numbered name, such as `exit 4` or `item 5`, instead.
 Original names stay available as aliases, but can be
 ambiguous; use the displayed name to pick a particular target.
+Names are checked together after renaming, so movement and item use remain
+unambiguous even when a fallback name is already occupied.
 Version 1 worlds have no compass directions, people or story choices, so
 those commands get a plain explanation. Prose, autocomplete, checkpoints and
 the browser screen are later steps.

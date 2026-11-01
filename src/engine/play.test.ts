@@ -49,6 +49,49 @@ const winningCommands = [
   'go to study', 'take token', 'use token', 'go entry', 'use key on door', 'go finish',
 ];
 
+it('can reach a place when its grammar-safe fallback name is occupied', () => {
+  const world: AdventureWorld = {
+    version: 1, startPlaceId: 'entry',
+    places: [{ id: 'entry' }, { id: 'to-room' }, { id: 'place-2' }],
+    exits: [{ id: 'path', fromPlaceId: 'entry', toPlaceId: 'to-room', locked: false }],
+    items: [], clues: [],
+    solution: { steps: [], goal: { placeId: 'to-room', conditions: {} } },
+  };
+  const start = startPlay(world);
+  const target = discoveredTargets(world, start).find(({ id }) => id === 'to-room')!;
+  expect(playCommand(world, start, `go ${target.name}`).state.goalReached).toBe(true);
+});
+
+it('keeps item use unambiguous after a visible place is renamed', () => {
+  const itemId = 'badge-on-north-(place-2)';
+  const world: AdventureWorld = {
+    version: 1, startPlaceId: 'entry',
+    places: [{ id: 'entry' }, { id: 'north' }],
+    exits: [{ id: 'path', fromPlaceId: 'entry', toPlaceId: 'north', locked: false }],
+    items: [{ id: 'badge', placeId: 'entry' }, { id: itemId, placeId: 'entry' }],
+    clues: [],
+    solution: {
+      steps: [{ id: 'finish', placeId: 'entry', conditions: { itemsHeld: [itemId] }, effects: [] }],
+      goal: { placeId: 'entry', conditions: { stepsDone: ['finish'] } },
+    },
+  };
+  const start = startPlay(world);
+  const target = discoveredTargets(world, start).find(({ id }) => id === itemId)!;
+  const taken = playCommand(world, start, `take ${target.name}`).state;
+  expect(playCommand(world, taken, `use ${target.name}`).state.goalReached).toBe(true);
+});
+
+it('suggests a winning place named too-large instead of search-limit advice', () => {
+  const world: AdventureWorld = {
+    version: 1, startPlaceId: 'entry',
+    places: [{ id: 'entry' }, { id: 'too-large' }],
+    exits: [{ id: 'path', fromPlaceId: 'entry', toPlaceId: 'too-large', locked: false }],
+    items: [], clues: [],
+    solution: { steps: [], goal: { placeId: 'too-large', conditions: {} } },
+  };
+  expect(playCommand(world, startPlay(world), 'hint').message).toBe('Try going to the too large.');
+});
+
 function play(world: AdventureWorld, inputs: readonly string[]) {
   let state = startPlay(world);
   const messages: string[] = [];
