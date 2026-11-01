@@ -38,6 +38,10 @@ Node.js or npm on the host.
 
 The Docker-based TypeScript and Vite shell, production container and tests
 are in place. The start and play screens now use this setup.
+The lint dependency patch for
+[issue #72](https://github.com/juadielon/textQuest/issues/72) uses
+version-scoped minimatch overrides and regression checks, pending an upstream
+dependency update. It does not change adventure generation or player saves.
 
 ### 3. Repeatable adventures and sharing
 
