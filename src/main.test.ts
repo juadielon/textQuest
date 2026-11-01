@@ -220,6 +220,7 @@ it('copies the link and announces success without including any progress', async
   const word = adventureSettings.encodeShareWord(settings);
   await openLink(word, '/games/textQuest/index.html?save=private#progress');
   const originalLink = get<HTMLInputElement>('#adventure-link').value;
+  const title = get('h1').textContent;
   get<HTMLInputElement>('#play-command').value = 'look';
   get<HTMLFormElement>('.play-command').requestSubmit();
   get<HTMLButtonElement>('.share-link button').click();
@@ -237,6 +238,7 @@ it('copies the link and announces success without including any progress', async
   await openLink(link.searchParams.get('adventure')!, link.pathname);
   expect(get('.play-log').children).toHaveLength(0);
   expectPlay(settings);
+  expect(get('h1').textContent).toBe(title);
 });
 
 it.each(['missing', 'denied'] as const)('offers an accessible manual link when clipboard is %s', async (failure) => {
