@@ -61,8 +61,10 @@ export interface AdventureSave {
  * - `future-version`: a newer copy of textQuest made the file.
  * - `unsupported-adventure`: the adventure version isn't supported here.
  * - `not-found`: no save has that ID.
+ * - `changed`: the stored save no longer matches the version being updated.
  * - `storage-full`: the browser has no room left for saves.
  * - `storage-unavailable`: the browser refused to read or write saves.
+ * - `metadata-cleanup`: the save was deleted, but its play-time metadata remains.
  */
 export type SaveProblem =
   | 'malformed'
@@ -70,8 +72,10 @@ export type SaveProblem =
   | 'future-version'
   | 'unsupported-adventure'
   | 'not-found'
+  | 'changed'
   | 'storage-full'
-  | 'storage-unavailable';
+  | 'storage-unavailable'
+  | 'metadata-cleanup';
 
 /** Thrown by save functions with a message a player can read. */
 export class SaveError extends Error {
@@ -185,13 +189,15 @@ function readCommandModes(value: unknown, commandCount: number, legacy: boolean)
   });
 }
 
-function readTime(value: unknown, label: string): string {
-  if (typeof value !== 'string' || !isoTimePattern.test(value)) {
-    throw damaged(`the ${label} time is not valid.`);
-  }
+function isIsoTime(value: unknown): value is string {
+  if (typeof value !== 'string' || !isoTimePattern.test(value)) return false;
   const time = new Date(value);
   // Rejects impossible dates such as 31 February, which Date would roll over.
-  if (Number.isNaN(time.getTime()) || time.toISOString() !== value) {
+  return !Number.isNaN(time.getTime()) && time.toISOString() === value;
+}
+
+function readTime(value: unknown, label: string): string {
+  if (!isIsoTime(value)) {
     throw damaged(`the ${label} time is not valid.`);
   }
   return value;
@@ -318,20 +324,29 @@ export function importSaveFile(text: string): AdventureSave {
  */
 export type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'key' | 'length'>;
 
-/** A short description of one stored save, for a list of saves. */
+/** A listed save and its exact stored text, used to confirm deletion without losing later changes. */
 export type SaveListEntry =
   | {
       readonly id: string;
+      readonly snapshot: string;
       readonly status: 'ready';
       readonly name: string;
       readonly settings: AdventureSettings;
       readonly commandCount: number;
       readonly createdAt: string;
       readonly updatedAt: string;
+      /**
+       * When the save was last played in this browser, as an ISO 8601 UTC
+       * time. Missing when play time was never recorded or could not be read.
+       */
+      readonly lastPlayedAt?: string;
+      /** True when browser storage refused to read this save's play-time metadata. */
+      readonly lastPlayedUnavailable?: boolean;
     }
   | {
       /** A stored save that can't be read. It is left in place, never deleted. */
       readonly id: string;
+      readonly snapshot: string;
       readonly status: 'unreadable';
       readonly message: string;
     };
@@ -344,18 +359,44 @@ type ReadySave = Extract<SaveListEntry, { status: 'ready' }>;
  */
 export interface SaveStore {
   /**
-   * Lists every stored save, most recently updated first. Saves that can't be
-   * read come last and are kept, so they are never lost.
+   * Lists every stored save, most recently played first. Saves that can't be
+   * read come last and are kept, so they are never lost. A play-time read
+   * failure leaves the save accessible and marks its time unavailable.
    */
   list(): SaveListEntry[];
+  /**
+   * Records that the save with this ID was played at `now`, defaulting to the
+   * clock. The time is kept under its own key, so the save, its snapshot and
+   * its export never change. An earlier time never replaces a later one.
+   * Returns `false` if the save has gone; nothing is written in that case.
+   * Storage failures throw `SaveError`.
+   * Run it under a lock shared by every tab, or another tab could delete the
+   * save between the existence check and metadata write.
+   */
+  markPlayed(id: string, now?: Date): boolean;
   /** Stores a new save and returns its new ID. */
   add(save: AdventureSave): string;
   /** Stores a save under this ID, replacing any earlier version. On failure the old version is kept. */
   put(id: string, save: AdventureSave): void;
+  /**
+   * Stores a save under this ID only if the stored save still matches
+   * `expected` exactly, so newer progress is never overwritten. Throws a
+   * `not-found` error if the save was deleted, or `changed` if it differs,
+   * and then leaves storage as it was. Run it under a lock shared by every
+   * tab, or another tab could still write between the check and the write.
+   */
+  replace(id: string, expected: AdventureSave, save: AdventureSave): void;
   /** Loads the save with this ID. */
   load(id: string): AdventureSave;
-  /** Deletes the save with this ID. Deleting a save that is already gone does nothing. */
-  remove(id: string): void;
+  /**
+   * Deletes a save, optionally only if its stored text still matches the listed
+   * snapshot. A mismatch throws `changed` and keeps it. Already deleted saves
+   * are ignored. Its last-played time is removed too; a `metadata-cleanup`
+   * error means the save is gone but that metadata remains. Run checked
+   * removals under a lock shared by every tab, or another tab could update
+   * the save between the snapshot check and removal.
+   */
+  remove(id: string, snapshot?: string): void;
   /** Returns export file text for the save with this ID. */
   exportSave(id: string): string;
   /** Checks an import file and stores it as a new save. Existing saves are never changed. */
@@ -364,6 +405,12 @@ export interface SaveStore {
 
 /** The storage key prefix for saves. Never change it, or stored saves are lost. */
 export const SAVE_KEY_PREFIX = 'textquest:save:';
+
+/**
+ * The storage key prefix for last-played times, kept apart from saves so
+ * playing never changes stored progress. Never change it.
+ */
+export const PLAYED_KEY_PREFIX = 'textquest:played:';
 
 const idPattern = /^[0-9a-f]{32}$/;
 
@@ -380,7 +427,7 @@ function storageError(error: unknown): SaveError {
   if (isQuotaError(error)) {
     return new SaveError(
       'storage-full',
-      'Your browser has no room left for saves. Delete or export an old save, then try again. Your other saves are safe.',
+      'Your browser has no room left for saves. Try deleting an old save or freeing browser storage, then try again. Your other saves are safe.',
     );
   }
   return new SaveError(
@@ -431,6 +478,28 @@ export function createSaveStore(
     return `${SAVE_KEY_PREFIX}${id}`;
   }
 
+  function playedKeyFor(id: string): string {
+    keyFor(id);
+    return `${PLAYED_KEY_PREFIX}${id}`;
+  }
+
+  // A damaged or missing time is ignored; it never makes the save unreadable.
+  function readPlayed(id: string): string | undefined {
+    const text = read(playedKeyFor(id));
+    return isIsoTime(text) ? text : undefined;
+  }
+
+  function markPlayed(id: string, now: Date = new Date()): boolean {
+    // Checked first, so a save deleted in another tab is not given a time.
+    if (read(keyFor(id)) === null) return false;
+    const time = now.toISOString();
+    const recorded = readPlayed(id);
+    if (isIsoTime(time) && (recorded === undefined || recorded < time)) {
+      write(playedKeyFor(id), time);
+    }
+    return true;
+  }
+
   function newId(): string {
     const values = new Uint32Array(4);
     for (;;) {
@@ -452,6 +521,29 @@ export function createSaveStore(
 
   function put(id: string, save: AdventureSave): void {
     write(keyFor(id), exportSaveFile(save));
+  }
+
+  function replace(id: string, expected: AdventureSave, save: AdventureSave): void {
+    const key = keyFor(id);
+    const text = exportSaveFile(save);
+    const stored = read(key);
+    if (stored === null) {
+      throw notFound();
+    }
+    let unchanged = false;
+    try {
+      // Compare whole saves, not times: two edits can share a timestamp.
+      unchanged = exportSaveFile(importSaveFile(stored)) === exportSaveFile(expected);
+    } catch {
+      // A stored save that can't be read is kept, never overwritten.
+    }
+    if (!unchanged) {
+      throw new SaveError(
+        'changed',
+        'This save was changed in another tab or window, so it was not overwritten.',
+      );
+    }
+    write(key, text);
   }
 
   function add(save: AdventureSave): string {
@@ -482,40 +574,77 @@ export function createSaveStore(
       const ready: ReadySave[] = [];
       const unreadable: SaveListEntry[] = [];
       for (const id of storedIds()) {
+        const snapshot = read(keyFor(id));
+        if (snapshot === null) continue;
+        let save: AdventureSave;
         try {
-          const save = load(id);
-          ready.push({
-            id,
-            status: 'ready',
-            name: save.name,
-            settings: save.settings,
-            commandCount: save.commands.length,
-            createdAt: save.createdAt,
-            updatedAt: save.updatedAt,
-          });
+          save = importSaveFile(snapshot);
         } catch (error) {
           if (error instanceof SaveError && error.problem === 'storage-unavailable') {
             throw error;
           }
           const message = error instanceof SaveError ? error.message : 'This save could not be read.';
-          unreadable.push({ id, status: 'unreadable', message });
+          unreadable.push({ id, snapshot, status: 'unreadable', message });
+          continue;
         }
+        let played: string | undefined;
+        let lastPlayedUnavailable = false;
+        try {
+          played = readPlayed(id);
+        } catch (error) {
+          if (!(error instanceof SaveError) || error.problem !== 'storage-unavailable') throw error;
+          lastPlayedUnavailable = true;
+        }
+        ready.push({
+          id,
+          snapshot,
+          status: 'ready',
+          name: save.name,
+          settings: save.settings,
+          commandCount: save.commands.length,
+          createdAt: save.createdAt,
+          updatedAt: save.updatedAt,
+          // Saving happens during play, so a later save counts as playing too.
+          ...(played ? { lastPlayedAt: played } : {}),
+          ...(lastPlayedUnavailable ? { lastPlayedUnavailable: true } : {}),
+        });
       }
-      // Plain comparisons, not localeCompare, keep the order the same everywhere.
+      // Saves without a recorded play time go last; plain comparisons keep order stable.
       const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-      ready.sort((a, b) => compare(b.updatedAt, a.updatedAt) || compare(a.id, b.id));
+      ready.sort((a, b) => {
+        if (!a.lastPlayedAt) return b.lastPlayedAt ? 1 : compare(a.id, b.id);
+        if (!b.lastPlayedAt) return -1;
+        return compare(b.lastPlayedAt, a.lastPlayedAt) || compare(a.id, b.id);
+      });
       unreadable.sort((a, b) => compare(a.id, b.id));
       return [...ready, ...unreadable];
     },
+    markPlayed,
     add,
     put,
+    replace,
     load,
-    remove(id) {
+    remove(id, snapshot) {
       const key = keyFor(id);
+      if (snapshot !== undefined) {
+        const stored = read(key);
+        if (stored === null) return;
+        if (stored !== snapshot) {
+          throw new SaveError('changed', 'This save changed after it was listed and was not deleted. Review the refreshed list and confirm Delete again.');
+        }
+      }
       try {
         storage.removeItem(key);
       } catch (error) {
         throw storageError(error);
+      }
+      try {
+        storage.removeItem(playedKeyFor(id));
+      } catch {
+        throw new SaveError(
+          'metadata-cleanup',
+          'The save was deleted, but its Last played time could not be removed. The leftover time is ignored.',
+        );
       }
     },
     exportSave(id) {

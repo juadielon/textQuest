@@ -2,11 +2,27 @@ import type { AdventureSettings } from './adventure-settings';
 import type { AdventureWorld, Conditions } from './adventure-world';
 import type { CommandTarget } from './engine/commands';
 import { parseCommand } from './engine/commands';
-import { discoveredTargets, playCommand, startPlay, type PlayState, type PlayWorld } from './engine/play';
+import {
+  discoveredTargets, playCommand, startPlay, type CommandReplayMode, type PlayState, type PlayWorld,
+} from './engine/play';
 import type { EntityReference, PlotStructure, Prose } from './content/v1/format';
-import { worldNamesFrom } from './content/v1/world-names';
+import { aliasesFor, worldNamesFrom } from './content/v1/world-names';
 import { createSeededRandom } from './seeded-random';
 import { adventurePack, generateAdventureWorld } from './generate-world';
+import { genreLabels } from './start-screen-model';
+import {
+  createSave, exportSaveFile, MAX_COMMAND_LENGTH, MAX_SAVE_COMMANDS, MAX_SAVE_NAME_LENGTH, SaveError,
+} from './saves';
+
+/** Options for {@link renderPlayScreen}. */
+export interface PlayScreenOptions {
+  /** Commands to replay first, such as a save's. They fill the log without being announced. */
+  readonly commands?: readonly string[];
+  /** Replay mode for each initial command. Missing modes keep legacy ID-name behaviour. */
+  readonly commandModes?: readonly CommandReplayMode[];
+  /** Called after each typed command with the full history and matching modes. */
+  readonly onCommand?: (commands: readonly string[], modes: readonly CommandReplayMode[]) => void;
+}
 
 /** What the play screen shows for one moment of play, without any DOM. */
 export interface PlayView {
@@ -61,12 +77,23 @@ export function describePlay(world: AdventureWorld, state: PlayState): PlayView 
  * The screen starts with the authored plot name as a focusable `h1` heading,
  * or {@link playScreenTitle} when the adventure cannot be played. Titles can
  * repeat; the share word remains the exact adventure identifier.
+ * A plot name containing a hidden name or alias uses a generic genre title.
+ * Starting discoveries keep the title stable during play and saved replay.
  * Player and world text is only ever inserted with `textContent`. New
  * responses are announced through a polite live region. If the world can't
  * be generated or started because of a validation `RangeError`, a plain
  * message is shown instead of the game. Unexpected errors are rethrown.
+ * Control characters are rejected before play so recorded commands remain saveable.
+ * Rejected input shows a visible, live-announced error without entering the log.
+ * New commands, including undo, cannot exceed save count or file-size limits.
+ * File-size checks reserve room for any allowed save name.
+ *
+ * @param options - Saved commands and modes to replay, plus a hook for new commands.
+ * @returns False when the world can't be played, so there is nothing to save.
  */
-export function renderPlayScreen(target: HTMLElement, settings: AdventureSettings): void {
+export function renderPlayScreen(
+  target: HTMLElement, settings: AdventureSettings, options: PlayScreenOptions = {},
+): boolean {
   const title = element('h1', 'play-title', playScreenTitle);
   title.tabIndex = -1;
   let world: PlayWorld;
@@ -86,10 +113,12 @@ export function renderPlayScreen(target: HTMLElement, settings: AdventureSetting
     const problem = element('p', 'status', unplayableMessage);
     problem.setAttribute('role', 'alert');
     target.replaceChildren(title, problem);
-    return;
+    return false;
   }
 
-  title.textContent = plot.name;
+  title.textContent = hideUndiscoveredNames(plot.name, pack, world, state,
+    discoveredTargets(world, state)) === plot.name
+    ? plot.name : `${genreLabels[settings.genre]} adventure`;
   const placeName = element('h2', 'play-place-name');
   placeName.id = 'play-place-name';
   const introduction = element('p', 'play-introduction');
@@ -110,6 +139,7 @@ export function renderPlayScreen(target: HTMLElement, settings: AdventureSetting
   log.setAttribute('aria-label', 'What has happened so far');
 
   const announcer = element('p', 'visually-hidden');
+  announcer.id = 'play-response';
   announcer.setAttribute('aria-live', 'polite');
 
   const input = element('input');
@@ -117,6 +147,8 @@ export function renderPlayScreen(target: HTMLElement, settings: AdventureSetting
   input.type = 'text';
   input.autocomplete = 'off';
   input.spellcheck = false;
+  input.maxLength = MAX_COMMAND_LENGTH;
+  input.setAttribute('aria-describedby', announcer.id);
   const label = element('label', undefined, 'What do you do?');
   label.htmlFor = input.id;
   const form = element('form', 'play-command', label, input, element('button', undefined, 'Go'));
@@ -128,6 +160,10 @@ export function renderPlayScreen(target: HTMLElement, settings: AdventureSetting
     element('h2', undefined, 'Inventory'), inventory,
     element('h2', undefined, 'Clues found'), clues, turns);
   sidebar.setAttribute('aria-label', 'Your progress');
+  const automaticOptionalSteps = new Set(pack.optionalDiscoveries.flatMap(({ id }) => {
+    const step = world.solution.steps.find((entry) => entry.id === id);
+    return step && !(step.conditions.itemsHeld ?? []).length ? [id] : [];
+  }));
 
   const endingText = element('p');
   const authoredEnding = element('p', 'play-authored-ending');
@@ -165,6 +201,7 @@ export function renderPlayScreen(target: HTMLElement, settings: AdventureSetting
 
     const placeStory = [...pack.puzzles, ...pack.optionalDiscoveries]
       .filter(({ id, placeId }) => placeId === state.placeId
+        && !automaticOptionalSteps.has(id)
         && world.solution.steps.some((step) => step.id === id))
       .map((step) => ({
         text: renderProse(state.stepsDone.includes(step.id) ? step.completion : step.prompt,
@@ -186,18 +223,25 @@ export function renderPlayScreen(target: HTMLElement, settings: AdventureSetting
     ending.hidden = !view.ended;
     endingText.textContent = `You reached your goal in ${view.turns} `
       + `${view.turns === 1 ? 'turn' : 'turns'}. Type undo to go back a turn.`;
-    const selectedEnding = view.ended ? endingFor(pack, plot, state) : undefined;
+    const endingState = automaticOptionalSteps.size
+      ? { ...state, stepsDone: state.stepsDone.filter((id) => !automaticOptionalSteps.has(id)) }
+      : state;
+    const selectedEnding = view.ended ? endingFor(pack, plot, endingState) : undefined;
     authoredEnding.textContent = selectedEnding
       ? renderProse(selectedEnding.text, pack, world, state, targets) : '';
     authoredEnding.hidden = !selectedEnding;
   };
 
-  form.addEventListener('submit', (event) => {
-    event.preventDefault();
-    const command = input.value.trim();
-    if (!command) return;
-    const parsed = parseCommand(command, discoveredTargets(world, state));
-    const turn = playCommand(world, state, command);
+  const commands = [...options.commands ?? []];
+  const commandModes = [...options.commandModes ?? commands.map((): CommandReplayMode => 'id')];
+  if (commands.length !== commandModes.length) {
+    throw new RangeError('There must be one replay mode for each command.');
+  }
+  const idWorld: PlayWorld = world.names ? { ...world, names: undefined } : world;
+  const run = (command: string, mode: CommandReplayMode): string => {
+    const commandWorld = mode === 'id' ? idWorld : world;
+    const parsed = parseCommand(command, discoveredTargets(commandWorld, state));
+    const turn = playCommand(commandWorld, state, command);
     state = turn.state;
     const personId = parsed.ok && parsed.action.kind === 'talk' && 'targetId' in parsed.action
       ? parsed.action.targetId : undefined;
@@ -207,17 +251,65 @@ export function renderPlayScreen(target: HTMLElement, settings: AdventureSetting
       : turn.message;
     log.append(element('li', 'play-entry',
       element('p', 'play-typed', `> ${command}`), element('p', undefined, response)));
+    return response;
+  };
+  commands.forEach((command, index) => run(command, commandModes[index]));
+
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    // Save files only accept plain, single-line command text.
+    if (/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(input.value)) {
+      announcer.className = 'error';
+      announcer.replaceChildren(element('span', undefined,
+        'Use plain text without tabs, line breaks or control characters.'));
+      input.setAttribute('aria-invalid', 'true');
+      input.focus();
+      return;
+    }
+    input.removeAttribute('aria-invalid');
+    const command = input.value.trim();
+    if (!command) return;
+    let limitMessage: string | undefined;
+    if (commands.length >= MAX_SAVE_COMMANDS) {
+      limitMessage = 'This adventure has reached the save command limit. Your existing progress can still be saved, but no more commands can be added.';
+    } else {
+      try {
+        // Unpaired surrogates use six JSON characters each: the largest valid name.
+        exportSaveFile(createSave(
+          '\ud800'.repeat(MAX_SAVE_NAME_LENGTH), settings, [...commands, command], new Date(),
+          [...commandModes, 'content'],
+        ));
+      } catch (error) {
+        if (!(error instanceof SaveError)) throw error;
+        limitMessage = error.problem === 'too-large'
+          ? 'This command would exceed the save file limit. Try a shorter command. Your existing progress can still be saved.'
+          : error.message;
+      }
+    }
+    if (limitMessage) {
+      announcer.className = 'error';
+      announcer.replaceChildren(element('span', undefined, limitMessage));
+      input.setAttribute('aria-invalid', 'true');
+      input.focus();
+      return;
+    }
+    const message = run(command, 'content');
+    commands.push(command);
+    commandModes.push('content');
+    announcer.className = 'visually-hidden';
     log.scrollTop = log.scrollHeight;
     // A fresh node is announced even when the text repeats the last response.
-    announcer.replaceChildren(element('span', undefined, response));
+    announcer.replaceChildren(element('span', undefined, message));
     input.value = '';
     input.focus();
     update();
+    options.onCommand?.([...commands], [...commandModes]);
   });
 
   update();
-  const screen = element('div', 'play-screen', place, ending, log, form, sidebar, announcer);
+  const screen = element('div', 'play-screen', place, ending, log, form, announcer, sidebar);
   target.replaceChildren(title, screen);
+  return true;
 }
 
 function fillDetails(
@@ -233,8 +325,79 @@ function renderProse(
   prose: Prose, pack: ReturnType<typeof adventurePack>, world: PlayWorld,
   state: PlayState, targets: readonly CommandTarget[],
 ): string {
-  return prose.map((part) => typeof part === 'string'
+  const text = prose.map((part) => typeof part === 'string'
     ? part : entityName(part, pack, world, state, targets)).join('');
+  return hideUndiscoveredNames(text, pack, world, state, targets);
+}
+
+function hideUndiscoveredNames(
+  text: string, pack: ReturnType<typeof adventurePack>, world: PlayWorld, state: PlayState,
+  targets: readonly CommandTarget[],
+): string {
+  const discovered = new Set(targets.map(({ kind, id }) => `${kind}:${id}`));
+  const visibleNames = new Set(targets.map(({ name }) => name.toLowerCase()));
+  for (const person of pack.characters) {
+    if (world.places.some(({ id }) => id === person.placeId)
+      && state.placesVisited.includes(person.placeId)) {
+      visibleNames.add(person.name.toLowerCase());
+    }
+  }
+  for (const item of pack.items) {
+    const worldItem = world.items.find(({ id }) => id === item.id);
+    if (worldItem && (state.itemsHeld.includes(item.id)
+      || Boolean(worldItem.placeId && state.placesVisited.includes(worldItem.placeId)))) {
+      visibleNames.add(item.name.toLowerCase());
+    }
+  }
+  const entities = [
+    ...pack.places.map(({ id, name }) => ({ id: `place:${id}`, name, replacement: 'place' })),
+    ...pack.characters.map(({ id, name }) => ({ id: `person:${id}`, name, replacement: 'person' })),
+    ...pack.items.map(({ id, name }) => ({ id: `item:${id}`, name, replacement: 'item' })),
+    ...pack.clues.map(({ id, name }) => ({ id: `clue:${id}`, name, replacement: 'clue' })),
+  ];
+  const aliasOwners = new Map<string, Set<string>>();
+  for (const entity of entities) {
+    for (const name of [entity.name, ...aliasesFor(entity.name)]) {
+      const key = name.toLowerCase();
+      const owners = aliasOwners.get(key) ?? new Set<string>();
+      owners.add(entity.id);
+      aliasOwners.set(key, owners);
+    }
+  }
+  const hidden = entities.filter(({ id, name }) =>
+    !discovered.has(id) && !visibleNames.has(name.toLowerCase()))
+    .flatMap(({ name, replacement }) => [
+      { name, replacement },
+      ...aliasesFor(name).filter((alias) => aliasOwners.get(alias.toLowerCase())?.size === 1)
+        .map((alias) => ({ name: alias, replacement })),
+    ])
+    .sort((left, right) => right.name.length - left.name.length);
+  if (!hidden.length) return text;
+
+  const replacements = new Map(hidden.map(({ name, replacement }) => [name.toLowerCase(), replacement]));
+  const pattern = hidden.map(({ name }) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  const boundary = new RegExp(
+    `(^|[^\\p{L}\\p{N}_])(?:(a|an|the)\\s+)?(${pattern})(?=$|[^\\p{L}\\p{N}_])`, 'giu',
+  );
+  return text.replace(boundary, (_match, prefix: string, article: string | undefined, name: string) => {
+    const kind = replacements.get(name.toLowerCase());
+    const knownArticle = article?.toLowerCase();
+    let replacement: string;
+    switch (kind) {
+      case 'person':
+        replacement = 'someone';
+        break;
+      case 'item':
+        replacement = knownArticle === 'the' ? 'the item' : 'an item';
+        break;
+      case 'clue':
+        replacement = knownArticle === 'the' ? 'the clue' : 'a clue';
+        break;
+      default:
+        replacement = knownArticle === 'the' ? 'the place' : 'a place';
+    }
+    return `${prefix}${replacement}`;
+  });
 }
 
 function entityName(

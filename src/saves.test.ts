@@ -11,6 +11,7 @@ import {
   MAX_SAVE_COMMANDS,
   MAX_SAVE_FILE_LENGTH,
   MAX_SAVE_NAME_LENGTH,
+  PLAYED_KEY_PREFIX,
   SAVE_KEY_PREFIX,
   SaveError,
   createSave,
@@ -35,6 +36,8 @@ class MemoryStorage implements StorageLike {
   readonly items = new Map<string, string>();
   failWrites: unknown = null;
   failReads: unknown = null;
+  failReadKey: string | null = null;
+  failRemoveKey: string | null = null;
 
   get length() {
     return this.items.size;
@@ -45,7 +48,7 @@ class MemoryStorage implements StorageLike {
   }
 
   getItem(key: string) {
-    if (this.failReads) throw this.failReads;
+    if (this.failReads || key === this.failReadKey) throw this.failReads ?? new DOMException('blocked', 'SecurityError');
     return this.items.get(key) ?? null;
   }
 
@@ -55,6 +58,7 @@ class MemoryStorage implements StorageLike {
   }
 
   removeItem(key: string) {
+    if (key === this.failRemoveKey) throw new DOMException('blocked', 'SecurityError');
     if (this.failWrites) throw this.failWrites;
     this.items.delete(key);
   }
@@ -412,22 +416,24 @@ describe('save store', () => {
     expect(store.load(first)).toEqual(sampleSave('First'));
     expect(store.list()).toEqual([
       {
-        id: second,
-        status: 'ready',
-        name: 'Second',
-        settings,
-        commandCount: 0,
-        createdAt: '2026-10-13T00:00:00.000Z',
-        updatedAt: '2026-10-13T00:00:00.000Z',
-      },
-      {
         id: first,
+        snapshot: storage.items.get(SAVE_KEY_PREFIX + first),
         status: 'ready',
         name: 'First',
         settings,
         commandCount: 2,
         createdAt: '2026-10-12T04:00:00.000Z',
         updatedAt: '2026-10-12T04:00:00.000Z',
+      },
+      {
+        id: second,
+        snapshot: storage.items.get(SAVE_KEY_PREFIX + second),
+        status: 'ready',
+        name: 'Second',
+        settings,
+        commandCount: 0,
+        createdAt: '2026-10-13T00:00:00.000Z',
+        updatedAt: '2026-10-13T00:00:00.000Z',
       },
     ]);
 
@@ -451,11 +457,62 @@ describe('save store', () => {
     expect(store.list()).toHaveLength(1);
   });
 
+  it('replaces a save only while it still matches the expected version', () => {
+    const { storage, store } = setUp();
+    const original = sampleSave();
+    const id = store.add(original);
+    const mine = { ...original, commands: ['look', 'go north'], commandModes: ['id', 'id'] as const };
+    store.replace(id, original, mine);
+    expect(store.load(id)).toEqual(mine);
+
+    // Another tab saved different commands with the very same timestamp.
+    const theirs = { ...mine, commands: ['look', 'go south'], commandModes: ['id', 'content'] as const };
+    store.put(id, theirs);
+    const key = SAVE_KEY_PREFIX + id;
+    const before = storage.items.get(key);
+    expect(problemOf(() => store.replace(id, mine, {
+      ...mine, commands: ['look'], commandModes: ['id'],
+    }))).toBe('changed');
+    expect(storage.items.get(key)).toBe(before);
+
+    storage.items.set(key, '{not json');
+    expect(problemOf(() => store.replace(id, theirs, mine))).toBe('changed');
+    expect(storage.items.get(key)).toBe('{not json');
+
+    store.remove(id);
+    expect(problemOf(() => store.replace(id, theirs, mine))).toBe('not-found');
+    expect(storage.items.has(key)).toBe(false);
+  });
+
   it('skips IDs that are already taken', () => {
     const { storage, store } = setUp();
     storage.setItem(SAVE_KEY_PREFIX + idFor(1), exportSaveFile(sampleSave('Old')));
     expect(store.add(sampleSave('New'))).toBe(idFor(2));
     expect(store.load(idFor(1)).name).toBe('Old');
+  });
+
+  it('checks the full listed snapshot before deleting, including unreadable saves', () => {
+    const { storage, store } = setUp();
+    const save = sampleSave();
+    const id = store.add(save);
+    const key = SAVE_KEY_PREFIX + id;
+    const [listed] = store.list();
+    store.put(id, { ...save, commands: ['look', 'hint'], commandModes: ['id', 'id'] });
+    const changed = storage.items.get(key);
+
+    expect(problemOf(() => store.remove(id, listed.snapshot))).toBe('changed');
+    expect(storage.items.get(key)).toBe(changed);
+
+    storage.items.set(key, 'broken');
+    const [unreadable] = store.list();
+    expect(unreadable).toMatchObject({ status: 'unreadable', snapshot: 'broken' });
+    storage.items.set(key, 'other broken text');
+    expect(problemOf(() => store.remove(id, unreadable.snapshot))).toBe('changed');
+    expect(storage.items.get(key)).toBe('other broken text');
+    const [latest] = store.list();
+    store.remove(id, latest.snapshot);
+    store.remove(id, latest.snapshot);
+    expect(storage.items.has(key)).toBe(false);
   });
 
   it('treats unknown or odd IDs as not found', () => {
@@ -475,8 +532,8 @@ describe('save store', () => {
 
     expect(store.list()).toEqual([
       expect.objectContaining({ id: good, status: 'ready' }),
-      { id: idFor(7), status: 'unreadable', message: expect.stringMatching(/damaged/) },
-      { id: idFor(8), status: 'unreadable', message: expect.stringMatching(/newer version/) },
+      { id: idFor(7), snapshot: 'broken', status: 'unreadable', message: expect.stringMatching(/damaged/) },
+      { id: idFor(8), snapshot: storage.items.get(SAVE_KEY_PREFIX + idFor(8)), status: 'unreadable', message: expect.stringMatching(/newer version/) },
     ]);
     expect(storage.items.size).toBe(5);
   });
@@ -541,7 +598,7 @@ describe('save store', () => {
     expect(problemOf(() => store.add(sampleSave()))).toBe('storage-full');
     expect(problemOf(() => store.importSave(store.exportSave(id)))).toBe('storage-full');
     expect(messageOf(() => store.add(sampleSave()))).toBe(
-      'Your browser has no room left for saves. Delete or export an old save, then try again. Your other saves are safe.',
+      'Your browser has no room left for saves. Try deleting an old save or freeing browser storage, then try again. Your other saves are safe.',
     );
     expect(storage.items).toEqual(before);
     expect(store.load(id)).toEqual(sampleSave());
@@ -577,5 +634,145 @@ describe('save store', () => {
     const { storage, store } = setUp();
     expect(problemOf(() => store.add({ ...sampleSave(), name: '' }))).toBe('malformed');
     expect(storage.items.size).toBe(0);
+  });
+
+  describe('last played', () => {
+    const played = new Date('2026-10-20T08:00:00.000Z');
+
+    it('keeps the time apart, so the save, its snapshot, export and replace check never change', () => {
+      const { storage, store } = setUp();
+      const save = sampleSave();
+      const id = store.add(save);
+      const text = storage.items.get(SAVE_KEY_PREFIX + id);
+      const file = store.exportSave(id);
+
+      store.markPlayed(id, played);
+
+      expect(storage.items.get(SAVE_KEY_PREFIX + id)).toBe(text);
+      expect(storage.items.get(PLAYED_KEY_PREFIX + id)).toBe(played.toISOString());
+      expect(store.load(id)).toEqual(save);
+      expect(store.exportSave(id)).toBe(file);
+      expect(store.list()).toEqual([expect.objectContaining({
+        id, snapshot: text, updatedAt: save.updatedAt, lastPlayedAt: played.toISOString(),
+      })]);
+      // Another tab's open save form still updates, since progress did not change.
+      const next = { ...save, commands: ['look'], commandModes: ['id'] as const };
+      store.replace(id, save, next);
+      expect(store.load(id)).toEqual(next);
+      // Import makes a new save with no play recorded.
+      const copy = store.importSave(file);
+      expect(storage.items.has(PLAYED_KEY_PREFIX + copy)).toBe(false);
+      expect(store.list().find((entry) => entry.id === copy)).not.toHaveProperty('lastPlayedAt');
+    });
+
+    it('never replaces a later time with an earlier one, such as from a clock set back', () => {
+      const { storage, store } = setUp();
+      const id = store.add(sampleSave());
+      store.markPlayed(id, played);
+      store.markPlayed(id, new Date('2026-10-19T00:00:00.000Z'));
+      expect(storage.items.get(PLAYED_KEY_PREFIX + id)).toBe(played.toISOString());
+      const later = new Date('2026-10-21T00:00:00.000Z');
+      store.markPlayed(id, later);
+      expect(storage.items.get(PLAYED_KEY_PREFIX + id)).toBe(later.toISOString());
+    });
+
+    it('leaves Last played unrecorded for older saves and damaged times', () => {
+      const { storage, store } = setUp();
+      const id = store.add(sampleSave());
+      const listed = () => store.list()[0];
+      expect(listed()).not.toHaveProperty('lastPlayedAt');
+      for (const text of ['broken', '2026-02-31T00:00:00.000Z']) {
+        storage.items.set(PLAYED_KEY_PREFIX + id, text);
+        expect(listed()).not.toHaveProperty('lastPlayedAt');
+      }
+      // A damaged time is replaced by the next real one.
+      storage.items.set(PLAYED_KEY_PREFIX + id, 'broken');
+      store.markPlayed(id, played);
+      expect(listed()).toMatchObject({ lastPlayedAt: played.toISOString() });
+      storage.items.set(PLAYED_KEY_PREFIX + id, '2026-10-01T00:00:00.000Z');
+      expect(listed()).toMatchObject({ lastPlayedAt: '2026-10-01T00:00:00.000Z' });
+    });
+
+    it('keeps readable saves listed when play-time metadata cannot be read and refuses to overwrite it', () => {
+      const { storage, store } = setUp();
+      const id = store.add(sampleSave());
+      const metadataKey = PLAYED_KEY_PREFIX + id;
+      const previousTime = '2026-10-19T00:00:00.000Z';
+      storage.items.set(metadataKey, previousTime);
+      storage.failReadKey = metadataKey;
+
+      expect(store.list()).toEqual([expect.objectContaining({
+        id,
+        status: 'ready',
+        lastPlayedUnavailable: true,
+      })]);
+      expect(store.list()[0]).not.toHaveProperty('lastPlayedAt');
+      expect(problemOf(() => store.markPlayed(id, played))).toBe('storage-unavailable');
+      expect(storage.items.get(metadataKey)).toBe(previousTime);
+    });
+
+    it('lists the most recently played save first', () => {
+      const { store } = setUp();
+      const older = store.add(sampleSave('Older'));
+      const newer = store.add(createSave('Newer', settings, [], new Date('2026-10-13T00:00:00.000Z')));
+      expect(store.list().map((entry) => entry.id)).toEqual([older, newer]);
+      store.markPlayed(older, played);
+      expect(store.list().map((entry) => entry.id)).toEqual([older, newer]);
+    });
+
+    it('records nothing for a save deleted elsewhere and treats odd IDs as not found', () => {
+      const { storage, store } = setUp();
+      expect(store.markPlayed(idFor(9), played)).toBe(false);
+      expect(storage.items.size).toBe(0);
+      expect(problemOf(() => store.markPlayed('../other-key', played))).toBe('not-found');
+      expect(storage.items.size).toBe(0);
+    });
+
+    it('does not block a checked deletion and is removed with the save', () => {
+      const { storage, store } = setUp();
+      const id = store.add(sampleSave());
+      const [listed] = store.list();
+      store.markPlayed(id, played);
+      store.remove(id, listed.snapshot);
+      expect(storage.items.size).toBe(0);
+    });
+
+    it('reports when deletion succeeded but play-time cleanup failed', () => {
+      const { storage, store } = setUp();
+      const id = store.add(sampleSave());
+      store.markPlayed(id, played);
+      storage.failRemoveKey = PLAYED_KEY_PREFIX + id;
+
+      let failure: unknown;
+      try {
+        store.remove(id);
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toMatchObject({
+        problem: 'metadata-cleanup',
+        message: expect.stringContaining('save was deleted'),
+      });
+      expect(storage.items.has(SAVE_KEY_PREFIX + id)).toBe(false);
+      expect(storage.items.has(PLAYED_KEY_PREFIX + id)).toBe(true);
+    });
+
+    it('reports a full storage and leaves the save as it was', () => {
+      const { storage, store } = setUp();
+      const id = store.add(sampleSave());
+      const before = new Map(storage.items);
+      storage.failWrites = quotaError();
+      expect(problemOf(() => store.markPlayed(id, played))).toBe('storage-full');
+      expect(storage.items).toEqual(before);
+    });
+
+    it('stays out of the way of unreadable saves', () => {
+      const { storage, store } = setUp();
+      storage.items.set(SAVE_KEY_PREFIX + idFor(7), 'broken');
+      store.markPlayed(idFor(7), played);
+      expect(store.list()).toEqual([
+        { id: idFor(7), snapshot: 'broken', status: 'unreadable', message: expect.stringMatching(/damaged/) },
+      ]);
+    });
   });
 });
