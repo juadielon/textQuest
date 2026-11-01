@@ -388,7 +388,11 @@ a share word recreates the starting adventure, not a saved session.
 
 ### Build
 
+Install dependencies in Docker before the first build, or after the
+dependency files change:
+
 ```sh
+docker compose run --rm app npm ci
 docker compose run --rm app npm run build
 ```
 
