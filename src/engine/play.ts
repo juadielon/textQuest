@@ -452,19 +452,21 @@ function completeStep(world: PlayWorld, progress: Progress, step: PuzzleStep, in
 const isDecision = (step: PuzzleStep) => step.choiceId !== undefined
   || step.effects.some(({ kind }) => kind === 'end-adventure');
 
-// Once one step of a choice is done, the other steps of that choice are gone.
-const choiceTaken = (world: PlayWorld, progress: Progress, step: PuzzleStep) =>
-  step.choiceId !== undefined && world.solution.steps.some((other) =>
-    other.choiceId === step.choiceId && progress.stepsDone.has(other.id));
-
 function stepsReadyHere(world: PlayWorld, progress: Progress): PuzzleStep[] {
+  const closedChoices = new Set<string>();
+  if (world.version === 2) {
+    for (const step of world.solution.steps) {
+      if (progress.stepsDone.has(step.id) && step.choiceId !== undefined) closedChoices.add(step.choiceId);
+    }
+  }
   return world.solution.steps.filter((step) => step.placeId === progress.placeId
     && !progress.stepsDone.has(step.id) && meets(progress, step.conditions)
-    && !choiceTaken(world, progress, step));
+    && (step.choiceId === undefined || !closedChoices.has(step.choiceId)));
 }
 
 const actionsReadyHere = (world: PlayWorld, progress: Progress) =>
-  stepsReadyHere(world, progress).filter((step) => !isDecision(step));
+  world.solution.steps.filter((step) => step.placeId === progress.placeId
+    && !progress.stepsDone.has(step.id) && !isDecision(step) && meets(progress, step.conditions));
 
 // Only winning endings can be played until checkpoint recovery exists.
 function winningEndingReached(world: PlayWorld, progress: Progress): boolean {
@@ -484,11 +486,16 @@ function choicesHere(world: PlayWorld, progress: Progress): { id: string; step: 
 
 // Steps that need no item happen by themselves once their conditions hold.
 // Steps that need items wait for the player to use one of those items.
-function settle(world: PlayWorld, progress: Progress): string[] {
+function settle(world: PlayWorld, progress: Progress, includeMessages = true): string[] {
   const messages: string[] = [];
-  for (let step = actionsReadyHere(world, progress).find((ready) => !needsItems(ready)); step;
-    step = actionsReadyHere(world, progress).find((ready) => !needsItems(ready))) {
-    messages.push('Something changes here.', ...completeStep(world, progress, step));
+  const automatic = world.solution.steps.filter((step) => step.placeId === progress.placeId
+    && !isDecision(step) && !needsItems(step));
+  for (let step = automatic.find((entry) => !progress.stepsDone.has(entry.id)
+    && meets(progress, entry.conditions)); step;
+    step = automatic.find((entry) => !progress.stepsDone.has(entry.id)
+      && meets(progress, entry.conditions))) {
+    const changes = completeStep(world, progress, step, includeMessages);
+    if (includeMessages) messages.push('Something changes here.', ...changes);
   }
   return messages;
 }
@@ -524,7 +531,7 @@ export function startPlay(world: PlayWorld): PlayState {
     cluesRevealed: new Set(), stepsDone: new Set(), unlockedExits: new Set(),
   };
   arrive(world, progress, world.startPlaceId);
-  settle(world, progress);
+  settle(world, progress, false);
   return {
     ...stateFrom(world, progress), turns: 0, goalReached: goalMet(world, progress), previous: null,
   };

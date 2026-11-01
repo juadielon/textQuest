@@ -1,6 +1,6 @@
 ﻿import { describe, expect, it } from 'vitest';
 import { adventureLengths, createAdventureSettings } from '../adventure-settings';
-import type { AdventureWorld } from '../adventure-world';
+import type { AdventureWorld, PuzzleStep } from '../adventure-world';
 import { lightFantasy } from '../content/v1/light-fantasy';
 import { worldNamesFrom } from '../content/v1/world-names';
 import { generateAdventureWorld } from '../generate-world';
@@ -222,6 +222,32 @@ describe('playing world version 2 choices', () => {
     expect(checkWinnability(choiceWorld())).toMatchObject({
       winnable: true, unreachableStepIds: [], reachableEndingIds: ['crowned'],
     });
+  });
+
+  it('settles automatic steps without repeatedly scanning each choice group', () => {
+    const size = 100;
+    let choiceReads = 0;
+    const choices = Array.from({ length: size }, (_, index): PuzzleStep => ({
+      id: `option-${index}`, placeId: 'room', conditions: {}, effects: [],
+      get choiceId() {
+        choiceReads++;
+        return 'route';
+      },
+    }));
+    const automatic = Array.from({ length: size }, (_, index): PuzzleStep => ({
+      id: `automatic-${index}`, placeId: 'room', conditions: {},
+      effects: [{ kind: 'reveal-clue', clueId: `clue-${index}` }],
+    }));
+    const world: AdventureWorld = {
+      version: 2, startPlaceId: 'room', places: [{ id: 'room' }, { id: 'goal' }],
+      exits: [], items: [], clues: Array.from({ length: size }, (_, index) => ({ id: `clue-${index}` })),
+      solution: { steps: [...choices, ...automatic], goal: { placeId: 'goal', conditions: {} } },
+    };
+    const start = startPlay(world);
+    expect(start.stepsDone).toHaveLength(size);
+    expect(start.cluesRevealed).toHaveLength(size);
+    expect(choiceIds(world, start)).toHaveLength(size);
+    expect(choiceReads).toBeLessThan(25 * size);
   });
 
   it('offers open choices here without doing them by themselves', () => {
