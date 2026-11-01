@@ -112,9 +112,7 @@ in hand-built worlds; no released generator creates them. Choices appear only
 when they are available, can be undone, and do not reveal hidden outcomes or
 puzzle answers. Hints stay general because route hints do not yet model
 choices. Worlds with failure endings are refused until checkpoint recovery
-is available ([issue #82](https://github.com/juadielon/textQuest/issues/82)).
-This work is part of [issue #79](https://github.com/juadielon/textQuest/issues/79)
-and builds on [pull request #89](https://github.com/juadielon/textQuest/pull/89).
+is available. See the roadmap for the related work and current limitations.
 Released adventures, share words and saves remain unchanged.
 
 The project is written in TypeScript. Vite turns it into the HTML, CSS and

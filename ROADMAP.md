@@ -126,10 +126,12 @@ compatibility is separate work in
 [issue #56](https://github.com/juadielon/textQuest/issues/56).
 Released generated worlds only add progress. World format version 2 rules
 and checks for mutually exclusive choices and early win or failure endings
-are prepared ([issue #79](https://github.com/juadielon/textQuest/issues/79)). Play
-supports choices and winning endings in those worlds, but no adventure
+are prepared ([issue #79](https://github.com/juadielon/textQuest/issues/79)),
+building on [pull request #89](https://github.com/juadielon/textQuest/pull/89).
+Play supports choices and winning endings in those worlds, but no adventure
 generates them, and failure endings stay refused until checkpoint recovery
-([issue #82](https://github.com/juadielon/textQuest/issues/82)).
+([issue #82](https://github.com/juadielon/textQuest/issues/82)). This play
+support is in [pull request #93](https://github.com/juadielon/textQuest/pull/93).
 
 ### 5. Commands and recovery
 
