@@ -639,6 +639,43 @@ describe('world version 2 choices and endings', () => {
     expect(checkWinnability(world)).toMatchObject({ winnable: true, canGetStuck: true });
   });
 
+  it('keeps independent choice groups open and tries terminal options after another choice', () => {
+    const step = (id: string, choiceId: string, conditions: Conditions = {}, effects: Effect[] = []) =>
+      ({ id, placeId: 'hall', choiceId, conditions, effects });
+    expect(checkWinnability({
+      version: 2, startPlaceId: 'hall', places: [{ id: 'hall' }],
+      exits: [], items: [], clues: [],
+      solution: {
+        steps: [
+          step('left', 'door'), step('right', 'door'),
+          step('fall', 'floor', { stepsDone: ['left'] }, [{ kind: 'end-adventure', endingId: 'pit' }]),
+          step('stay', 'floor'),
+        ],
+        goal: { placeId: 'hall', conditions: { stepsDone: ['left', 'stay'] } },
+        endings: [{ id: 'pit', outcome: 'failure' }],
+      },
+    })).toEqual({ winnable: true, unreachableStepIds: [], reachableEndingIds: ['pit'], canGetStuck: true });
+  });
+
+  it('checks a large choice group without rescanning every step for each option', () => {
+    const size = 1_000;
+    let choiceReads = 0;
+    const steps = Array.from({ length: size }, (_, index) => ({
+      id: `option-${index}`, placeId: 'start', conditions: {}, effects: [],
+      get choiceId() {
+        choiceReads++;
+        return 'large';
+      },
+    }));
+    expect(checkWinnability({
+      version: 2, startPlaceId: 'start', places: [{ id: 'start' }, { id: 'goal' }],
+      exits: [], items: [], clues: [],
+      solution: { steps, goal: { placeId: 'goal', conditions: {} } },
+    })).toEqual({ winnable: false, unreachableStepIds: [], reachableEndingIds: [], canGetStuck: true });
+    // About 1,001 states each read every option a few times; rescanning per option is about 500 million reads.
+    expect(choiceReads).toBeLessThan(10 * size * size);
+  });
+
   it('counts a winning ending as a win when the goal cannot be reached', () => {
     const world = withGoal(choiceWorld(), { placeId: 'castle', conditions: { stepsDone: ['jump'] } });
     expect(checkWinnability(world)).toEqual({
