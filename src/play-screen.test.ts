@@ -14,6 +14,11 @@ vi.mock('./generate-world', async (original) => {
   return { generateAdventureWorld: vi.fn(actual.generateAdventureWorld) };
 });
 
+vi.mock('./engine/play', async (original) => {
+  const actual = await original<typeof import('./engine/play')>();
+  return { ...actual, startPlay: vi.fn(actual.startPlay) };
+});
+
 // A tiny world that is quick to win, so the ending can be checked.
 const tinyWorld: AdventureWorld = {
   version: 1,
@@ -218,5 +223,41 @@ describe('renderPlayScreen', () => {
     expect(target.querySelector('h1')?.textContent).toBe(playScreenTitle);
     expect(target.querySelector('form')).toBeNull();
   });
-});
 
+  it('shows the accessible message for invalid settings', () => {
+    const target = document.createElement('main');
+
+    renderPlayScreen(target, { ...settingsFor('light-fantasy'), seed: -1 });
+
+    expect(target.querySelector('[role="alert"]')?.textContent).toBe(unplayableMessage);
+    expect(target.querySelector<HTMLElement>('h1')?.tabIndex).toBe(-1);
+    expect(target.querySelector('form')).toBeNull();
+  });
+
+  it('shows the accessible message for an invalid world', () => {
+    vi.mocked(generateAdventureWorld).mockReturnValueOnce({
+      ...tinyWorld, startPlaceId: 'missing-place',
+    });
+    const target = document.createElement('main');
+
+    renderPlayScreen(target, settingsFor('light-fantasy'));
+
+    expect(target.querySelector('[role="alert"]')?.textContent).toBe(unplayableMessage);
+    expect(target.querySelector<HTMLElement>('h1')?.tabIndex).toBe(-1);
+    expect(target.querySelector('form')).toBeNull();
+  });
+
+  it.each([
+    ['world generation', generateAdventureWorld],
+    ['play setup', startPlay],
+  ] as const)('rethrows unexpected errors from %s without showing the unplayable message', (_, operation) => {
+    const error = new TypeError('Unexpected programming error.');
+    vi.mocked(operation).mockImplementationOnce(() => { throw error; });
+    const target = document.createElement('main');
+    target.textContent = 'Previous screen';
+
+    expect(() => renderPlayScreen(target, settingsFor('light-fantasy'))).toThrow(error);
+    expect(target.querySelector('[role="alert"]')).toBeNull();
+    expect(target.textContent).toBe('Previous screen');
+  });
+});

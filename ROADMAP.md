@@ -164,6 +164,9 @@ keyboard, announces responses to screen readers and fits narrow and wide
 screens. New adventures and share words open play directly; play shows the
 share word and a way back to start. Navigation focuses the new heading.
 Returning to start ends the session, and reopening a word starts fresh.
+Invalid settings or worlds show the accessible unplayable message; unexpected
+errors while opening play are rethrown
+([issue #74](https://github.com/juadielon/textQuest/issues/74)).
 Content-pack names and prose, and saves remain planned.
 
 ### 8. Release checks and hosting guide

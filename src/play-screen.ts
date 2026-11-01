@@ -58,7 +58,8 @@ export function describePlay(world: AdventureWorld, state: PlayState): PlayView 
  * The screen always starts with a focusable `h1` heading, {@link playScreenTitle}.
  * Player and world text is only ever inserted with `textContent`. New
  * responses are announced through a polite live region. If the world can't
- * be generated, a plain message is shown instead of the game.
+ * be generated or started because of a validation `RangeError`, a plain
+ * message is shown instead of the game. Unexpected errors are rethrown.
  */
 export function renderPlayScreen(target: HTMLElement, settings: AdventureSettings): void {
   const title = element('h1', 'play-title', playScreenTitle);
@@ -68,7 +69,8 @@ export function renderPlayScreen(target: HTMLElement, settings: AdventureSetting
   try {
     world = generateAdventureWorld(settings);
     state = startPlay(world);
-  } catch {
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
     const problem = element('p', 'status', unplayableMessage);
     problem.setAttribute('role', 'alert');
     target.replaceChildren(title, problem);

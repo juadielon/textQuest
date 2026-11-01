@@ -261,6 +261,9 @@ The start screen opens play for new adventures and share words
 ([issue #54](https://github.com/juadielon/textQuest/issues/54)).
 Unsupported worlds show a clear message, their share word and a way back
 to the start screen rather than substituting a different adventure.
+Invalid settings or worlds still show that message; unexpected errors while
+opening play are rethrown rather than hidden as an unplayable adventure
+([issue #74](https://github.com/juadielon/textQuest/issues/74)).
 Names still come from IDs. The screen doesn't use the save format yet; the
 saves screen is planned in
 [issue #43](https://github.com/juadielon/textQuest/issues/43).
