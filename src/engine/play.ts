@@ -164,8 +164,9 @@ function nameOf(world: PlayWorld, kind: Target['kind'], id: string): string {
 // "The river guest". Mid-sentence they read as "the river guest". Acronyms
 // and ID names keep their capitals.
 const withThe = (name: string, packName = false) => {
+  if (!packName) return `the ${name}`;
   const bare = name.replace(/^the\s+/i, '');
-  return `the ${packName ? bare.replace(/^[A-Z](?=[a-z])/, (letter) => letter.toLowerCase()) : bare}`;
+  return `the ${bare.replace(/^[A-Z](?=[a-z])/, (letter) => letter.toLowerCase())}`;
 };
 
 const the = (world: PlayWorld, kind: Target['kind'], id: string) =>
@@ -191,13 +192,63 @@ const peopleHere = (world: PlayWorld, progress: Progress) => world.names
   : [];
 
 // Pack worlds name exits after where they lead, but only once the player knows that place.
-function exitName(world: PlayWorld, progress: Progress, exit: Exit): string {
-  if (!world.names) return nameOf(world, 'exit', exit.id);
+function rawExitName(world: PlayWorld, progress: Progress, exit: Exit): string {
   const base = (entry: Exit) => isOpen(progress, entry) || progress.placesVisited.has(entry.toPlaceId)
     ? `way to ${the(world, 'place', entry.toPlaceId)}`
     : 'locked way';
   const same = exitsFrom(world, exit.fromPlaceId).filter((entry) => base(entry) === base(exit));
   return same.length < 2 ? base(exit) : `${base(exit)} ${same.indexOf(exit) + 1}`;
+}
+
+function disambiguateExitTargets(targets: readonly CommandTarget[]): CommandTarget[] {
+  const result = usableAliases(targets);
+  const original = [...result];
+  const reachable = (target: CommandTarget, list: readonly CommandTarget[]) => {
+    if (target.kind !== 'place' && target.kind !== 'exit') return true;
+    const parsed = parseCommand(`go ${target.name}`, list);
+    return parsed.ok && 'targetId' in parsed.action;
+  };
+  const disambiguated = result.map((target, index) => {
+    if (target.kind !== 'exit') return target;
+    const parsed = parseCommand(`examine ${target.name}`, original);
+    if (parsed.ok && reachable(target, original)) return target;
+    let name = `${target.name} (${target.kind} ${index + 1})`;
+    while (true) {
+      const candidate = parseCommand(`examine ${name}`, result);
+      if (!candidate.ok && candidate.problem === 'unknown-target') break;
+      name += '!';
+    }
+    const renamed = { ...target, name, aliases: [target.name, ...target.aliases ?? []] };
+    result[index] = renamed;
+    return renamed;
+  });
+  return usableAliases(disambiguated);
+}
+
+// Use only the names the player can currently discover when checking generated exits.
+function stateTargets(world: PlayWorld, progress: Progress): CommandTarget[] {
+  const exits = exitsFrom(world, progress.placeId);
+  const places = new Set([progress.placeId, ...progress.placesVisited,
+    ...exits.filter((exit) => isOpen(progress, exit)).map((exit) => exit.toPlaceId)]);
+  const names = namedTargets(world);
+  const target = (kind: Target['kind']) => (id: string): CommandTarget =>
+    names.find((entry) => entry.kind === kind && entry.id === id)!;
+  const targets = [
+    ...inWorldOrder(world.places, places).map(target('place')),
+    ...world.names
+      ? exits.map((exit): CommandTarget => ({ id: exit.id, kind: 'exit', name: rawExitName(world, progress, exit) }))
+      : exits.map(({ id }) => id).map(target('exit')),
+    ...[...progress.itemsHeld, ...itemsHere(world, progress)].map(target('item')),
+    ...[...progress.cluesRevealed].map(target('clue')),
+    ...peopleHere(world, progress).map(target('person')),
+  ];
+  return world.names ? disambiguateExitTargets(targets) : targets;
+}
+
+function exitName(world: PlayWorld, progress: Progress, exit: Exit): string {
+  if (!world.names) return nameOf(world, 'exit', exit.id);
+  return stateTargets(world, progress).find(({ kind, id }) => kind === 'exit' && id === exit.id)?.name
+    ?? rawExitName(world, progress, exit);
 }
 
 function meets(progress: Progress, conditions: Conditions): boolean {
@@ -341,21 +392,7 @@ export function startPlay(world: PlayWorld): PlayState {
  */
 export function discoveredTargets(world: PlayWorld, state: PlayState): CommandTarget[] {
   const progress = progressFrom(state);
-  const exits = exitsFrom(world, state.placeId);
-  const places = new Set([state.placeId, ...state.placesVisited,
-    ...exits.filter((exit) => isOpen(progress, exit)).map((exit) => exit.toPlaceId)]);
-  const names = namedTargets(world);
-  const target = (kind: Target['kind']) => (id: string): CommandTarget =>
-    names.find((target) => target.kind === kind && target.id === id)!;
-  return [
-    ...inWorldOrder(world.places, places).map(target('place')),
-    ...world.names
-      ? exits.map((exit): CommandTarget => ({ id: exit.id, kind: 'exit', name: exitName(world, progress, exit) }))
-      : exits.map(({ id }) => id).map(target('exit')),
-    ...[...state.itemsHeld, ...itemsHere(world, progress)].map(target('item')),
-    ...state.cluesRevealed.map(target('clue')),
-    ...peopleHere(world, progress).map(target('person')),
-  ];
+  return stateTargets(world, progress);
 }
 
 function describePlace(world: PlayWorld, progress: Progress): string {

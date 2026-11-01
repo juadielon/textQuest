@@ -85,6 +85,21 @@ describe('startPlay', () => {
 });
 
 describe('playing with typed commands', () => {
+  it('keeps leading articles in ID-derived names', () => {
+    const world: AdventureWorld = {
+      version: 1,
+      startPlaceId: 'the-garden',
+      places: [{ id: 'the-garden' }],
+      exits: [],
+      items: [],
+      clues: [],
+      solution: { steps: [], goal: { placeId: 'the-garden', conditions: {} } },
+    };
+
+    expect(playCommand(world, startPlay(world), 'look').message)
+      .toBe('You are at the the garden. There is no way out.');
+  });
+
   it('wins a hand-built world from start to goal using typed commands only', () => {
     const world = deepFreeze(sampleWorld());
     const commands = ['go study', 'take token', 'use token', 'go to entry', 'use key on door', 'go finish'];
@@ -501,6 +516,27 @@ describe('play with content-pack names', () => {
     expect(targets.find(({ id }) => id === 'guard')).toEqual(
       { id: 'guard', kind: 'person', name: 'The old guard', aliases: ['guard'] });
     expect(targets.some(({ id }) => id === 'ghost')).toBe(false);
+  });
+
+  it('disambiguates generated exits against discovered names and aliases', () => {
+    const base = namedWorld();
+    const world: PlayWorld = {
+      ...base,
+      names: {
+        ...base.names!,
+        items: base.names!.items.map((item) =>
+          item.id === 'pebble' ? { ...item, name: 'Locked way' } : item),
+      },
+    };
+    const state = startPlay(world);
+    const targets = discoveredTargets(world, state);
+    const item = targets.find(({ id, kind }) => id === 'pebble' && kind === 'item')!;
+    const exit = targets.find(({ id, kind }) => id === 'door' && kind === 'exit')!;
+
+    expect(exit.name).not.toBe(item.name);
+    expect(playCommand(world, state, `examine ${item.name}`).message).toContain('is here.');
+    expect(playCommand(world, state, `examine ${exit.name}`).message).toContain('is locked.');
+    expect(playCommand(world, state, 'look').message).toContain(`the ${exit.name}`);
   });
 
   it('lets the player talk to and examine people only where they are', () => {
