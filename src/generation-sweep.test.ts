@@ -31,6 +31,14 @@ function withoutOptionalSteps(world: AdventureWorld): AdventureWorld {
   };
 }
 
+function recordSeedExceptions(seed: number, problems: string[], check: () => void): void {
+  try {
+    check();
+  } catch (error) {
+    problems.push(`seed ${seed}: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+  }
+}
+
 describe('version 1 generation sweep', () => {
   for (const length of adventureLengths) {
     // Checking every seed takes a few seconds, so a busy machine can push it past
@@ -42,25 +50,27 @@ describe('version 1 generation sweep', () => {
       const problems: string[] = [];
 
       for (let seed = 0; seed < sweepSeedCount; seed += 1) {
-        const settings = createAdventureSettings(seed, length);
-        const world = generateAdventureWorld(settings);
-        const json = JSON.stringify(world);
-        worldsByGenre.get(settings.genre)!.add(json);
+        recordSeedExceptions(seed, problems, () => {
+          const settings = createAdventureSettings(seed, length);
+          const world = generateAdventureWorld(settings);
+          const json = JSON.stringify(world);
+          worldsByGenre.get(settings.genre)!.add(json);
 
-        if (JSON.stringify(generateAdventureWorld(settings)) !== json) {
-          problems.push(`seed ${seed}: regenerated world differs`);
-        }
-        if (JSON.stringify(generateAdventureWorld(parseShareWord(encodeShareWord(settings)))) !== json) {
-          problems.push(`seed ${seed}: share word gives a different world`);
-        }
-        for (const [label, checked] of [['with optional steps', world], ['without optional steps', withoutOptionalSteps(world)]] as const) {
-          const result = checkWinnability(checked);
-          if ('tooLarge' in result) {
-            problems.push(`seed ${seed} ${label}: too large to check`);
-          } else if (!result.winnable || result.unreachableStepIds.length > 0) {
-            problems.push(`seed ${seed} ${label}: not winnable (${result.unreachableStepIds.join(', ')})`);
+          if (JSON.stringify(generateAdventureWorld(settings)) !== json) {
+            problems.push(`seed ${seed}: regenerated world differs`);
           }
-        }
+          if (JSON.stringify(generateAdventureWorld(parseShareWord(encodeShareWord(settings)))) !== json) {
+            problems.push(`seed ${seed}: share word gives a different world`);
+          }
+          for (const [label, checked] of [['with optional steps', world], ['without optional steps', withoutOptionalSteps(world)]] as const) {
+            const result = checkWinnability(checked);
+            if ('tooLarge' in result) {
+              problems.push(`seed ${seed} ${label}: too large to check`);
+            } else if (!result.winnable || result.unreachableStepIds.length > 0) {
+              problems.push(`seed ${seed} ${label}: not winnable (${result.unreachableStepIds.join(', ')})`);
+            }
+          }
+        });
       }
 
       expect(problems).toEqual([]);
@@ -71,6 +81,23 @@ describe('version 1 generation sweep', () => {
       }
     }, 30_000);
   }
+
+  it('records the seed and original exception while continuing the sweep', () => {
+    const problems: string[] = [];
+    const error = new Error('test failure');
+    const otherError: unknown = 'plain failure';
+    let checkedNext = false;
+
+    recordSeedExceptions(42, problems, () => { throw error; });
+    recordSeedExceptions(43, problems, () => { throw otherError; });
+    recordSeedExceptions(44, problems, () => { checkedNext = true; });
+
+    expect(problems).toEqual([
+      `seed 42: ${error.stack ?? error.message}`,
+      'seed 43: plain failure',
+    ]);
+    expect(checkedNext).toBe(true);
+  });
 
   it('checks that removing optional steps really removes them', () => {
     const world = generateAdventureWorld(createAdventureSettings(0, 'short'));
