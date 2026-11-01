@@ -267,6 +267,8 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
       entries = options.store.list();
     } catch (error) {
       reportDeletion(messageFor(error));
+      // Rows restored before this refresh need Resume to match pending deletes.
+      updateNavigation();
       if (focused instanceof HTMLElement && !focused.isConnected) status.focus();
       return;
     }
