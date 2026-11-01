@@ -269,9 +269,9 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
     return item;
   };
 
-  refresh();
   target.replaceChildren(heading, status, list, back);
   heading.focus();
+  refresh();
 }
 
 function messageFor(error: unknown): string {

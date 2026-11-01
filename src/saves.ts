@@ -371,7 +371,7 @@ function storageError(error: unknown): SaveError {
   if (isQuotaError(error)) {
     return new SaveError(
       'storage-full',
-      'Your browser has no room left for saves. Delete or export an old save, then try again. Your other saves are safe.',
+      'Your browser has no room left for saves. Try deleting an old save or freeing browser storage, then try again. Your other saves are safe.',
     );
   }
   return new SaveError(

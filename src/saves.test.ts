@@ -436,7 +436,7 @@ describe('save store', () => {
     expect(problemOf(() => store.add(sampleSave()))).toBe('storage-full');
     expect(problemOf(() => store.importSave(store.exportSave(id)))).toBe('storage-full');
     expect(messageOf(() => store.add(sampleSave()))).toBe(
-      'Your browser has no room left for saves. Delete or export an old save, then try again. Your other saves are safe.',
+      'Your browser has no room left for saves. Try deleting an old save or freeing browser storage, then try again. Your other saves are safe.',
     );
     expect(storage.items).toEqual(before);
     expect(store.load(id)).toEqual(sampleSave());
