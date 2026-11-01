@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, relative, resolve } from 'node:path';
-import { after, afterEach, test } from 'node:test';
+import { afterAll, afterEach, test } from 'vitest';
 import { ESLint } from 'eslint';
 import { defineConfig } from 'eslint/config';
 import tseslint from 'typescript-eslint';
@@ -26,7 +26,12 @@ writeFileSync(join(root, 'tsconfig.json'), JSON.stringify({
 }));
 
 afterEach(() => clearCaches());
-after(() => rmSync(root, { recursive: true, force: true }));
+afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+test('npm test stays a plain Vitest run so selectors and flags reach Vitest', () => {
+  const { scripts } = JSON.parse(readFileSync('package.json', 'utf8'));
+  assert.equal(scripts.test, 'vitest run');
+});
 
 test('every locked minimatch and actual lint consumer uses the checked patch', () => {
   const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));

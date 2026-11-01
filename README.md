@@ -391,7 +391,7 @@ For [issue #72](https://github.com/juadielon/textQuest/issues/72), minimatch
 supported upstream releases checked on 1 November 2026 still require
 vulnerable minimatch 10. There is no global override: a new or older consumer
 must be assessed separately. ESLint is pinned to match its scoped override.
-`npm test` also runs Node's unit tests in
+`npm test` also runs the Vitest checks in
 `scripts/lint-tooling.test.mjs`, checking every locked minimatch copy and
 each actual consumer's installed version, file selection, negated ignores,
 nested and dot paths, braces, extglobs and the TypeScript parser service.
