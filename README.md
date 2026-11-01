@@ -252,7 +252,8 @@ copies count towards this limit as well. The limit caps how many states are
 created, not how long it takes to read a very large world, so it does not
 promise that any input finishes instantly. Version 2 choice checks look up
 already-taken choices once per state instead of rescanning every step for each
-option.
+option, and arrival takes automatic steps as their conditions are met instead
+of rescanning the step list after each one.
 A world that needs more returns `{ winnable: false, tooLarge: true }`
 instead. It must be treated as rejected, never as winnable. The same world
 always gives the same result, whatever the time, locale or browser. Tests show
