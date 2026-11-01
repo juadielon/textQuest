@@ -330,9 +330,9 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
     return item;
   };
 
-  refresh();
   target.replaceChildren(heading, status, importForm, list, back);
   heading.focus();
+  refresh();
 }
 
 function downloadSave(text: string, name: string): void {

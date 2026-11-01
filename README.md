@@ -26,6 +26,28 @@ again with no progress unless it was saved first.
 Focus moves to the new screen's heading on navigation. Both screens work by
 keyboard and screen reader, on narrow and wide screens.
 
+## Shareable adventure links
+
+[Issue #80](https://github.com/juadielon/textQuest/issues/80) adds an
+**Adventure link** field and **Copy link** button below the play screen's
+share word. A link such as `https://example.com/textQuest/?adventure=sunlitsaucer2`
+opens that exact starting adventure, with its original version, genre and
+length. It never includes commands, save data or player progress.
+Version 1 and version 2 words still use their existing rules.
+
+The link stays at the app's current path, including a hosting sub-path or
+`index.html`. Other query values and fragments are left out. Invalid, blank
+or unsupported words open the start screen with a clear error and focus on
+the share-word field, where the player can correct the word. **Back to start**
+removes the incoming word from the address, so a reload stays on start.
+
+Copying announces success or failure to screen readers. If clipboard access
+is missing or refused, the link is selected for manual copying. The labelled,
+read-only field is always available by keyboard; **Open starting adventure
+(new tab)** also provides a normal link without ending the current session.
+Use a public hosted address when sharing with other people; a localhost link
+only reaches the recipient's own computer.
+
 ## Version 1 authored content
 
 [Issue #26](https://github.com/juadielon/textQuest/issues/26) adds a typed
@@ -406,6 +428,72 @@ do not need to be installed on the host.
 Every code change must include a unit test for the behaviour it changes. A
 build or browser smoke check does not replace that test. See
 [Contributing](CONTRIBUTING.md) for the test and review rules.
+
+## Building and hosting
+
+textQuest builds to plain static files: HTML, CSS, JavaScript and an icon.
+It needs no game server, database, API key or LLM, so any static web host
+can serve it. The current build connects the start and play screens for
+light fantasy, cosy mystery and science fiction. All three genres are
+playable, but authored prose and authored command names remain unfinished.
+Save before going back to start or reloading to keep progress. A share word
+recreates the starting adventure, not a saved session. Browser save-file
+export and import keep progress in a separate file without sharing it in a link.
+
+### Build
+
+Install dependencies in Docker before the first build, or after the
+dependency files change:
+
+```sh
+docker compose run --rm app npm ci
+docker compose run --rm app npm run build
+```
+
+This type-checks the code, then writes the site to `dist/`. Each build
+replaces `dist/`, and Git ignores it. Upload everything inside `dist/`,
+keeping the `assets/` folder next to `index.html`.
+
+### Host on a sub-path
+
+By default the build uses relative asset URLs, so the same `dist/` can be
+served from the site root or a folder such as `https://example.com/textQuest/`.
+Serve `index.html` at that path and keep `assets/` beside it. Shared links use
+a query parameter, not a separate route, so no route rewrite is needed.
+The server must still serve the app when a query is present.
+
+To pin asset URLs to one hosting folder instead, pass Vite's `--base` option
+with leading and trailing slashes:
+
+```sh
+docker compose run --rm app npm run build -- --base=/textQuest/
+```
+
+The page then loads its files from `/textQuest/assets/`. Upload `dist/` to
+that folder on the host.
+
+### Preview the production build
+
+To check a root build with the same nginx container used for production,
+open <http://localhost:8080>:
+
+```sh
+docker compose --profile production up --build production
+```
+
+This builds a fresh copy inside the image, so it does not use your `dist/`.
+It always serves from the root.
+
+To preview the `dist/` you built, run Vite's preview server. Give it the
+hosting sub-path as `--base`, or leave the option out to preview at the root:
+
+```sh
+docker compose run --rm --service-ports app npx vite preview --host 0.0.0.0 --port 5173 --strictPort --base=/textQuest/
+```
+
+Open <http://localhost:5173/textQuest/>. Stop it with `Ctrl+C`; if the
+container keeps running, find it with `docker ps` and remove it with
+`docker rm -f <name>`.
 
 ## Planned features
 

@@ -18,6 +18,8 @@ export const gameTitle = 'textQuest';
 export interface StartScreenOptions {
   /** Opens play with the chosen or shared adventure's settings. */
   readonly onStart: (settings: AdventureSettings) => void;
+  /** A word from an incoming link, checked just like a typed word, including blank input. */
+  readonly shareWord?: string;
   /** Where new seeds get random numbers. Defaults to browser cryptographic randomness. */
   readonly randomSource?: RandomValueSource;
   /** Opens the saves screen. When missing, no saves button is shown. */
@@ -88,7 +90,9 @@ function buildShareWordForm(): HTMLFormElement {
  *
  * @remarks
  * Focus moves to the heading. Invalid share words stay on this screen with
- * a plain-text error; typed text is never inserted as HTML.
+ * a plain-text error; typed text is never inserted as HTML. An incoming
+ * `shareWord` opens play immediately if valid, or focuses the field with its error.
+ * When `onOpenSaves` is provided, a button opens the saves screen.
  *
  * @param target - The element to render into, usually `#app`.
  * @param options - The navigation callback and optional fixed random source.
@@ -114,8 +118,7 @@ export function renderStartScreen(target: HTMLElement, options: StartScreenOptio
     options.onStart(createNewAdventureSettings(length, options.randomSource));
   });
 
-  shareForm.addEventListener('submit', (event) => {
-    event.preventDefault();
+  const openSharedAdventure = (): void => {
     const outcome = readShareWord(shareInput.value);
     if (outcome.ok) {
       clearError();
@@ -125,6 +128,11 @@ export function renderStartScreen(target: HTMLElement, options: StartScreenOptio
     shareError.textContent = outcome.message;
     shareInput.setAttribute('aria-invalid', 'true');
     shareInput.focus();
+  };
+
+  shareForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    openSharedAdventure();
   });
 
   const heading = create('h1', { tabIndex: -1 }, gameTitle);
@@ -139,4 +147,8 @@ export function renderStartScreen(target: HTMLElement, options: StartScreenOptio
     target.append(create('p', { className: 'saves-link' }, saves));
   }
   heading.focus();
+  if (options.shareWord !== undefined) {
+    shareInput.value = options.shareWord;
+    openSharedAdventure();
+  }
 }

@@ -259,16 +259,19 @@ describe('buildSaveForm', () => {
     expect(storage.items.size).toBe(0);
   });
 
-  it('reports a full storage and leaves the stored save as it was', async () => {
+  it.each([true, false])('reports full storage and keeps the save with Web Locks available: %s', async (hasLocks) => {
     const save = createSave('Old trip', settings, ['look'], earlier);
     const id = store.add(save);
-    const { form, status } = mountForm(['look', 'hint'], { resumed: { id, save } });
+    const { form, status } = mountForm(['look', 'hint'], {
+      resumed: { id, save }, locks: hasLocks ? lock.locks : undefined,
+    });
     storage.failWrites = true;
 
     form.requestSubmit();
     await lock.settled();
 
-    expect(status.textContent).toMatch(/no room left for saves/);
+    expect(status.textContent).toMatch(/deleting an old save or freeing browser storage/);
+    expect(store.list()).toHaveLength(1);
     expect(store.load(id)).toEqual(save);
   });
 });
@@ -501,14 +504,21 @@ describe('renderSavesScreen', () => {
     expect(app.querySelector('[role="status"]')?.textContent).toMatch(/damaged/);
   });
 
-  it('explains blocked storage instead of listing saves', () => {
+  it('reports blocked storage in a live region already attached to the screen', () => {
     store.add(createSave('Trip', settings, [], earlier));
-    vi.spyOn(storage, 'key').mockImplementation(() => { throw new Error('blocked'); });
+    let statusBeforeRead: { attached: boolean; text: string | null } | undefined;
+    vi.spyOn(storage, 'key').mockImplementation(() => {
+      const status = app.querySelector('[role="status"]');
+      statusBeforeRead = { attached: status?.isConnected === true, text: status?.textContent ?? null };
+      throw new Error('blocked');
+    });
 
     render();
 
+    expect(statusBeforeRead).toEqual({ attached: true, text: '' });
     expect(app.querySelector('[role="status"]')?.textContent).toMatch(/would not let textQuest/);
     expect(app.querySelectorAll('.saves-list li')).toHaveLength(0);
+    expect(document.activeElement).toBe(app.querySelector('h1'));
   });
 
   it.each([
