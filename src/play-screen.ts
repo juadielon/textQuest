@@ -20,9 +20,15 @@ export interface PlayView {
   readonly ended: boolean;
 }
 
+/**
+ * The play screen's top-level heading. It can be focused from code, so a
+ * caller can move focus to it when the screen opens.
+ */
+export const playScreenTitle = 'Your adventure';
+
 /** Shown instead of the game when a world can't be made from the settings. */
 export const unplayableMessage =
-  'Sorry, this adventure can’t be played yet. Please try a different adventure.';
+  'Sorry, this adventure can’t be played. Please try a different adventure.';
 
 /**
  * Describes the play screen for a state. Names come from discovered targets,
@@ -49,11 +55,14 @@ export function describePlay(world: AdventureWorld, state: PlayState): PlayView 
  * including help, hint and undo. The ending shows once the goal is reached.
  *
  * @remarks
+ * The screen always starts with a focusable `h1` heading, {@link playScreenTitle}.
  * Player and world text is only ever inserted with `textContent`. New
  * responses are announced through a polite live region. If the world can't
  * be generated, a plain message is shown instead of the game.
  */
 export function renderPlayScreen(target: HTMLElement, settings: AdventureSettings): void {
+  const title = element('h1', 'play-title', playScreenTitle);
+  title.tabIndex = -1;
   let world: AdventureWorld;
   let state: PlayState;
   try {
@@ -62,7 +71,7 @@ export function renderPlayScreen(target: HTMLElement, settings: AdventureSetting
   } catch {
     const problem = element('p', 'status', unplayableMessage);
     problem.setAttribute('role', 'alert');
-    target.replaceChildren(problem);
+    target.replaceChildren(title, problem);
     return;
   }
 
@@ -130,7 +139,7 @@ export function renderPlayScreen(target: HTMLElement, settings: AdventureSetting
 
   update();
   const screen = element('div', 'play-screen', place, ending, log, form, sidebar, announcer);
-  target.replaceChildren(screen);
+  target.replaceChildren(title, screen);
 }
 
 function fillList(list: HTMLElement, names: readonly string[], empty: string): void {

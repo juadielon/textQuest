@@ -57,10 +57,11 @@ two-word share words such as `silverlantern`, with unit tests. The start
 screen ([issue #41](https://github.com/juadielon/textQuest/issues/41)) opens
 play for new adventures or share words, and play shows the share word
 ([issue #54](https://github.com/juadielon/textQuest/issues/54)).
-Version 1 light fantasy settings generate
+Version 1 settings generate
 repeatable engine worlds ([issue #31](https://github.com/juadielon/textQuest/issues/31)),
 implemented in [pull request #35](https://github.com/juadielon/textQuest/pull/35).
-Generation for other genres remains planned.
+[Issue #40](https://github.com/juadielon/textQuest/issues/40) extends this to the
+cosy mystery and science fiction genres.
 
 ### 4. Stories, places and puzzles
 
@@ -94,13 +95,13 @@ The world contains engine rules, not rendered story text or player progress.
 These engine worlds can be played in the browser, but authored names and
 story text are not rendered yet.
 The science fiction pack ([issue #33](https://github.com/juadielon/textQuest/issues/33))
-follows the same format and checks, but the generator still rejects science
-fiction settings until [issue #40](https://github.com/juadielon/textQuest/issues/40)
-connects it. The cosy mystery pack
-([issue #32](https://github.com/juadielon/textQuest/issues/32)) follows the same
-format, and issue #40 will connect it to the generator too. Command handling
-remains planned; unsupported settings are clearly rejected rather than replaced
-with fantasy. The current rules only add progress; mutually exclusive
+and the cosy mystery pack
+([issue #32](https://github.com/juadielon/textQuest/issues/32)) follow the same
+format and checks. The generator builds worlds from both
+([issue #40](https://github.com/juadielon/textQuest/issues/40)), with the same
+tests and pinned worlds for each genre. Commands run through the play module;
+authored names and story text remain planned.
+The current rules only add progress; mutually exclusive
 choices will need later rules and their own checks.
 
 ### 5. Commands and recovery
@@ -141,8 +142,10 @@ commands into a world and the save screens are not implemented.
 ### 7. Browser game
 
 **Status:** In progress — start and play screens are connected
-([issue #54](https://github.com/juadielon/textQuest/issues/54)), completing the
-play interface in [issue #44](https://github.com/juadielon/textQuest/issues/44).
+([issue #54](https://github.com/juadielon/textQuest/issues/54)).
+The play interface in [issue #44](https://github.com/juadielon/textQuest/issues/44)
+still needs content-pack names and prose
+([issue #56](https://github.com/juadielon/textQuest/issues/56)).
 A start screen for new adventures and share words
 ([issue #41](https://github.com/juadielon/textQuest/issues/41)) is implemented
 in [pull request #46](https://github.com/juadielon/textQuest/pull/46).

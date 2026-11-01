@@ -15,9 +15,7 @@ if (app) {
     renderPlayScreen(app, settings);
 
     const header = document.createElement('header');
-    const heading = document.createElement('h1');
-    heading.textContent = 'Your adventure';
-    heading.tabIndex = -1;
+    const heading = app.querySelector('h1')!;
     const details = document.createElement('dl');
     const summary = summariseAdventure(settings);
     for (const [label, value] of [
@@ -38,8 +36,8 @@ if (app) {
     const notice = document.createElement('p');
     notice.className = 'hint';
     notice.textContent = 'Going back ends this play session. Keep the share word to start again.';
-    header.append(heading, details, back, notice);
-    app.prepend(header);
+    header.append(details, back, notice);
+    heading.after(header);
     heading.focus();
   };
 

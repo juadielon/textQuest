@@ -51,6 +51,49 @@ const winningCommands = [
   'go to study', 'take token', 'use token', 'go entry', 'use key on door', 'go finish',
 ];
 
+it('can reach a place when its grammar-safe fallback name is occupied', () => {
+  const world: AdventureWorld = {
+    version: 1, startPlaceId: 'entry',
+    places: [{ id: 'entry' }, { id: 'to-room' }, { id: 'place-2' }],
+    exits: [{ id: 'path', fromPlaceId: 'entry', toPlaceId: 'to-room', locked: false }],
+    items: [], clues: [],
+    solution: { steps: [], goal: { placeId: 'to-room', conditions: {} } },
+  };
+  const start = startPlay(world);
+  const target = discoveredTargets(world, start).find(({ id }) => id === 'to-room')!;
+  expect(playCommand(world, start, `go ${target.name}`).state.goalReached).toBe(true);
+});
+
+it('keeps item use unambiguous after a visible place is renamed', () => {
+  const itemId = 'badge-on-north-(place-2)';
+  const world: AdventureWorld = {
+    version: 1, startPlaceId: 'entry',
+    places: [{ id: 'entry' }, { id: 'north' }],
+    exits: [{ id: 'path', fromPlaceId: 'entry', toPlaceId: 'north', locked: false }],
+    items: [{ id: 'badge', placeId: 'entry' }, { id: itemId, placeId: 'entry' }],
+    clues: [],
+    solution: {
+      steps: [{ id: 'finish', placeId: 'entry', conditions: { itemsHeld: [itemId] }, effects: [] }],
+      goal: { placeId: 'entry', conditions: { stepsDone: ['finish'] } },
+    },
+  };
+  const start = startPlay(world);
+  const target = discoveredTargets(world, start).find(({ id }) => id === itemId)!;
+  const taken = playCommand(world, start, `take ${target.name}`).state;
+  expect(playCommand(world, taken, `use ${target.name}`).state.goalReached).toBe(true);
+});
+
+it('suggests a winning place named too-large instead of search-limit advice', () => {
+  const world: AdventureWorld = {
+    version: 1, startPlaceId: 'entry',
+    places: [{ id: 'entry' }, { id: 'too-large' }],
+    exits: [{ id: 'path', fromPlaceId: 'entry', toPlaceId: 'too-large', locked: false }],
+    items: [], clues: [],
+    solution: { steps: [], goal: { placeId: 'too-large', conditions: {} } },
+  };
+  expect(playCommand(world, startPlay(world), 'hint').message).toBe('Try going to the too large.');
+});
+
 function play(world: AdventureWorld, inputs: readonly string[]) {
   let state = startPlay(world);
   const messages: string[] = [];
@@ -110,7 +153,7 @@ describe('playing with typed commands', () => {
     expect(state.stepsDone).toEqual(['open-door', 'find-key', 'read-note']);
     expect(state.unlockedExits).toEqual(['door']);
     expect(messages[0]).toBe('You are at the study. You can see the token. Clues here: the note. '
-      + 'Ways out: the to entry to the entry. You found the note clue. '
+      + 'Ways out: the exit 5 to the entry. You found the note clue. '
       + 'Something changes here. You found the answer clue.');
     expect(messages[2]).toBe('You use the token. You now have the key.');
     expect(messages[4]).toBe('You use the key on the door. The door is now open.');
@@ -150,7 +193,7 @@ describe('discoveredTargets', () => {
     expect(discoveredTargets(world, startPlay(world))).toEqual([
       { id: 'entry', name: 'entry', kind: 'place' },
       { id: 'study', name: 'study', kind: 'place' },
-      { id: 'to-study', name: 'to study', kind: 'exit' },
+      { id: 'to-study', name: 'exit 4', kind: 'exit', aliases: ['to study'] },
       { id: 'door', name: 'door', kind: 'exit' },
       { id: 'pebble', name: 'pebble', kind: 'item' },
     ]);
@@ -260,6 +303,56 @@ describe('discoveredTargets', () => {
     expect(playCommand(world, start, 'hint').message).toBe(`Try going to the ${target.name}.`);
     expect(playCommand(world, start, `go ${target.name}`).state.goalReached).toBe(true);
   });
+
+  it('round-trips displayed movement names beginning with to to the exact target', () => {
+    const world: AdventureWorld = {
+      version: 1, startPlaceId: 'entry',
+      places: [{ id: 'entry' }, { id: 'to-red-room' }, { id: 'red-room' }],
+      exits: [
+        { id: 'to-path', fromPlaceId: 'entry', toPlaceId: 'to-red-room', locked: false },
+        { id: 'path', fromPlaceId: 'entry', toPlaceId: 'red-room', locked: false },
+      ],
+      items: [], clues: [],
+      solution: { steps: [], goal: { placeId: 'to-red-room', conditions: {} } },
+    };
+    const start = startPlay(world);
+    for (const target of discoveredTargets(world, start)) {
+      const turn = playCommand(world, start, `go ${target.name}`);
+      const expected = target.kind === 'exit'
+        ? world.exits.find(({ id }) => id === target.id)!.toPlaceId : target.id;
+      expect(turn.state.placeId).toBe(expected);
+    }
+    const target = discoveredTargets(world, start).find(({ id }) => id === 'to-red-room')!;
+    expect(playCommand(world, start, 'hint').message).toBe(`Try going to the ${target.name}.`);
+    expect(playCommand(world, start, `go ${target.name}`).state.goalReached).toBe(true);
+  });
+
+  it('wins using the displayed name of an item that overlaps an item-on-target command', () => {
+    const world: AdventureWorld = {
+      version: 1, startPlaceId: 'entry',
+      places: [{ id: 'entry' }, { id: 'ribbon' }],
+      exits: [{ id: 'door', fromPlaceId: 'entry', toPlaceId: 'ribbon', locked: true }],
+      items: [{ id: 'badge-on-ribbon', placeId: 'entry' }, { id: 'badge', placeId: 'entry' }],
+      clues: [],
+      solution: {
+        steps: [{
+          id: 'open', placeId: 'entry', conditions: { itemsHeld: ['badge-on-ribbon'] },
+          effects: [{ kind: 'unlock-exit', exitId: 'door' }],
+        }],
+        goal: { placeId: 'ribbon', conditions: {} },
+      },
+    };
+    expect(checkWinnability(world).winnable).toBe(true);
+    const start = deepFreeze(startPlay(world));
+    const target = discoveredTargets(world, start).find(({ id }) => id === 'badge-on-ribbon')!;
+    expect(playCommand(world, start, 'look').message).toContain(target.name);
+    const taken = playCommand(world, start, `take ${target.name}`).state;
+    expect(playCommand(world, taken, 'inventory').message).toContain(target.name);
+    const used = playCommand(world, taken, `use ${target.name}`).state;
+    expect(used.stepsDone).toEqual(['open']);
+    expect(playCommand(world, used, 'go ribbon').state.goalReached).toBe(true);
+    expect(playByHints(world).goalReached).toBe(true);
+  });
 });
 
 describe('runAction responses', () => {
@@ -270,12 +363,12 @@ describe('runAction responses', () => {
     expect(runAction(world, start, { kind: 'look' })).toEqual({
       state: start,
       message: 'You are at the entry. You can see the pebble. Ways out: '
-        + 'the to study to the study, the door (locked).',
+        + 'the exit 4 to the study, the door (locked).',
     });
     expect(runAction(world, start, { kind: 'examine', targetId: 'door', targetKind: 'exit' }).message)
       .toBe('The door is locked.');
     expect(runAction(world, start, { kind: 'examine', targetId: 'to-study', targetKind: 'exit' }).message)
-      .toBe('The to study leads to the study.');
+      .toBe('The exit 4 leads to the study.');
     expect(runAction(world, start, { kind: 'examine', targetId: 'pebble', targetKind: 'item' }).message)
       .toBe('The pebble is here. You could take it.');
     expect(runAction(world, start, { kind: 'examine', targetId: 'study', targetKind: 'place' }).message)
@@ -359,7 +452,33 @@ describe('undo', () => {
   });
 });
 
+describe('replaying a long save', () => {
+  // Regression: naming targets used to be redone for every command, so a long
+  // world took about 75 ms per command and big saves were slow to resume.
+  it('replays thousands of commands on a long generated world quickly', () => {
+    let settings = createAdventureSettings(0, 'long');
+    while (settings.genre !== 'light-fantasy') settings = createAdventureSettings(settings.seed + 1, 'long');
+    const world = generateAdventureWorld(settings);
+    const started = Date.now();
+    expect(replayCommands(world, Array<string>(2000).fill('look'))).toEqual(startPlay(world));
+    // The slow version took minutes, so a generous limit still catches it.
+    expect(Date.now() - started).toBeLessThan(10_000);
+  }, 20_000);
+});
+
 describe('hints', () => {
+  it('does not recommend undo in an unwinnable initial state', () => {
+    const world: AdventureWorld = {
+      ...sampleWorld(), exits: [],
+      solution: { steps: [], goal: { placeId: 'finish', conditions: {} } },
+    };
+    const start = startPlay(world);
+    expect(checkWinnability(world).winnable).toBe(false);
+    expect(playCommand(world, start, 'hint')).toEqual({
+      state: start, message: 'There seems to be no way forward from here.',
+    });
+  });
+
   it('point at the next useful step without naming puzzle answers', () => {
     const world = sampleWorld();
     const hints = (inputs: string[]) => playCommand(world, replayCommands(world, inputs), 'hint').message;
