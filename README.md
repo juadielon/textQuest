@@ -1,486 +1,143 @@
 # textQuest
 
-textQuest is a text adventure game in development. It builds adventures from
-authored content and game rules, without using an LLM while you play.
-
-This repository includes a Docker-run browser start screen, the rules for
-repeatable adventure settings and share words, a world model with a
-winnability checker, deterministic world generation for all three genres, a
-command parser and a save format. A pure play module runs parsed commands
-against a world, with a browser play screen built on it. New adventures use
-version 2's seeded item and clue placement; version 1 share words and saves
-keep their original worlds. All three genres can be played from the start
-screen, saved and resumed later. Names still come from IDs; authored story
-text remains planned.
-
-## Start screen
-
-[Issue #41](https://github.com/juadielon/textQuest/issues/41) adds the first
-browser screen. Players can choose a short, medium or long adventure, or
-type a share word to open the same starting adventure as a friend.
-[Issue #54](https://github.com/juadielon/textQuest/issues/54) connects both
-forms to play. Invalid words show a clear message beside the field.
-The play screen shows the share word, genre and length and a **Back to start**
-button. Going back ends the current session; opening its share word starts a
-fresh adventure. Use **Saves** → **Resume** to continue saved progress.
-Focus moves to the new screen's heading on navigation. Both screens work by
-keyboard and screen reader, on narrow and wide screens.
-
-## Shareable adventure links
-
-[Issue #80](https://github.com/juadielon/textQuest/issues/80) adds an
-**Adventure link** field and **Copy link** button below the play screen's
-share word. A link such as `https://example.com/textQuest/?adventure=sunlitsaucer2`
-opens that exact starting adventure, with its original version, genre and
-length. It never includes commands, save data or player progress.
-Version 1 and version 2 words still use their existing rules.
-
-The link stays at the app's current path, including a hosting sub-path or
-`index.html`. Other query values and fragments are left out. Invalid, blank
-or unsupported words open the start screen with a clear error and focus on
-the share-word field, where the player can correct the word. **Back to start**
-removes the incoming word from the address, so a reload stays on start.
-
-Copying announces success or failure to screen readers. If clipboard access
-is missing or refused, the link is selected for manual copying. The labelled,
-read-only field is always available by keyboard; **Open starting adventure
-(new tab)** also provides a normal link without ending the current session.
-Use a public hosted address when sharing with other people; a localhost link
-only reaches the recipient's own computer.
-
-## Version 1 authored content
-
-[Issue #26](https://github.com/juadielon/textQuest/issues/26) adds a typed
-content format in `src/content/v1/` and the light fantasy pack. It is not
-connected to the browser. The generator uses its authored plans, and those
-of the two packs below.
-
-The pack has 24 places, motivated characters, items, clues, 12 required puzzle
-templates across four families, optional discoveries, route choices and
-endings. Three plots use different puzzle dependency graphs: restoring a
-warning chain, finding a missing keeper and renewing a river pact. Their
-authored length plans select 8 places and 4 steps for short adventures,
-16 places and 8 steps for medium, or 24 places and 12 steps for long.
-
-[Issue #32](https://github.com/juadielon/textQuest/issues/32) adds the cosy
-mystery pack in `src/content/v1/cosy-mystery.ts`, using the same format and
-plan sizes. A village fete's Silver Teapot has gone missing, and nobody means
-any harm. Its three plots follow the trail one clue at a time, hear every side
-in any order before piecing them together, or follow two threads until they
-meet. A test keeps its text free of violent words.
-
-[Issue #33](https://github.com/juadielon/textQuest/issues/33) adds a science
-fiction pack in the same format and sizes, set on a space station. Its three
-plots guide an overdue supply ship home, wake a quiet station and honour the
-station charter. It has the same kinds of checks and its own digest pin.
-
-The content unit tests build the fixed plans as `AdventureWorld` fixtures
-and check every plan and ending for winnability. Cosy mystery prose checks
-also guard the evidence behind the puzzle conclusions. They do not check
-commands or player answers.
-
-Prose is an array of literal text and typed entity references. A later
-renderer must resolve references to included entity names, never execute
-text as code. Place descriptions stay true across puzzle states; clue text
-is shown only after discovery. Puzzle prompts appear before completion,
-and completion text only after its step.
-Never expose `solution` as a hint or player-facing text.
-
-After reaching the goal, choose the last matching ending from the plot's
-ordered `endingIds`. A force consequence takes priority over a peaceful
-choice if both were taken. Both shortcuts can be opened; version 1 does not
-remove progress or make choices mutually exclusive. The force choice is a
-non-graphic shove, not a combat system.
-
-This is released data: changing version 1 IDs, prose, array order, selections,
-conditions or effects after merge requires a new content version. A test pins
-the complete pack's SHA-256 digest. Do not update that pin to hide a released
-content change. Existing share words and player saves are unchanged.
-
-## Version 1 world generation
-
-[Issue #31](https://github.com/juadielon/textQuest/issues/31) adds
-`generateAdventureWorld(settings)` in `src/generate-world.ts`. It accepts
-valid version 1 settings and uses the content pack for the seed's genre: light
-fantasy, cosy mystery or science fiction
-([issue #40](https://github.com/juadielon/textQuest/issues/40)). Invalid
-settings and a genre that does not match the seed throw a clear `RangeError`.
-The existing genre and share-word rules are unchanged.
-
-The first seeded draw chooses the genre, and the second chooses one of the
-pack's three plots in authored order. Length selects that plot's fixed plan:
-8 places and 4 required steps for short, 16 and 8 for medium, or 24 and 12
-for long. Exits keep both selected endpoints. Optional steps at selected
-places remain available. Plot dependencies are added to each step's local
-conditions, and the goal requires **all** selected required steps as well as
-its authored conditions.
-
-The returned world contains engine data, not plot prose, character
-descriptions or player progress. It is a detached copy: generation and callers
-cannot change the pack through it. For each genre, unit tests cover all nine
-plot/length combinations, optional routes and winnability, seed variation,
-share-word round trips, and pinned complete worlds. A sweep test generates
-seeds 0 to 999 at every length and checks each world is repeatable, survives
-a share-word round trip, and is winnable with and without its optional steps.
-It also checks that every genre and plot is reached. Changes to these
-generator rules require a new adventure version. The generator supplies the
-browser play screen; command handling and player progress live in the play module.
-
-## Version 2 varied adventures
-
-[Issue #51](https://github.com/juadielon/textQuest/issues/51) adds a separately
-versioned adventure with seeded item and clue placement. New games use
-version 2; opening a share word or regenerating a save uses its own version.
-The genre and plot draws stay first. Placement then draws in authored item
-order followed by clue order, skipping awarded or unused pickups. A pickup
-can move only along open paths with a return path, no further from the start
-than its nearest use. Places, exits and puzzle graphs still use authored plans.
-
-Tests generate seeds 0 to 999 at every length, covering all genres and plots.
-At least 80% of seeds within each genre/plot/length group give distinct worlds.
-Every swept world regenerates identically from settings and its share word
-and is winnable with and without optional steps. This is placement variety,
-not a promise of unique prose or a different world for every share word.
-
-Version 1 is released and stays exactly as authored: it has 27 distinct
-worlds. Its world and content digests, share words and saved-command replay
-remain unchanged. Version 2 selects the final matching content from
-`src/content/v2/place-wording.ts`, prepared in
-[pull request #63](https://github.com/juadielon/textQuest/pull/63). Its place
-descriptions and one puzzle prompt no longer claim a movable pickup is at
-its original place. Separate SHA-256 pins cover each complete version 2 pack,
-both ordered share-word lists and representative complete worlds.
-Changing these released rules or content needs another adventure version.
-
-Saved-command replay tests cover both versions, all genres and lengths,
-including failed commands and undo. Names still come from IDs in both
-versions. Authored names and their command compatibility belong to
-[issue #56](https://github.com/juadielon/textQuest/issues/56), not this release.
-The save format remains version 1; the browser can save and resume both
-adventure versions.
-
-## Adventure settings and share words
-
-[Issue #3](https://github.com/juadielon/textQuest/issues/3) adds the code that
-describes how an adventure starts. The start screen shows these settings, but
-it does not create stories on its own.
-
-- A new adventure gets a random seed from the browser's cryptographic random
-  numbers. The player chooses a short, medium or long adventure.
-- The seed and version always choose the same genre: light fantasy, cosy
-  mystery or science fiction.
-- A share word joins two words from fixed, versioned lists. Version 1 words
-  have no suffix, such as `silverlantern`; version 2 words end in `2`, such
-  as `sunlitsaucer2`. Version 2 uses separate copies of the released lists
-  in reverse order. Each version has 65,280 canonical words encoding a seed
-  and length. Version 1 maps them to 27 worlds; version 2 varies placement.
-  A word never includes player progress or save data.
-- Share words ignore capitals, spaces and hyphens. Misspelt words, and words
-  from unsupported versions such as `silverlantern3`, are rejected with a clear
-  message.
-- Version 1 must always give the same results. Changes that would alter them
-  need a new version with its own word lists. Unit tests pin both complete
-  ordered lists to fixed released fixtures, showing any changed words.
-
-Seeded choices use exact integer maths for 1 to 4,294,967,295 options.
-Version 1's three-genre choices and released share words are unchanged.
-
-## World model and winnability
-
-[Issue #12](https://github.com/juadielon/textQuest/issues/12) adds plain
-TypeScript data for places, directed exits, items, clues, puzzle steps and a
-goal. `AdventureWorld.version` describes this data format, separately from
-the seed and content version used by share words. Puzzle conditions, effects
-and the goal live in `solution`, separate from discoverable world data.
-Future hints and suggestions must not expose this field directly.
-
-`checkWinnability(world)` searches routes from the starting place without
-changing the world. For a fully checked world it returns `winnable` and
-`unreachableStepIds`, including optional steps that cannot be completed even
-when the goal is reachable.
-Invalid references, empty or repeated IDs, unsupported world versions and
-unknown effects throw a `RangeError` rather than reporting a valid adventure.
-It accepts typed world data, not untrusted save files.
-
-Version 1 progress only grows: entering a place collects its items and clues;
-steps can require held items, visited places, completed steps and revealed
-clues. All conditions must hold. Steps happen at their named place, once,
-and can unlock directed exits, give items or reveal clues. The goal requires
-being at its named place with its conditions met. Items are not consumed,
-and choices cannot remove progress or exclude other steps in this version.
-
-The checker keeps each route's progress separate, including on one-way
-paths. Places the player can walk to and back from are checked together as
-one area, because visiting them all only adds progress. Choices between
-one-way paths still create separate routes.
-
-[Issue #79](https://github.com/juadielon/textQuest/issues/79) prepares world
-format version 2 for consequential choices. Steps that share a `choiceId` are
-mutually exclusive: once one is done, the others can never be done. A step
-can also end the adventure early with an `end-adventure` effect naming one of
-the world's `endings`, each a `win` or a `failure`. Version 1 worlds reject
-these fields, so released worlds, share words, saves and replays are
-unchanged. For version 2 the checker visits one place at a time and tries
-moves, item takes, uses, choices and endings separately. Only clues and
-steps needing no items or decision happen automatically at the current place.
-After those automatic changes, reaching the goal stops the route before any
-further action. This keeps endings available before taking or using an item
-that would win, without counting actions taken after a win. For version 2
-it also returns `reachableEndingIds` and `canGetStuck`, which is true when a
-route reaches a point where the player can no longer win. The point just
-before a failure must still be able to win, so recovery from it works. No
-released adventure generates version 2 worlds, and play refuses them until it
-supports choices and checkpoint recovery
-([issue #82](https://github.com/juadielon/textQuest/issues/82)).
-
-[Issue #16](https://github.com/juadielon/textQuest/issues/16) limits the
-search to `MAX_SEARCH_STATES` (10,000) states. Version 2 terminal-option
-copies count towards this limit as well. The limit caps how many states are
-created, not how long it takes to read a very large world, so it does not
-promise that any input finishes instantly. Version 2 choice checks look up
-already-taken choices once per state instead of rescanning every step for each
-option, and arrival takes automatic steps as their conditions are met instead
-of rescanning the step list after each one.
-A world that needs more returns `{ winnable: false, tooLarge: true }`
-instead. It must be treated as rejected, never as winnable. The same world
-always gives the same result, whatever the time, locale or browser. Tests show
-long worlds with 28 places and 14 required steps finish within the limit. The
-limit is a cautious first value. Generator tests also check the authored
-light fantasy worlds, including every long plot, within this limit.
-Authored story text is not rendered yet. Commands run against generated
-worlds in the browser through the play module described below.
-
-## Typed command parser
-
-[Issue #27](https://github.com/juadielon/textQuest/issues/27) adds
-`parseCommand(input, targets)` in `src/engine/commands.ts`. The play module
-below uses it for commands typed into the browser play screen.
-
-It handles movement, look/examine, inventory, take, use (an item alone or on
-a target), talk, authored story choices, hint, undo and help. Common short
-forms include `n`, `x`, `i`, `h` and `u`; `u` means undo, so use `up` to move
-upwards. `commandHelp` provides grammar help without puzzle advice.
-
-The caller supplies only discovered targets with IDs, names, kinds and optional
-discovered aliases. Names and aliases match exactly after ignoring case, extra
-whitespace, trailing `.`, `!` or `?` and the articles `a`, `an` and `the`;
-there is no fuzzy or partial matching. Punctuation inside a command is kept.
-For example, two discovered keys may both have the alias `key`. The parser
-reports both options rather than choosing one. Choice numbers such as `choose 1`
-work only when supplied as discovered aliases for authored options.
-For `use`, an item name containing `on` can also match an item-on-target command.
-The parser checks each complete interpretation and reports distinct actions as
-ambiguous. Aliases that describe the same action do not create extra options.
-
-Results have `ok: true` with an `action`, or `ok: false` with a `problem` and
-plain-language `message`. Target actions include both the target ID and kind,
-because IDs may repeat across kinds. Ambiguous results also include discovered
-`options`. The parser rejects target kinds that do not fit a command, such as
-taking a person. It cannot check location, inventory, locked exits or puzzle
-success.
-The caller must exclude hidden names, hidden aliases and unavailable choices.
-Parsing never changes targets or player state.
-
-## Playing a world
-
-[Issue #36](https://github.com/juadielon/textQuest/issues/36) adds
-`src/engine/play.ts`. `startPlay(world)` begins at the start place.
-`playCommand(world, state, input)` parses typed input against
-`discoveredTargets(world, state)` and returns a new state and a short
-response. Neither the world nor the input state is changed.
-
-The state tracks the place, inventory, found clues, completed steps, opened
-exits, turn count, whether the goal is reached and the previous state for
-undo. Moves, takes and successful uses count as turns; look, examine,
-inventory, talk, hint and help are free. `replayCommands(world, inputs)` always
-gives the same state, so saves can store a command list.
-
-Play follows the winnability checker's rules. Entering a place reveals its
-clues. Items must be taken. A step that needs items happens when the player
-uses one of them at the step's place; other steps happen by themselves once
-their conditions hold. Tests check that following hints wins worlds the
-checker calls winnable. Hints suggest taking a needed item, using something
-or the next place on a shortest winning route, without naming answers.
-
-Discovered targets never include puzzle steps, the goal, unfound clues, items
-elsewhere or places out of sight. Targets use world IDs with their kind, so a
-place and an item may share an ID. Without content-pack names, names come
-from IDs. `worldNamesFrom(pack, world)` in `src/content/v1/world-names.ts`
-looks up pack names for any genre's world; pass them as the world's `names`
-to show and accept them. Shorter aliases are made from each name, so
-`Mara the miller` also answers to `mara` and `miller`; aliases that clash
-with a name, or read as a direction, are dropped. People appear only at
-their place, and you can examine and talk to them. A locked way is called
-`the locked way` until the player knows where it leads, so unknown places
-stay hidden. Names that collide after parser normalisation get stable
-numbered suffixes, such as `red key (item 4)`. Look, inventory and hints use
-these same names. Names that clash with movement or item-use grammar get a
-short numbered name, such as `exit 4` or `item 5`, instead.
-Original names stay available as aliases, but can be
-ambiguous; use the displayed name to pick a particular target.
-Names are checked together after renaming, so movement and item use remain
-unambiguous even when a fallback name is already occupied.
-Worlds have no compass directions or story choices; without pack names, they
-also have no people. Those commands get a plain explanation. Prose,
-autocomplete and checkpoints
-are later steps.
-
-## Play screen
-
-[Issue #44](https://github.com/juadielon/textQuest/issues/44) adds
-`renderPlayScreen(target, settings)` in `src/play-screen.ts`. It generates
-the world, then shows the current place, a log of typed commands and
-responses, a command box, the inventory, found clues and the turn count.
-Commands, including help, hint and undo, run through the play module. When
-the goal is reached, an ending says how many turns it took; undo still works.
-
-Everything can be done with the keyboard: type a command and press Enter.
-The screen starts with one "Your adventure" heading, focused on navigation.
-The share word and navigation controls sit immediately below it.
-Each new response is announced through a polite live region. The layout is
-one column on narrow screens, with a progress column on wide ones. Typed and
-world text is always added as plain text, never as markup. Light fantasy,
-cosy mystery and science fiction worlds can all be played. If a world can't
-be generated from the settings, a plain message is shown instead.
-
-The start screen opens play for new adventures and share words
-([issue #54](https://github.com/juadielon/textQuest/issues/54)).
-Unsupported worlds show a clear message, their share word and a way back
-to the start screen rather than substituting a different adventure.
-Invalid settings or worlds still show that message; unexpected errors while
-opening play are rethrown rather than hidden as an unplayable adventure
-([issue #74](https://github.com/juadielon/textQuest/issues/74)).
-Names still come from IDs.
-
-## Save format and storage
-
-[Issue #34](https://github.com/juadielon/textQuest/issues/34) adds a
-versioned save format in `src/saves.ts`. A save holds an adventure name, the
-starting settings, every command the player typed and two timestamps.
-Progress is rebuilt by replaying the commands.
-Saves never contain puzzle solutions.
-
-`createSaveStore(storage)` lists, adds, updates, loads and deletes saves in
-any `Storage`-like object, such as `localStorage`. Each save has its own key,
-so a failed write never damages another save. Export gives JSON text. Import
-treats the file as untrusted, rejects damaged, oversized (over 1,000,000
-characters) or newer-version files with a clear message, and stores a good
-file as a new save. A full or blocked storage is reported clearly.
-
-## Saves screen
-
-[Issue #43](https://github.com/juadielon/textQuest/issues/43) adds saving to
-the browser. During play, a **Save adventure** form stores the adventure in
-`localStorage` under a name the player chooses. Saving again, or saving a
-resumed adventure, updates that save. Each submission keeps the commands
-present when Save was pressed, not commands typed later while waiting for
-storage. While saves are waiting or being written, **Back to start** is
-unavailable. Play stays open after success or failure;
-errors remain visible so the player can retry, and returning to start always
-requires another choice after saving finishes. Closing or reloading the tab
-can still interrupt saving and lose unsaved progress. A Saved message is shown
-only after the last queued save succeeds. Before leaving, wait for that message
-and for Back to start to become available; any commands typed after the last
-save submission still need another save.
-Name-validation errors and unacknowledged save failures are shown together.
-Correcting a name while older saves wait does not acknowledge their later
-failures. After a conflict, already-queued submissions are skipped; press Save
-again after the queue finishes to retry explicitly.
-
-Play rejects commands before execution or recording if they would exceed
-10,000 saved commands or the 1,000,000-character JSON file limit, including
-escaped characters and room for any allowed save name. The same guard applies
-to undo: it adds a command rather than shortening the saved history. Existing
-valid saves still replay unchanged, and rejected commands leave that progress
-saveable. A file-limit warning may allow a shorter command; at the command-count
-limit no further commands can be recorded.
-Rejected control characters and capacity errors are shown visibly and announced
-in the live region without entering command history. A valid command clears
-the visible error; normal responses appear only in the log.
-The file guard reserves room for the largest valid name: 60 unpaired UTF-16
-surrogate code units, each escaped as six JSON characters. A one-character
-plain name can therefore reach the guard up to 359 characters before its actual
-file reaches the limit. This conservative allowance lets players rename later
-without making their progress too large to save. Existing near-limit saves
-with shorter names still replay and can be saved unchanged.
-
-**Your saves** on the start screen
-lists every save with its name, genre, length and last saved time, newest
-first. While a deletion waits for storage, Back and Resume are unavailable,
-but Keep still cancels it. When another deletion refreshes the list, other
-live confirmations retain their original Keep controls and focus. Their
-confirmed snapshots are still checked when the lock arrives.
-Keep cancels the request and refreshes its row, so changes or deletion in another
-tab are reflected. If reading the list fails, existing rows are retained and the
-error is reported; the cancelled request remains cancelled.
-Other keyboard focus is preserved too, using the equivalent refreshed control
-when its unchanged row is replaced; results receive focus only if the old
-focused control has gone and has no suitable replacement.
-Overlapping deletion results are kept together, so a later success cannot
-hide an earlier conflict or lock failure.
-Last saved changes only when Save is pressed successfully, not on Resume
-or unsaved play. Tracking when a save was last played remains unfinished
-under issue #43 and needs a separate safe follow-up.
-
-An update only goes ahead if the stored save is still exactly the version
-that tab last loaded or wrote. Updates and deletes take turns through a Web
-Locks lock shared by every tab, so a stale or simultaneous tab never
-overwrites newer progress or brings back a deleted save. Instead it says the
-save was changed or deleted elsewhere, and saving again keeps its progress as
-a new save. Submissions already waiting when the conflict is reported do not
-create a copy or replace the warning; a new submission is needed.
-Browsers without Web Locks save a resumed adventure as a new save
-rather than updating it.
-Deletion checks the exact save shown in the list, including unreadable files.
-If it changed, it is kept and the refreshed list needs a new confirmation.
-Browsers without Web Locks cannot safely delete saves, so deletion is refused.
-Lock failures are reported without changing storage.
-
-**Resume** regenerates the world from the save's settings and replays its
-commands through the play module, so the place, inventory, clues, turns, undo
-history and response log match where the player left off. **Delete** asks for
-confirmation first; **Keep** also cancels a deletion waiting for the shared
-lock. Pasted control characters are rejected before a command is played or
-recorded, so they cannot make later saves fail.
-A save that can't be read is listed with the reason and
-kept; it is only removed if the player deletes it. Storage problems are shown
-as plain messages. Keyboard navigation, focus and screen-reader attributes
-are covered by unit tests; a real screen reader has not been checked.
-All names are added as plain text. **Export** downloads a readable save as a
-`.json` file. Choose a **Save file** and select **Import save** to add it as
-a new save, even if its name matches an existing one. Damaged, oversized
-and newer-version files show a clear message without changing existing
-saves. Imported progress is rebuilt when the player resumes it.
-Import and export have their own announced statuses, so overlapping save-list results remain
-visible. Finishing a file read does not take focus from a newer interaction.
-
-## Project documents
-
-- [Roadmap](ROADMAP.md): planned milestones and their current status.
-- [Contributing](CONTRIBUTING.md): how to report work, make changes and open a
-  pull request.
-
-## Planned game
-
-Players will be able to create an adventure, save and resume their progress,
-and share a code so other people can start the same adventure. The shared
-adventure will not include the creator's progress.
-
-Each adventure will combine a setting, connected places, clues, puzzles and
-choices. Some story details may repeat. The game will not use an LLM at
-runtime.
-
-## Development
-
-You will need Docker with Linux containers and a web browser. Install
-dependencies in a container the first time, then start the development server:
+textQuest is a text adventure game you play in a web browser. Choose how
+long you want to play, explore by typing commands, find items and clues, and
+solve puzzles. The game is still in development.
+
+Adventures are built from written content and game rules. They do not use AI
+to generate the story while you play.
+
+## Playing
+
+1. Choose a short, medium or long adventure and select
+   **Start new adventure**. The game chooses a genre for you: light fantasy, cosy
+   mystery or science fiction.
+2. Type a command in **What do you do?** and press Enter. Try `look` to see
+   where you are, `go` followed by a place's name to move, or `take`
+   followed by an item's name to pick it up. Type `use` followed by an item
+   you are carrying to try it. Use the names shown in the game.
+3. Type `help` for more commands, `hint` for a nudge, `inventory` to see what
+   you are carrying, or `undo` to go back a turn.
+
+A short adventure has 8 places and 4 required puzzle steps. A medium one has
+16 places and 8 steps; a long one has 24 places and 12 steps. There are also
+optional discoveries. The screen shows your inventory, found clues and turn
+count.
+
+The screens have keyboard controls and announce new responses to screen
+readers. They have not yet been checked with a real screen reader.
+
+### What's unfinished
+
+The game is playable, but the written story descriptions and names are not
+shown yet. Places and items currently use simple names based on their
+internal labels. Command suggestions, recovery checkpoints and story choices
+that change the ending are also planned. There is no turn-based combat.
+
+## Sharing an adventure
+
+Each adventure has a **Share word** and an **Adventure link**. Give either to
+someone else and they can start the same adventure from the beginning. They
+will get the same genre, length, places and puzzles, but not your progress.
+Older share words still open their original starting adventures, and older
+saves still resume their saved progress.
+
+To open a word, enter it under **Open a shared adventure** on the start
+screen. Capitals, spaces and hyphens are fine. To share a link, select
+**Copy link** on the play screen, or copy it from the link field yourself.
+
+The link uses the address where you opened the game. If you want someone on
+another computer to use it, share a publicly hosted address: a `localhost`
+link points to their own computer, not yours.
+
+A share word or link never includes your save. To move your progress to
+another browser or device, export a save file instead.
+
+## Saving and resuming
+
+Progress is not saved automatically. Before leaving or reloading:
+
+1. Enter a name on the play screen and select **Save adventure**. Wait for
+   the **Saved** message before leaving.
+2. After playing further, save again. A save includes commands entered up to
+   the moment you pressed **Save adventure**, not commands entered afterwards.
+3. To continue later, open **Your saves** on the start screen and select
+   **Resume**. Returning to the start screen ends the current play session;
+   opening its share word starts again rather than resuming it.
+
+Saves stay in that browser for that site; they are not uploaded to an
+account. Clearing browser data can remove them. Use **Export** in
+**Your saves** to download a `.json` file as a backup, and **Import save** to
+add it to another browser. Importing creates a new save without replacing
+existing ones. A save file contains your commands and progress, so share it
+only if you want the recipient to see them. You can also delete a save from
+this screen after confirming.
+
+To keep tabs from overwriting one another, textQuest uses a browser feature
+called Web Locks. If it is unavailable, every save creates a new copy and
+the game cannot delete saves. For normal updates and deletion, use a browser
+that supports Web Locks on an HTTPS address or on localhost. If another tab
+changes or deletes a save you are playing, you will see a warning the next
+time you try to save. The game will not overwrite the other tab's save; save
+again to keep your progress as a new copy.
+
+Very long adventures have a limit of 10,000 typed commands and a limit on
+save size. If a command would exceed a limit, the game rejects it but lets
+you save your existing progress. A shorter command may fit the size limit.
+
+## How it works
+
+For each new adventure, the game picks a random number called a seed. The
+seed selects the genre and story plot. Your chosen length selects the plan
+size: 8 places and 4 required puzzle steps for a short adventure, 16 places
+and 8 steps for a medium one, or 24 places and 12 steps for a long one. The
+seed also helps choose where some items and clues appear.
+
+Each released version has 65,280 possible share words. They do not all make
+unique adventures: version 1 has 27 generated worlds, and version 2 varies
+item and clue locations, but stories and layouts can still repeat. A share
+word records the version, seed and length so it can recreate the same
+starting adventure.
+
+The game tracks your commands, location and discoveries. A save holds the
+starting details and the commands you entered. When you resume, the game
+recreates the adventure and replays those commands to restore your progress.
+
+The project is written in TypeScript. Vite turns it into the HTML, CSS and
+JavaScript files used by the browser. The written content is in
+`src/content/`, adventure generation is in `src/generate-world.ts`, and
+command handling and play are in `src/engine/`. The browser screens and save
+storage are also in `src/`. Docker supplies the development and build tools;
+an optional production container serves the finished files with nginx.
+
+## Run locally
+
+You need Docker with Linux containers and Docker Compose, plus a web browser.
+You need Git if you are cloning the repository. The first setup downloads
+container images and dependencies, so it needs an internet connection.
+
+If you do not already have a copy of the project, clone it:
+
+```sh
+git clone https://github.com/juadielon/textQuest.git
+cd textQuest
+```
+
+From the project folder, install dependencies in Docker and start the
+development server:
 
 ```sh
 docker compose run --rm app npm ci
 docker compose up app
 ```
 
-Open <http://localhost:5173>. Run the checks in containers:
+Open <http://localhost:5173>. Stop the server with `Ctrl+C`. Run `npm ci`
+again in Docker if the dependency files change. You do not need to install
+Node.js, npm or the project dependencies on your computer.
+
+### Checks
+
+Run the project's tests, linter and build in Docker:
 
 ```sh
 docker compose run --rm app npm test
@@ -488,108 +145,67 @@ docker compose run --rm app npm run lint
 docker compose run --rm app npm run build
 ```
 
-ESLint checks all TypeScript in `src/`, including tests, with
-typescript-eslint's recommended rules. These are syntax-based checks, not
-type-aware rules. The linter uses TypeScript 6 because typescript-eslint does
-not yet support TypeScript 7. Builds still use TypeScript 7 through the
-`typescript-native` package alias.
+The linter checks all TypeScript in `src/`, including tests. It uses
+TypeScript 6 because its rules do not yet support TypeScript 7; the build
+uses TypeScript 7.
 
-To serve the production build in a container, open <http://localhost:8080>:
+## Build and host
 
-```sh
-docker compose --profile production up --build production
-```
-
-Stop a running service with `Ctrl+C`. Node.js, npm and project dependencies
-do not need to be installed on the host.
-
-Every code change must include a unit test for the behaviour it changes. A
-build or browser smoke check does not replace that test. See
-[Contributing](CONTRIBUTING.md) for the test and review rules.
-
-## Building and hosting
-
-textQuest builds to plain static files: HTML, CSS, JavaScript and an icon.
-It needs no game server, database, API key or LLM, so any static web host
-can serve it. The current build connects the start and play screens for
-light fantasy, cosy mystery and science fiction. All three genres are
-playable, but authored prose and authored command names remain unfinished.
-Save before going back to start or reloading to keep progress. A share word
-recreates the starting adventure, not a saved session. Browser save-file
-export and import keep progress in a separate file without sharing it in a link.
-
-### Build
-
-Install dependencies in Docker before the first build, or after the
-dependency files change:
+After installing dependencies as described above, build the site with:
 
 ```sh
-docker compose run --rm app npm ci
 docker compose run --rm app npm run build
 ```
 
-This type-checks the code, then writes the site to `dist/`. Each build
-replaces `dist/`, and Git ignores it. Upload everything inside `dist/`,
-keeping the `assets/` folder next to `index.html`.
+The build checks the code and writes the site to `dist/`, replacing that
+folder each time. Upload everything inside `dist/` to a static web host,
+keeping `assets/` beside `index.html`. The game runs in the browser and
+needs no game server, database, account or API key. Use HTTPS for the full
+save experience when hosting it online.
 
-### Host on a sub-path
+By default, the same build can be hosted at the root of a site or in a folder
+such as `https://example.com/textQuest/`. Serve `index.html` at that address
+and keep `assets/` beside it. Shared links use the same page, so no special
+redirect is needed. The host must serve the page even when its address
+includes something like `?adventure=sunlitsaucer2`.
 
-By default the build uses relative asset URLs, so the same `dist/` can be
-served from the site root or a folder such as `https://example.com/textQuest/`.
-Serve `index.html` at that path and keep `assets/` beside it. Shared links use
-a query parameter, not a separate route, so no route rewrite is needed.
-The server must still serve the app when a query is present.
-
-To pin asset URLs to one hosting folder instead, pass Vite's `--base` option
-with leading and trailing slashes:
+To build specifically for a folder, pass its path with a leading and
+trailing slash:
 
 ```sh
 docker compose run --rm app npm run build -- --base=/textQuest/
 ```
 
-The page then loads its files from `/textQuest/assets/`. Upload `dist/` to
-that folder on the host.
+Upload `dist/` to that folder on the host. This build loads its assets from
+`/textQuest/assets/`.
 
-### Preview the production build
+### Preview the build
 
-To check a root build with the same nginx container used for production,
-open <http://localhost:8080>:
+To build and serve a fresh production image, run:
 
 ```sh
 docker compose --profile production up --build production
 ```
 
-This builds a fresh copy inside the image, so it does not use your `dist/`.
-It always serves from the root.
+Open <http://localhost:8080> and stop it with `Ctrl+C`. This builds a fresh
+copy inside the image rather than using your `dist/`, and serves it from the
+site root.
 
-To preview the `dist/` you built, run Vite's preview server. Give it the
-hosting sub-path as `--base`, or leave the option out to preview at the root:
+To preview the `dist/` you built at a sub-path, run:
 
 ```sh
 docker compose run --rm --service-ports app npx vite preview --host 0.0.0.0 --port 5173 --strictPort --base=/textQuest/
 ```
 
-Open <http://localhost:5173/textQuest/>. Stop it with `Ctrl+C`; if the
-container keeps running, find it with `docker ps` and remove it with
-`docker rm -f <name>`.
+Open <http://localhost:5173/textQuest/>. If you built for a particular folder,
+use that same folder in the preview command. For a default build, leave out
+`--base=/textQuest/` to preview at <http://localhost:5173/> instead.
 
-## Planned features
+Stop the preview with `Ctrl+C`. Stop the development server first if it is
+already using port 5173. If the preview container keeps running, find its
+name with `docker ps` and stop it with `docker stop <container-name>`.
 
-The initial plan includes:
+## More information
 
-- Three settings: light fantasy, cosy mystery and science fiction.
-- Short, medium and long adventures, with different amounts of places and
-  required puzzles.
-- Typed actions, with suggestions limited to things the player has found.
-- Optional hints, save files, undo and recovery checkpoints.
-- Choices that can change the story, including occasional non-graphic violence.
-  There will be no turn-based combat system.
-
-These are plans, not features in the current repository. See the
-[roadmap](ROADMAP.md) for the order of work.
-
-## Contributions
-
-Start with a GitHub issue before making a change. Keep commits and pull
-requests focused, and use clear descriptions of what changed. Read
-[CONTRIBUTING.md](CONTRIBUTING.md) before contributing.
+See the [roadmap](ROADMAP.md) for what is planned, or
+[contributing](CONTRIBUTING.md) to help improve textQuest.
