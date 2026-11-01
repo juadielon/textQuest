@@ -1,4 +1,5 @@
 import type { AdventureWorld, Clue, Conditions, Exit, Item, PuzzleStep } from './adventure-world';
+import { useStepOptions } from './use-rules';
 
 /**
  * The most search states `checkWinnability` will create before it stops and
@@ -301,9 +302,10 @@ function stateKey(areaId: string, state: SearchState): string {
  *
  * @remarks
  * For world version 2, the search tries moves, item takes, uses and decisions
- * separately, stopping each route at its goal or early ending. It also reports
- * reachable endings and whether a player can get stuck. Version 1 keeps its
- * original area search and result shape.
+ * separately, stopping each route at its goal or early ending. Uses follow
+ * play's first-ready-step rule, including the preference for a named local
+ * exit. It also reports reachable endings and whether a player can get stuck.
+ * Version 1 keeps its original area search and result shape.
  *
  * @throws RangeError when the world has invalid references, empty or repeated
  * IDs, an unsupported version or an unknown effect.
@@ -326,8 +328,7 @@ export function checkWinnability(world: AdventureWorld): WinnabilityResult {
   const reachedEndings = new Set<string>();
   const winningOutcome = new Set((world.solution.endings ?? [])
     .filter(({ outcome }) => outcome === 'win').map(({ id }) => id));
-  const decisions = world.solution.steps.filter((step) =>
-    isDecision(step) || (world.version === 2 && (step.conditions.itemsHeld ?? []).length > 0));
+  const decisions = world.solution.steps.filter(isDecision);
   // Links each searched state to the states it leads to, to find any that can't win.
   const parents: (string | null)[] = [null];
   const ledFrom = new Map<string, string[]>();
@@ -371,7 +372,18 @@ export function checkWinnability(world: AdventureWorld): WinnabilityResult {
         if (!enqueue(taken, key)) return { winnable: false, tooLarge: true };
       }
     }
-    for (const step of decisions) {
+    let candidates = decisions;
+    if (world.version === 2) {
+      const readyUses = world.solution.steps.filter((step) => step.placeId === state.placeId
+        && !isDecision(step) && canTakeStep(world, state, step));
+      const uses = useStepOptions(readyUses);
+      const selected = new Set(uses.byItem.values());
+      for (const exit of links.outgoing.get(state.placeId)!) {
+        for (const step of uses.byExit.get(exit.id)?.values() ?? []) selected.add(step);
+      }
+      candidates = world.solution.steps.filter((step) => isDecision(step) || selected.has(step));
+    }
+    for (const step of candidates) {
       if (!inArea.has(step.placeId) || !canTakeStep(world, state, step)) continue;
       if (statesCreated >= MAX_SEARCH_STATES) return { winnable: false, tooLarge: true };
       const chosen = copyState(state, step.placeId);

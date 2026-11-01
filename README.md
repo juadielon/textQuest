@@ -221,8 +221,10 @@ can also end the adventure early with an `end-adventure` effect naming one of
 the world's `endings`, each a `win` or a `failure`. Version 1 worlds reject
 these fields, so released worlds, share words, saves and replays are
 unchanged. For version 2 the checker visits one place at a time and tries
-moves, item takes, uses, choices and endings separately. Only clues and
-steps needing no items or decision happen automatically at the current place.
+moves, item takes, uses, choices and endings separately. Uses follow play's
+first-ready-step rule and prefer a step that opens a named local exit. Only
+clues and steps needing no items or decision happen automatically at the
+current place.
 After those automatic changes, reaching the goal stops the route before any
 further action. This keeps endings available before taking or using an item
 that would win, without counting actions taken after a win. For version 2
@@ -237,11 +239,12 @@ and steps that end the adventure never happen by themselves or through
 and `choose <option>` makes one, counting as an undoable turn. Making one
 step of a choice shuts out the others, and a winning ending finishes the
 adventure straight away. Options appear only while they can be chosen, and
-their outcomes stay hidden. Version 2 hints stay general and never suggest a
-route, because the hint route search does not model choices yet. Play refuses
-worlds with a failure ending until checkpoint recovery
-([issue #82](https://github.com/juadielon/textQuest/issues/82)) exists. Choice
-options use names built from step IDs until content packs can name them.
+their display does not expose outcomes or puzzle step IDs. A hand-built
+`PlayWorld` can provide spoiler-free labels in `choiceNames`; otherwise
+options use stable, neutral numbers. Version 2 hints stay general and never
+suggest a route, because the hint route search does not model choices yet.
+Play refuses worlds with a failure ending until checkpoint recovery
+([issue #82](https://github.com/juadielon/textQuest/issues/82)) exists.
 
 [Issue #16](https://github.com/juadielon/textQuest/issues/16) limits the
 search to `MAX_SEARCH_STATES` (10,000) states, so a large world cannot freeze
@@ -297,20 +300,23 @@ response. Neither the world nor the input state is changed.
 The state tracks the place, inventory, found clues, completed steps, opened
 exits, turn count, whether the goal is reached and the previous state for
 undo. Moves, takes and successful uses count as turns; look, examine,
-inventory, talk, hint and help are free. `replayCommands(world, inputs)` always
-gives the same state, so saves can store a command list.
+inventory, talk, hint and help are free. Choosing an option also counts as a
+turn. `replayCommands(world, inputs)` always gives the same state, so saves
+can store a command list.
 
 Play follows the winnability checker's rules. Entering a place reveals its
 clues. Items must be taken. A step that needs items happens when the player
-uses one of them at the step's place; other steps happen by themselves once
-their conditions hold. Tests check that following hints wins worlds the
-checker calls winnable. Hints suggest taking a needed item, using something
-or the next place on a shortest winning route, without naming answers.
+uses one of them at the step's place; other non-choice steps happen by
+themselves once their conditions hold. Tests check that following hints wins
+generated worlds the checker calls winnable. Those hints suggest taking a
+needed item, using something or the next place on a shortest winning route,
+without naming answers. Hints for world format version 2 stay general.
 
-Discovered targets never include puzzle steps, the goal, unfound clues, items
-elsewhere or places out of sight. Targets use world IDs with their kind, so a
-place and an item may share an ID. Without content-pack names, names come
-from IDs. `worldNamesFrom(pack, world)` in `src/content/v1/world-names.ts`
+Discovered targets never include puzzle step IDs, the goal, unfound clues,
+items elsewhere or places out of sight. Choices use neutral IDs instead of
+step IDs. Other targets use world IDs with their kind, so a place and an item
+may share an ID. Without content-pack names, other names come from IDs.
+`worldNamesFrom(pack, world)` in `src/content/v1/world-names.ts`
 looks up pack names for any genre's world; pass them as the world's `names`
 to show and accept them. Shorter aliases are made from each name, so
 `Mara the miller` also answers to `mara` and `miller`; aliases that clash
@@ -324,11 +330,12 @@ short numbered name, such as `exit 4` or `item 5`, instead.
 Original names stay available as aliases, but can be
 ambiguous; use the displayed name to pick a particular target.
 Names are checked together after renaming, so movement and item use remain
-unambiguous even when a fallback name is already occupied.
-Worlds have no compass directions or story choices; without pack names, they
-also have no people. Those commands get a plain explanation. Prose,
-autocomplete and checkpoints
-are later steps.
+unambiguous even when a fallback name is already occupied. In world format
+version 2, displayed item and exit names also work together in a use command.
+Neutral item-use fallback numbers follow world item order, not inventory order.
+Released generated worlds have no compass directions or story choices;
+without pack names, they also have no people. Those commands get a plain
+explanation. Prose, autocomplete and checkpoints are later steps.
 
 ## Play screen
 
