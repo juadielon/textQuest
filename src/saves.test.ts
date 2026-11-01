@@ -175,6 +175,33 @@ describe('save format', () => {
     expect(importSaveFile(exportSaveFile(mixed)).commandModes).toEqual(['id', 'content']);
   });
 
+  it('ignores legacy replay-mode extras and copies validated mode arrays', () => {
+    const original = JSON.parse(exportSaveFile(sampleSave())) as Record<string, unknown>;
+    original.formatVersion = 1;
+    for (const extraModes of [['content', 'content'], { mode: 'content' }]) {
+      const imported = importSaveFile(JSON.stringify({ ...original, commandModes: extraModes }));
+      expect(imported.commandModes).toEqual(['id', 'id']);
+    }
+
+    const createModes: CommandReplayMode[] = ['id', 'content'];
+    const created = createSave('Copied modes', settings, ['look', 'go north'], createdTime, createModes);
+    createModes[0] = 'content';
+    expect(created.commandModes).toEqual(['id', 'content']);
+
+    const validateModes: CommandReplayMode[] = ['content', 'id'];
+    const validated = validateSave({ ...sampleSave(), commandModes: validateModes });
+    validateModes[0] = 'id';
+    expect(validated.commandModes).toEqual(['content', 'id']);
+  });
+
+  it('rejects sparse replay-mode arrays', () => {
+    const modes = new Array<CommandReplayMode>(1);
+    expect(problemOf(() => createSave('Sparse modes', settings, ['look'], createdTime, modes)))
+      .toBe('malformed');
+    expect(problemOf(() => validateSave({ ...sampleSave(), commands: ['look'], commandModes: modes })))
+      .toBe('malformed');
+  });
+
   it.each(['\u0080', '\u0085', '\u009f', '\u2028', '\u2029'])(
     'rejects names and commands containing %j',
     (character) => {
@@ -332,6 +359,25 @@ describe('save store', () => {
     },
   );
 
+  it.each([1, 2])('keeps coal-shed failed commands in ID mode when a legacy file has extra modes for version %i', (version) => {
+    const settings = createAdventureSettings(0, 'long', version);
+    const pack = adventurePack(version, settings.genre);
+    const generated = generateAdventureWorld(settings);
+    const world = { ...generated, names: worldNamesFrom(pack, generated) };
+    const route = commandsToPlace(world, 'coal-shed');
+    const commands = [...route, 'go heather path'];
+    const legacy = JSON.parse(exportSaveFile(createSave(
+      'Old route', settings, commands, createdTime,
+    ))) as Record<string, unknown>;
+    legacy.formatVersion = 1;
+    legacy.commandModes = commands.map(() => 'content');
+
+    const restored = importSaveFile(JSON.stringify(legacy));
+    const state = replayCommands(world, restored.commands, restored.commandModes);
+    expect(restored.commandModes).toEqual(commands.map(() => 'id'));
+    expect(state.placeId).toBe('coal-shed');
+  });
+
   it('stores both adventure versions and imports copies without changing existing saves', () => {
     const { storage, store } = setUp();
     for (const version of [1, 2]) for (const seed of [0, 1, 17000]) for (const length of adventureLengths) {
@@ -446,6 +492,31 @@ describe('save store', () => {
     expect(copy).not.toBe(id);
     expect(store.load(copy)).toEqual(store.load(id));
     expect(storage.items.get(SAVE_KEY_PREFIX + id)).toBe(before.get(SAVE_KEY_PREFIX + id));
+  });
+
+  it('imports, exports and resaves an in-limit legacy file after mode migration', () => {
+    const { store } = setUp();
+    const legacy = {
+      formatVersion: 1,
+      name: 'Large legacy history',
+      settings: createAdventureSettings(0, 'long', 1),
+      commands: Array(10_000).fill('x'.repeat(90)),
+      createdAt: '2026-10-12T04:00:00.000Z',
+      updatedAt: '2026-10-12T04:00:00.000Z',
+    };
+    const legacyText = JSON.stringify(legacy, null, 2);
+    expect(legacyText.length).toBeLessThan(1_000_000);
+
+    const id = store.importSave(legacyText);
+    const migratedText = store.exportSave(id);
+    expect(migratedText.length).toBeGreaterThan(1_000_000);
+    expect(migratedText.length).toBeLessThanOrEqual(MAX_SAVE_FILE_LENGTH);
+
+    const reloaded = store.load(id);
+    expect(reloaded.commands).toEqual(legacy.commands);
+    expect(reloaded.commandModes).toEqual(Array(10_000).fill('id'));
+    const resavedId = store.add(reloaded);
+    expect(store.load(resavedId)).toEqual(reloaded);
   });
 
   it('leaves storage untouched when an import is rejected', () => {

@@ -339,14 +339,15 @@ save format yet; the saves screen is planned in
 [Issue #34](https://github.com/juadielon/textQuest/issues/34) adds a
 versioned save format in `src/saves.ts`. A save holds an adventure name, the
 starting settings, every command the player typed, its replay mode and two
-timestamps. Save format 2 reads format 1 files as ID-based command histories.
-Progress will be rebuilt by replaying the commands, which is a later step.
-Saves never contain puzzle solutions.
+timestamps. Save format 2 reads format 1 files as ID-based command histories,
+matching the released player UI. Format 1 did not record naming mode, so
+programmatically created histories that used authored names cannot always be
+inferred and are replayed as ID-based. Saves never contain puzzle solutions.
 
 `createSaveStore(storage)` lists, adds, updates, loads and deletes saves in
 any `Storage`-like object, such as `localStorage`. Each save has its own key,
 so a failed write never damages another save. Export gives JSON text. Import
-treats the file as untrusted, rejects damaged, oversized (over 1,000,000
+treats the file as untrusted, rejects damaged, oversized (over 1,200,000
 characters) or newer-version files with a clear message, and stores a good
 file as a new save. A full or blocked storage is reported clearly. There are
 no save screens in the browser yet.

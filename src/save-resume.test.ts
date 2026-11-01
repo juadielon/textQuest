@@ -106,7 +106,7 @@ function commandsToWin(world: PlayWorld): string[] {
 // Rebuilds a game the way a player resuming a save would.
 function resume(save: AdventureSave, packNames: boolean): PlayState {
   const world = worldFrom(save.settings, packNames);
-  return replayCommands(world, save.commands);
+  return replayCommands(world, save.commands, save.commandModes);
 }
 
 function roundTrips(settings: AdventureSettings, commands: readonly string[], packNames: boolean): PlayState {
@@ -114,7 +114,10 @@ function roundTrips(settings: AdventureSettings, commands: readonly string[], pa
   let original = startPlay(world);
   for (const input of commands) original = playCommand(world, original, input).state;
 
-  const save = createSave('Round trip', settings, commands, savedTime);
+  const commandMode = packNames ? 'content' : 'id';
+  const save = createSave(
+    'Round trip', settings, commands, savedTime, commands.map(() => commandMode),
+  );
   const imported = importSaveFile(exportSaveFile(save));
   expect(imported).toStrictEqual(save);
   expect(resume(imported, packNames)).toStrictEqual(original);

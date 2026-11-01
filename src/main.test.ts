@@ -180,7 +180,7 @@ it.each([1, 2])('opens version %i links in fresh play for all genres and lengths
       await openLink(` ${adventureSettings.encodeShareWord(shared).toUpperCase()}- `);
       expectPlay(shared);
       expect(get('.play-log').children).toHaveLength(0);
-      expect(get('.play-sidebar p').textContent).toBe('Turns taken: 0');
+      expect(get('.play-sidebar > p:last-child').textContent).toBe('Turns taken: 0');
       const link = new URL(get<HTMLInputElement>('#adventure-link').value);
       expect(link.pathname).toBe('/textQuest/');
       expect(link.searchParams.get('adventure')).toBe(adventureSettings.encodeShareWord(shared));

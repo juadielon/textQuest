@@ -254,11 +254,11 @@ function entityName(
         && state.placesVisited.includes(person.placeId) ? person.name : 'someone';
     }
     case 'item': {
-      const item = pack.items.find(({ id }) => id === reference.id);
-      return item && world.items.some(({ id }) => id === reference.id)
+      const item = world.items.find(({ id }) => id === reference.id);
+      return item
         && (state.itemsHeld.includes(reference.id)
           || Boolean(item.placeId && state.placesVisited.includes(item.placeId)))
-        ? item.name : 'something';
+        ? pack.items.find(({ id }) => id === reference.id)?.name ?? 'something' : 'something';
     }
     case 'clue':
       return state.cluesRevealed.includes(reference.id) ? pack.clues
