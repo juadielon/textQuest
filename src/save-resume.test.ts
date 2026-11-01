@@ -32,10 +32,10 @@ function countingSource(): RandomValueSource {
   };
 }
 
-function seedsFor(genre: AdventureGenre, length: AdventureLength, count: number): AdventureSettings[] {
+function seedsFor(genre: AdventureGenre, length: AdventureLength, count: number, version: number): AdventureSettings[] {
   const found: AdventureSettings[] = [];
   for (let seed = 0; found.length < count && seed < 10_000; seed += 1) {
-    const settings = createAdventureSettings(seed, length);
+    const settings = createAdventureSettings(seed, length, version);
     if (settings.genre === genre) found.push(settings);
   }
   expect(found).toHaveLength(count);
@@ -128,32 +128,34 @@ function roundTrips(settings: AdventureSettings, commands: readonly string[], pa
   return original;
 }
 
-describe.each([false, true])('saved games with pack names: %s', (packNames) => {
-  describe.each(adventureGenres)('saved %s games', (genre) => {
-    describe.each(adventureLengths)('of %s length', (length) => {
-      it.each(seedsFor(genre, length, 3).map((settings) => [settings.seed, settings] as const))(
-        'resume to the same state for seed %i',
-        (_, settings) => {
-          const world = worldFrom(settings, packNames);
-          const winning = commandsToWin(world);
-          const halfway = [...winning.slice(0, Math.ceil(winning.length / 2)), 'dance', 'take nothing', 'undo'];
+describe.each([1, 2])('saved version %i games', (version) => {
+  describe.each([false, true])('with pack names: %s', (packNames) => {
+    describe.each(adventureGenres)('saved %s games', (genre) => {
+      describe.each(adventureLengths)('of %s length', (length) => {
+        it.each(seedsFor(genre, length, 3, version).map((settings) => [settings.seed, settings] as const))(
+          'resume to the same state for seed %i',
+          (_, settings) => {
+            const world = worldFrom(settings, packNames);
+            const winning = commandsToWin(world);
+            const halfway = [...winning.slice(0, Math.ceil(winning.length / 2)), 'dance', 'take nothing', 'undo'];
 
-          expect(roundTrips(settings, [], packNames).turns).toBe(0);
-          const partial = roundTrips(settings, halfway, packNames);
-          expect(partial.goalReached).toBe(false);
-          expect(partial.turns).toBeGreaterThan(0);
-          expect(roundTrips(settings, winning, packNames).goalReached).toBe(true);
-        },
-        // Long worlds search for a route at every hint, so allow extra time.
-        60_000,
-      );
+            expect(roundTrips(settings, [], packNames).turns).toBe(0);
+            const partial = roundTrips(settings, halfway, packNames);
+            expect(partial.goalReached).toBe(false);
+            expect(partial.turns).toBeGreaterThan(0);
+            expect(roundTrips(settings, winning, packNames).goalReached).toBe(true);
+          },
+          // Long worlds search for a route at every hint, so allow extra time.
+          60_000,
+        );
+      });
     });
-  });
 
-  it('resume a won game where further commands change nothing', () => {
-    const [settings] = seedsFor('light-fantasy', 'short', 1);
-    const winning = commandsToWin(worldFrom(settings, packNames));
-    const won = roundTrips(settings, winning, packNames);
-    expect(roundTrips(settings, [...winning, 'look', 'hint', 'go nowhere'], packNames)).toStrictEqual(won);
+    it('resume a won game where further commands change nothing', () => {
+      const [settings] = seedsFor('light-fantasy', 'short', 1, version);
+      const winning = commandsToWin(worldFrom(settings, packNames));
+      const won = roundTrips(settings, winning, packNames);
+      expect(roundTrips(settings, [...winning, 'look', 'hint', 'go nowhere'], packNames)).toStrictEqual(won);
+    });
   });
 });
