@@ -2,7 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAdventureSettings, type RandomValueSource } from './adventure-settings';
 import {
-  createSave, createSaveStore, PLAYED_KEY_PREFIX, SAVE_KEY_PREFIX, type SaveStore, type StorageLike,
+  createSave, createSaveStore, MAX_SAVE_FILE_LENGTH, SAVE_KEY_PREFIX, SaveError, type SaveStore, type StorageLike,
+  PLAYED_KEY_PREFIX,
 } from './saves';
 import {
   buildSaveForm, formatSaveTime, noLocksMessage, noSavesMessage, recordPlayed, renderSavesScreen,
@@ -61,6 +62,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
   document.body.replaceChildren();
 });
 
@@ -460,7 +463,7 @@ describe('renderSavesScreen', () => {
     expect(app.querySelector('h1')?.textContent).toBe('Your saves');
     expect(document.activeElement).toBe(app.querySelector('h1'));
     expect(texts('.saves-list li')).toEqual([noSavesMessage]);
-    app.querySelector<HTMLButtonElement>('button')!.click();
+    [...app.querySelectorAll('button')].find((node) => node.textContent === 'Back to start')!.click();
     expect(onBack).toHaveBeenCalledOnce();
   });
 
@@ -510,6 +513,17 @@ describe('renderSavesScreen', () => {
     expect(texts('.save-item h2')).toEqual(['First', 'Second']);
     expect(app.querySelectorAll('.save-item')[1].querySelectorAll('dd')[2].textContent).toBe('Not recorded');
     expect(document.activeElement?.getAttribute('aria-label')).toBe('Resume: Second');
+  });
+
+  it('sets save names and import labels through textContent', () => {
+    store.add(createSave('<b>Trip</b>', settings, [], earlier));
+    const setText = vi.spyOn(Element.prototype, 'textContent', 'set');
+
+    render();
+
+    expect(setText).toHaveBeenCalledWith('<b>Trip</b>');
+    expect(setText).toHaveBeenCalledWith('Save file');
+    expect(app.querySelector('b')).toBeNull();
   });
 
   it('resumes a loaded save', () => {
@@ -871,6 +885,7 @@ describe('renderSavesScreen', () => {
     expect(texts('.save-item h2')).toEqual(['Trip', 'Unreadable save']);
     expect(app.querySelector('.save-item .error')?.textContent).toMatch(/not valid JSON/);
     expect(buttonNamed('Resume: Unreadable save')).toBeNull();
+    expect(buttonNamed('Export: Unreadable save')).toBeNull();
     expect(storage.items.get(key)).toBe('{not json');
     buttonNamed('Delete: Unreadable save').click();
     buttonNamed('Yes, delete: Unreadable save').click();
@@ -996,5 +1011,438 @@ describe('renderSavesScreen', () => {
     expect(app.querySelector('[role="status"]')?.textContent).toMatch(/would not let textQuest/);
     expect(app.querySelectorAll('.saves-list li')).toHaveLength(0);
     expect(document.activeElement).toBe(app.querySelector('h1'));
+  });
+
+  it.each([
+    [1, '../Tower: <b>trip</b>?', 'textquest-Tower-b-trip-b.json'],
+    [2, '../Tower: <b>trip</b>?', 'textquest-Tower-b-trip-b.json'],
+    [1, '???', 'textquest-save.json'],
+    [2, '???', 'textquest-save.json'],
+  ] as const)('downloads version %i save %j as JSON with a safe file name and releases the URL', async (version, name, fileName) => {
+    const id = store.add(createSave(name, createAdventureSettings(7, 'short', version), ['look', 'hint'], earlier));
+    const before = new Map(storage.items);
+    let blob: Blob | undefined;
+    vi.useFakeTimers();
+    const makeUrl = vi.spyOn(URL, 'createObjectURL').mockImplementation((value) => {
+      if (value instanceof Blob) blob = value;
+      return 'blob:save-file';
+    });
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      expect(this.isConnected).toBe(true);
+      expect(this.download).toBe(fileName);
+      expect(this.href).toBe('blob:save-file');
+    });
+    render();
+
+    buttonNamed(`Export: ${name}`).click();
+
+    expect(makeUrl).toHaveBeenCalledOnce();
+    expect(click).toHaveBeenCalledOnce();
+    expect(blob?.type).toBe('application/json');
+    expect(await blob?.text()).toBe(store.exportSave(id));
+    expect(app.querySelector('#export-status')?.textContent).toContain('download started');
+    expect(document.querySelector('a[download]')).toBeNull();
+    expect(revoke).not.toHaveBeenCalled();
+    vi.runAllTimers();
+    expect(revoke).toHaveBeenCalledExactlyOnceWith('blob:save-file');
+    expect(storage.items).toEqual(before);
+  });
+
+  it('exports a renamed save with content, file name and message from the same snapshot', async () => {
+    const save = createSave('Old trip', settings, ['look'], earlier);
+    const id = store.add(save);
+    render();
+    store.put(id, { ...save, name: 'New trip', commands: ['look', 'hint'] });
+    const before = new Map(storage.items);
+    let blob: Blob | undefined;
+    vi.useFakeTimers();
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((value) => {
+      if (value instanceof Blob) blob = value;
+      return 'blob:save-file';
+    });
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      expect(this.download).toBe('textquest-New-trip.json');
+    });
+
+    buttonNamed('Export: Old trip').click();
+
+    expect(await blob?.text()).toBe(store.exportSave(id));
+    expect(app.querySelector('#export-status')?.textContent).toBe('Save file download started for “New trip”.');
+    expect(storage.items).toEqual(before);
+    vi.runAllTimers();
+  });
+
+  it('reports export errors without changing saves', () => {
+    store.add(createSave('Trip', settings, [], earlier));
+    const before = new Map(storage.items);
+    vi.spyOn(URL, 'createObjectURL').mockImplementation(() => { throw new Error('blocked'); });
+    render();
+
+    buttonNamed('Export: Trip').click();
+
+    expect(app.querySelector('#export-status')?.textContent).toMatch(/Something went wrong/);
+    expect(storage.items).toEqual(before);
+  });
+
+  it.each(['success', 'failure'])('keeps a delete failure after export %s and cancellation of another deletion', async (result) => {
+    for (const name of ['A', 'B', 'C']) store.add(createSave(name, settings, [], earlier));
+    const before = new Map(storage.items);
+    const waiting: { run: () => void; reject: (error: Error) => void }[] = [];
+    lock.request.mockImplementation((_name: string, task: () => unknown) => new Promise<void>((resolve, reject) => {
+      waiting.push({ run: () => { task(); resolve(); }, reject });
+    }));
+    vi.useFakeTimers();
+    vi.spyOn(URL, 'createObjectURL').mockImplementation(() => {
+      if (result === 'failure') throw new Error('blocked');
+      return 'blob:save-file';
+    });
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    render();
+    for (const name of ['A', 'B']) {
+      buttonNamed(`Delete: ${name}`).click();
+      buttonNamed(`Yes, delete: ${name}`).click();
+    }
+    waiting.shift()!.reject(new DOMException('blocked', 'SecurityError'));
+    await Promise.resolve();
+    const warning = app.querySelector('#saves-status')!.textContent!;
+    expect(warning).toContain('could not lock');
+
+    buttonNamed('Export: C').click();
+    buttonNamed('Keep: B').click();
+    waiting.shift()!.run();
+
+    expect(app.querySelector('#saves-status')?.textContent).toBe(warning);
+    expect(app.querySelector('#export-status')?.textContent).toMatch(
+      result === 'success' ? /download started for “C”/ : /Something went wrong/,
+    );
+    expect(app.querySelector('#export-status')?.getAttribute('role')).toBe('status');
+    expect([...app.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === 'Back to start')?.disabled).toBe(false);
+    expect(storage.items).toEqual(before);
+    vi.runAllTimers();
+  });
+
+  function chooseFile(text: string) {
+    const input = app.querySelector<HTMLInputElement>('#import-save')!;
+    const file = new File([text], 'trip.json', { type: 'application/json' });
+    const read = vi.spyOn(file, 'arrayBuffer');
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+    const form = input.closest('form')!;
+    return { input, file, read, form, submit: form.querySelector<HTMLButtonElement>('button')! };
+  }
+
+  it('keeps a save when import refreshes a queued deletion and the player chooses Keep', async () => {
+    const save = createSave('Trip', settings, ['look'], earlier);
+    const id = store.add(save);
+    const original = storage.items.get(SAVE_KEY_PREFIX + id);
+    const text = JSON.stringify({ ...save, name: 'Imported trip' });
+    render();
+    const { read, form, submit } = chooseFile(text);
+    let finish!: (bytes: ArrayBuffer) => void;
+    read.mockReturnValue(new Promise<ArrayBuffer>((resolve) => { finish = resolve; }));
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    void lock.request(SAVE_LOCK_NAME, () => held);
+
+    form.requestSubmit();
+    expect(read).toHaveBeenCalledOnce();
+    buttonNamed('Delete: Trip').click();
+    buttonNamed('Yes, delete: Trip').click();
+    expect(storage.items.get(SAVE_KEY_PREFIX + id)).toBe(original);
+
+    finish(new TextEncoder().encode(text).buffer);
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+    expect(store.list()).toHaveLength(2);
+    expect(app.querySelector('#import-status')?.textContent).toBe('Imported the save as a new save.');
+    const afterImport = new Map(storage.items);
+
+    if (buttonNamed('Keep: Trip')) expect(document.activeElement).toBe(buttonNamed('Keep: Trip'));
+    else buttonNamed('Delete: Trip').click();
+    buttonNamed('Keep: Trip').click();
+    release();
+    await lock.settled();
+
+    expect(storage.items).toEqual(afterImport);
+    expect(storage.items.get(SAVE_KEY_PREFIX + id)).toBe(original);
+    expect(document.activeElement).toBe(buttonNamed('Delete: Trip'));
+    expect(app.querySelector('[role="status"]')?.textContent).not.toContain('Deleted');
+  });
+
+  it.each(['success', 'read failure'])('announces import %s without taking focus from a newer interaction', async (result) => {
+    const id = store.add(createSave('Trip', settings, ['look'], earlier));
+    const text = store.exportSave(id);
+    const before = new Map(storage.items);
+    render();
+    const { read, form, submit } = chooseFile(text);
+    let finish!: (bytes: ArrayBuffer) => void;
+    let fail!: (error: Error) => void;
+    read.mockReturnValue(new Promise<ArrayBuffer>((resolve, reject) => { finish = resolve; fail = reject; }));
+
+    form.requestSubmit();
+    let newerControl: HTMLButtonElement;
+    if (result === 'success') {
+      newerControl = [...app.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent === 'Back to start')!;
+      newerControl.focus();
+      finish(new TextEncoder().encode(text).buffer);
+    } else {
+      buttonNamed('Delete: Trip').click();
+      newerControl = buttonNamed('Keep: Trip');
+      expect(document.activeElement).toBe(newerControl);
+      fail(new Error('unreadable'));
+    }
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+
+    expect(document.activeElement).toBe(newerControl);
+    expect(app.querySelector('#import-status')?.textContent).toMatch(
+      result === 'success' ? /Imported the save as a new save/ : /could not be read/,
+    );
+    if (result === 'success') {
+      expect(store.list()).toHaveLength(2);
+      expect(storage.items.get(SAVE_KEY_PREFIX + id)).toBe(before.get(SAVE_KEY_PREFIX + id));
+    } else {
+      expect(storage.items).toEqual(before);
+    }
+  });
+
+  it.each([
+    ['lock failure', 'success', 'delete first'],
+    ['lock failure', 'success', 'import first'],
+    ['lock failure', 'read failure', 'delete first'],
+    ['lock failure', 'read failure', 'import first'],
+    ['conflict', 'success', 'delete first'],
+    ['conflict', 'success', 'import first'],
+    ['conflict', 'read failure', 'delete first'],
+    ['conflict', 'read failure', 'import first'],
+    ['success', 'read failure', 'import first'],
+    ['success', 'success', 'delete first'],
+    ['success', 'success', 'import first'],
+  ])('keeps both results for delete %s, import %s, %s', async (failure, result, order) => {
+    const save = createSave('Trip', settings, ['look'], earlier);
+    const id = store.add(save);
+    const text = store.exportSave(id);
+    render();
+    const { read, form, submit } = chooseFile(text);
+    let finish!: (bytes: ArrayBuffer) => void;
+    let fail!: (error: Error) => void;
+    read.mockReturnValue(new Promise<ArrayBuffer>((resolve, reject) => { finish = resolve; fail = reject; }));
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    void lock.request(SAVE_LOCK_NAME, () => held);
+    if (failure === 'lock failure') {
+      lock.request.mockImplementationOnce(() => held.then(() => {
+        throw new DOMException('blocked', 'SecurityError');
+      }));
+    }
+
+    form.requestSubmit();
+    buttonNamed('Delete: Trip').click();
+    buttonNamed('Yes, delete: Trip').click();
+    if (failure === 'conflict') store.put(id, { ...save, commands: ['look', 'hint'] });
+    const beforeImport = new Map(storage.items);
+    const deleteMessage = failure === 'lock failure' ? /could not lock save storage/
+      : failure === 'conflict' ? /not deleted/ : /Deleted/;
+    if (order === 'delete first') {
+      release();
+      await vi.waitFor(() => expect(app.querySelector('#saves-status')?.textContent).toMatch(deleteMessage));
+    }
+
+    if (result === 'success') finish(new TextEncoder().encode(text).buffer);
+    else fail(new Error('unreadable'));
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+    if (order === 'import first') {
+      release();
+      await vi.waitFor(() => expect(app.querySelector('#saves-status')?.textContent).toMatch(deleteMessage));
+    }
+
+    expect(app.querySelector('#saves-status')?.textContent).toMatch(deleteMessage);
+    expect(app.querySelector('#import-status')?.textContent).toMatch(
+      result === 'success' ? /Imported the save as a new save/ : /could not be read/,
+    );
+    expect(app.querySelector('#import-status')?.getAttribute('role')).toBe('status');
+    if (failure === 'success') {
+      expect(storage.items.has(SAVE_KEY_PREFIX + id)).toBe(false);
+      if (result === 'success') {
+        const entries = store.list();
+        expect(entries).toHaveLength(1);
+        expect(entries[0].id).not.toBe(id);
+        expect(store.load(entries[0].id)).toEqual(save);
+      } else expect(store.list()).toEqual([]);
+    }
+    else if (result === 'success') {
+      expect(store.list()).toHaveLength(2);
+      expect(storage.items.get(SAVE_KEY_PREFIX + id)).toBe(beforeImport.get(SAVE_KEY_PREFIX + id));
+    } else expect(storage.items).toEqual(beforeImport);
+  });
+
+  it.each([1, 2])('imports a matching-name version %i adventure as a new save and can resume it', async (version) => {
+    const save = createSave('<b>Trip</b>', createAdventureSettings(7, 'short', version), ['look', 'hint'], earlier);
+    const id = store.add(save);
+    const before = storage.items.get(`${SAVE_KEY_PREFIX}${id}`);
+    render();
+    const { input, form } = chooseFile(store.exportSave(id));
+    expect(app.querySelector<HTMLLabelElement>('label[for="import-save"]')?.textContent).toBe('Save file');
+    expect(input.accept).toBe('.json,application/json');
+    expect(input.getAttribute('aria-describedby')).toBe('import-status');
+
+    form.requestSubmit();
+    await vi.waitFor(() => expect(store.list()).toHaveLength(2));
+
+    expect(storage.items.get(`${SAVE_KEY_PREFIX}${id}`)).toBe(before);
+    expect(texts('.save-item h2')).toEqual(['<b>Trip</b>', '<b>Trip</b>']);
+    expect(app.querySelector('b')).toBeNull();
+    expect(app.querySelector('#import-status')?.textContent).toBe('Imported the save as a new save.');
+    expect(document.activeElement).toBe(app.querySelector('#import-status'));
+    expect(input.value).toBe('');
+    buttonNamed('Resume: <b>Trip</b>').click();
+    expect(onResume.mock.calls[0][0].save).toEqual(save);
+  });
+
+  it('asks for a file and focuses the labelled input', () => {
+    render();
+    app.querySelector<HTMLFormElement>('form')!.requestSubmit();
+
+    expect(app.querySelector('#import-status')?.textContent).toMatch(/Choose a textQuest save file/);
+    expect(document.activeElement).toBe(app.querySelector('#import-save'));
+    expect(store.list()).toEqual([]);
+  });
+
+  it.each([
+    ['{broken', /not valid JSON/],
+    ['{}', /damaged/],
+    [JSON.stringify({ formatVersion: 2 }), /newer version/],
+    [' '.repeat(MAX_SAVE_FILE_LENGTH + 1), /too large/],
+  ])('rejects a bad file without changing any saves', async (text, message) => {
+    store.add(createSave('Trip', settings, [], earlier));
+    storage.items.set(`${SAVE_KEY_PREFIX}${'f'.repeat(32)}`, '{unreadable');
+    const before = new Map(storage.items);
+    render();
+    const { form, submit } = chooseFile(text);
+
+    form.requestSubmit();
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+
+    expect(app.querySelector('#import-status')?.textContent).toMatch(message);
+    expect(document.activeElement).toBe(app.querySelector('#import-status'));
+    expect(storage.items).toEqual(before);
+    expect(texts('.save-item h2')).toEqual(['Trip', 'Unreadable save']);
+  });
+
+  it('rejects invalid UTF-8 rather than changing the save text', async () => {
+    const id = store.add(createSave('Trip', settings, ['look'], earlier));
+    const before = new Map(storage.items);
+    const text = store.exportSave(id);
+    const bytes = new TextEncoder().encode(text);
+    bytes[text.indexOf('"Trip"') + 1] = 0xff;
+    render();
+    const { input, form, submit } = chooseFile('');
+    const file = new File([bytes], 'damaged.json', { type: 'application/json' });
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+
+    form.requestSubmit();
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+
+    expect(app.querySelector('#import-status')?.textContent).toMatch(/could not be read|damaged/);
+    expect(storage.items).toEqual(before);
+  });
+
+  it('accepts a valid non-ASCII save whose byte size exceeds the character limit', async () => {
+    const save = createSave('Trip', settings, Array(1700).fill('\u6f22'.repeat(200)), earlier);
+    const id = store.add(save);
+    render();
+    const { file, form, submit } = chooseFile(store.exportSave(id));
+    expect(file.size).toBeGreaterThan(MAX_SAVE_FILE_LENGTH);
+
+    form.requestSubmit();
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+
+    const imported = store.list().find((entry) => entry.id !== id);
+    expect(imported).toBeDefined();
+    expect(store.load(imported!.id)).toEqual(save);
+  });
+
+  it('reports a successful import even if an extra read would fail', async () => {
+    const id = store.add(createSave('Trip', settings, ['look'], earlier));
+    render();
+    const { form, submit } = chooseFile(store.exportSave(id));
+    vi.spyOn(store, 'load').mockImplementation(() => { throw new Error('blocked'); });
+
+    form.requestSubmit();
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+
+    expect(store.list()).toHaveLength(2);
+    expect(app.querySelector('#import-status')?.textContent).toMatch(/Imported/);
+  });
+
+  it('reports an import succeeded when its list cannot be refreshed', async () => {
+    const id = store.add(createSave('Trip', settings, ['look'], earlier));
+    render();
+    const { input, form, submit } = chooseFile(store.exportSave(id));
+    vi.spyOn(store, 'list').mockImplementationOnce(() => {
+      throw new SaveError('storage-unavailable', 'Storage is blocked.');
+    });
+
+    form.requestSubmit();
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+
+    expect(store.list()).toHaveLength(2);
+    expect(input.value).toBe('');
+    expect(app.querySelector('#import-status')?.textContent)
+      .toBe('The save was imported, but the list could not be refreshed. Storage is blocked.');
+  });
+
+  it('rejects an oversized file before reading it', async () => {
+    render();
+    const { file, read, form, submit } = chooseFile('');
+    Object.defineProperty(file, 'size', { value: MAX_SAVE_FILE_LENGTH * 3 + 1 });
+
+    form.requestSubmit();
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+
+    expect(read).not.toHaveBeenCalled();
+    expect(app.querySelector('#import-status')?.textContent).toMatch(/too large/);
+    expect(store.list()).toEqual([]);
+  });
+
+  it.each(['read', 'storage'])('reports a %s failure and leaves existing saves untouched', async (failure) => {
+    const id = store.add(createSave('Trip', settings, [], earlier));
+    render();
+    const { read, form, submit } = chooseFile(store.exportSave(id));
+    const before = new Map(storage.items);
+    if (failure === 'read') read.mockRejectedValue(new Error('unreadable'));
+    else storage.failWrites = true;
+
+    form.requestSubmit();
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+
+    expect(app.querySelector('#import-status')?.textContent).toMatch(
+      failure === 'read' ? /could not be read/ : /no room left for saves/,
+    );
+    expect(storage.items).toEqual(before);
+  });
+
+  it.each([false, true])('prevents duplicate imports and ignores a read after navigation: %s', async (leave) => {
+    const id = store.add(createSave('Trip', settings, [], earlier));
+    const text = store.exportSave(id);
+    render();
+    const { input, read, form, submit } = chooseFile(text);
+    let finish!: (bytes: ArrayBuffer) => void;
+    read.mockReturnValue(new Promise<ArrayBuffer>((resolve) => { finish = resolve; }));
+
+    form.requestSubmit();
+    form.requestSubmit();
+    expect(input.disabled).toBe(true);
+    expect(submit.disabled).toBe(true);
+    expect(read).toHaveBeenCalledOnce();
+    expect(app.querySelector('#import-status')?.textContent).toBe('Reading your save file…');
+    if (leave) app.replaceChildren();
+    finish(new TextEncoder().encode(text).buffer);
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+
+    expect(store.list()).toHaveLength(leave ? 1 : 2);
+    if (leave) expect(app.childNodes).toHaveLength(0);
   });
 });

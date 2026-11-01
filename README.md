@@ -461,8 +461,13 @@ A save that can't be read is listed with the reason and
 kept; it is only removed if the player deletes it. Storage problems are shown
 as plain messages. Keyboard navigation, focus and screen-reader attributes
 are covered by unit tests; a real screen reader has not been checked.
-All names are added as plain text. Exporting and importing save files from the
-browser is not implemented yet.
+All names are added as plain text. **Export** downloads a readable save as a
+`.json` file. Choose a **Save file** and select **Import save** to add it as
+a new save, even if its name matches an existing one. Damaged, oversized
+and newer-version files show a clear message without changing existing
+saves. Imported progress is rebuilt when the player resumes it.
+Import and export have their own announced statuses, so overlapping save-list results remain
+visible. Finishing a file read does not take focus from a newer interaction.
 
 ## Project documents
 
@@ -526,7 +531,7 @@ light fantasy, cosy mystery and science fiction. All three genres are
 playable, but authored prose and authored command names remain unfinished.
 Save before going back to start or reloading to keep progress. A share word
 recreates the starting adventure, not a saved session. Browser save-file
-export and import remain unfinished.
+export and import keep progress in a separate file without sharing it in a link.
 
 ### Build
 

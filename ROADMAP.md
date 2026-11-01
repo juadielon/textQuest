@@ -155,7 +155,7 @@ implemented.
 
 **Status:** In progress — save format and storage wrapper implemented
 ([issue #34](https://github.com/juadielon/textQuest/issues/34)); saving,
-listing, resuming and deleting in the browser implemented
+listing, resuming, deleting, exporting and importing in the browser implemented
 ([issue #43](https://github.com/juadielon/textQuest/issues/43)).
 
 **Outcome:** Players can save several adventures in their browser and export
@@ -168,10 +168,12 @@ A save stores the settings and typed commands. The save format stays version
 regenerated version 1 and version 2 worlds is covered by unit tests, including
 successful and failed commands and undo. Players save during play, see their
 saves listed and resume one by replaying its commands. Delete asks first, and
-unreadable saves are listed and kept. Exporting and importing save files in
-the browser is not implemented. The list shows Last played and Last saved,
-most recently played first. Last played is kept in separate browser metadata,
-so Resume and play never change stored progress or exported files.
+unreadable saves are listed and kept. Export downloads a JSON file. Import
+validates files and adds a new save without overwriting others; bad files and
+storage problems show clear messages.
+The list shows Last played and Last saved, most recently played first. Last
+played is kept in separate browser metadata, so Resume and play never change
+stored progress or exported files.
 
 ### 7. Browser game
 
@@ -185,7 +187,7 @@ A start screen for new adventures and share words
 in [pull request #46](https://github.com/juadielon/textQuest/pull/46).
 The play screen is implemented in
 [pull request #52](https://github.com/juadielon/textQuest/pull/52).
-Play can be saved, and saves can be listed, resumed and deleted.
+Play can be saved, and saves can be listed, resumed, deleted, exported and imported.
 
 **Outcome:** A responsive, accessible browser app brings together adventure
 creation, play, clues, inventory, sharing and saves.
@@ -204,8 +206,8 @@ relative URLs for static sub-path hosting.
 Invalid settings or worlds show the accessible unplayable message; unexpected
 errors while opening play are rethrown
 ([issue #74](https://github.com/juadielon/textQuest/issues/74)).
-A saves screen resumes and deletes saved adventures. Content-pack names and
-prose, and save file export and import remain planned.
+A saves screen resumes, deletes, exports and imports saved adventures.
+Content-pack names and prose remain planned.
 
 ### 8. Release checks and hosting guide
 

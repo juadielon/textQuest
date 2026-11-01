@@ -161,7 +161,7 @@ it('shows a generation error and still lets the player return to start', async (
   expect(document.activeElement).toBe(get('h1'));
 });
 
-it.each([1, 2])('saves and resumes version %i from a share link without sharing progress', async (version) => {
+it.each([1, 2])('saves, exports, imports and resumes version %i from a share link without sharing progress', async (version) => {
   // Like Web Locks shared by every tab: tasks run one at a time, later, in order.
   let queue: Promise<unknown> = Promise.resolve();
   const request = vi.fn((_name: string, task: () => unknown) => (queue = queue.then(task)));
@@ -198,7 +198,35 @@ it.each([1, 2])('saves and resumes version %i from a share link without sharing 
   expect(document.activeElement).toBe(get('h1'));
   expect(get('#share-word-error').textContent).toBe('');
   get<HTMLButtonElement>('#open-saves').click();
-  get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+  let exported: Blob | undefined;
+  vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+    if (blob instanceof Blob) exported = blob;
+    return 'blob:save-file';
+  });
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  const before = new Map(Object.entries(localStorage));
+  get<HTMLButtonElement>('button[aria-label="Export: My trip"]').click();
+  expect(exported).toBeDefined();
+  const text = await exported!.text();
+  expect(JSON.parse(text).settings.version).toBe(version);
+  const input = get<HTMLInputElement>('#import-save');
+  Object.defineProperty(input, 'files', {
+    configurable: true, value: [new File([text], 'trip.json', { type: 'application/json' })],
+  });
+  get<HTMLFormElement>('.save-form').requestSubmit();
+  await vi.waitFor(() => expect(get('#import-status').textContent).toMatch(/Imported/));
+  for (const [key, value] of before) expect(localStorage.getItem(key)).toBe(value);
+  expect(app.querySelectorAll('.save-item')).toHaveLength(2);
+  expect(document.activeElement).toBe(get('#import-status'));
+  const imported = createSaveStore(localStorage).list()
+    .find((entry) => entry.status === 'ready' && entry.name === 'My trip' && !entry.lastPlayedAt);
+  if (!imported) throw new Error('Missing imported save');
+  const importedTitle = document.getElementById(`save-${imported.id}`);
+  const resumeImported = importedTitle?.closest('.save-item')
+    ?.querySelector<HTMLButtonElement>('button[aria-label^="Resume:"]');
+  if (!resumeImported) throw new Error('Missing imported save');
+  resumeImported.click();
 
   expect(shownDetails()['Share word']).toBe(word);
   const view = describePlay(world, replayCommands(world, commands));
@@ -220,7 +248,8 @@ it.each([1, 2])('saves and resumes version %i from a share link without sharing 
   expect(get('#save-status').textContent).toBe('Saved “My trip”.');
   get<HTMLButtonElement>('header button').click();
   get<HTMLButtonElement>('#open-saves').click();
-  expect(app.querySelectorAll('.save-item')).toHaveLength(1);
+  expect(app.querySelectorAll('.save-item')).toHaveLength(2);
+  for (const [key, value] of before) expect(localStorage.getItem(key)).toBe(value);
   expect(request).toHaveBeenCalledTimes(5);
   const key = localStorage.key(0)!;
   const saved = localStorage.getItem(key);
@@ -232,7 +261,10 @@ it.each([1, 2])('saves and resumes version %i from a share link without sharing 
   expect(localStorage.getItem(key)).toBe(saved);
   get<HTMLButtonElement>('header button').click();
   get<HTMLButtonElement>('#open-saves').click();
-  get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+  const secondResumeImported = document.getElementById(`save-${imported.id}`)
+    ?.closest('.save-item')?.querySelector<HTMLButtonElement>('button[aria-label^="Resume:"]');
+  if (!secondResumeImported) throw new Error('Missing imported save');
+  secondResumeImported.click();
   expect([...app.querySelectorAll('.play-typed')].map((node) => node.textContent))
     .toEqual([...commands, 'inventory'].map((command) => `> ${command}`));
 });
