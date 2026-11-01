@@ -292,7 +292,7 @@ describe('checkWinnability', () => {
 
   it('rejects unsupported versions and unknown effects in serialised data', () => {
     const data = JSON.stringify(sampleWorld());
-    expect(() => checkWinnability(JSON.parse(data.replace('"version":1', '"version":2'))))
+    expect(() => checkWinnability(JSON.parse(data.replace('"version":1', '"version":3'))))
       .toThrow('not supported');
     expect(() => checkWinnability(JSON.parse(data.replace('unlock-exit', 'remove-item'))))
       .toThrow('Unknown puzzle effect');
@@ -358,5 +358,190 @@ describe('validateWorld', () => {
     expect(() => validateWorld(sampleWorld())).not.toThrow();
     expect(() => validateWorld({ ...sampleWorld(), startPlaceId: 'nowhere' }))
       .toThrow('Unknown place ID "nowhere".');
+  });
+});
+
+// A world version 2 square with two mutually exclusive ways out. The bridge
+// has a failure ending and the tunnel a winning one; both lead to the castle.
+function choiceWorld(): AdventureWorld {
+  return {
+    version: 2, startPlaceId: 'square',
+    places: [{ id: 'square' }, { id: 'bridge' }, { id: 'tunnel' }, { id: 'castle' }],
+    exits: [
+      { id: 'bridge-gate', fromPlaceId: 'square', toPlaceId: 'bridge', locked: true },
+      { id: 'tunnel-gate', fromPlaceId: 'square', toPlaceId: 'tunnel', locked: true },
+      { id: 'bridge-end', fromPlaceId: 'bridge', toPlaceId: 'castle', locked: false },
+      { id: 'tunnel-end', fromPlaceId: 'tunnel', toPlaceId: 'castle', locked: false },
+    ],
+    items: [], clues: [],
+    solution: {
+      steps: [
+        {
+          id: 'cross-bridge', placeId: 'square', choiceId: 'route', conditions: {},
+          effects: [{ kind: 'unlock-exit', exitId: 'bridge-gate' }],
+        },
+        {
+          id: 'dig-tunnel', placeId: 'square', choiceId: 'route', conditions: {},
+          effects: [{ kind: 'unlock-exit', exitId: 'tunnel-gate' }],
+        },
+        {
+          id: 'jump', placeId: 'bridge', conditions: {},
+          effects: [{ kind: 'end-adventure', endingId: 'fall' }],
+        },
+        {
+          id: 'slip-away', placeId: 'tunnel', conditions: {},
+          effects: [{ kind: 'end-adventure', endingId: 'escape' }],
+        },
+      ],
+      goal: { placeId: 'castle', conditions: {} },
+      endings: [{ id: 'fall', outcome: 'failure' }, { id: 'escape', outcome: 'win' }],
+    },
+  };
+}
+
+const withGoal = (world: AdventureWorld, goal: AdventureWorld['solution']['goal']): AdventureWorld =>
+  ({ ...world, solution: { ...world.solution, goal } });
+
+describe('world version 2 choices and endings', () => {
+  it('searches every choice and reports each reachable ending without changing the world', () => {
+    const world = choiceWorld();
+    const before = JSON.stringify(world);
+    expect(checkWinnability(world)).toEqual({
+      winnable: true, unreachableStepIds: [],
+      reachableEndingIds: ['fall', 'escape'], canGetStuck: false,
+    });
+    expect(JSON.stringify(world)).toBe(before);
+    expect(checkWinnability(JSON.parse(before))).toEqual(checkWinnability(world));
+  });
+
+  it('never lets one route take both options of a choice', () => {
+    const world = withGoal(choiceWorld(), {
+      placeId: 'castle', conditions: { stepsDone: ['cross-bridge', 'dig-tunnel'] },
+    });
+    const result = checkWinnability({
+      ...world,
+      solution: {
+        ...world.solution,
+        endings: [{ id: 'fall', outcome: 'failure' }, { id: 'escape', outcome: 'failure' }],
+      },
+    });
+    expect(result).toEqual({
+      winnable: false, unreachableStepIds: [],
+      reachableEndingIds: ['fall', 'escape'], canGetStuck: true,
+    });
+  });
+
+  it('reports a choice that leaves the player unable to win', () => {
+    const world = withGoal(choiceWorld(), { placeId: 'castle', conditions: { placesVisited: ['tunnel'] } });
+    expect(checkWinnability(world)).toMatchObject({ winnable: true, canGetStuck: true });
+  });
+
+  it('counts a winning ending as a win when the goal cannot be reached', () => {
+    const world = withGoal(choiceWorld(), { placeId: 'castle', conditions: { stepsDone: ['jump'] } });
+    expect(checkWinnability(world)).toEqual({
+      winnable: true, unreachableStepIds: [],
+      reachableEndingIds: ['fall', 'escape'], canGetStuck: true,
+    });
+  });
+
+  it('allows a failure only when the player could still have won instead', () => {
+    const world = choiceWorld();
+    const onlyFailure: AdventureWorld = {
+      ...world,
+      exits: world.exits.filter(({ id }) => id !== 'bridge-end'),
+      solution: {
+        ...world.solution,
+        steps: world.solution.steps.filter(({ id }) => id !== 'slip-away'),
+      },
+    };
+    // The bridge leads nowhere but the fall, so recovering to just before it can't help.
+    expect(checkWinnability(onlyFailure)).toEqual({
+      winnable: true, unreachableStepIds: [],
+      reachableEndingIds: ['fall'], canGetStuck: true,
+    });
+    expect(checkWinnability({ ...onlyFailure, exits: [...onlyFailure.exits, world.exits[2]] }))
+      .toMatchObject({ winnable: true, canGetStuck: false });
+  });
+
+  it('reports a world whose only outcome is failure as unwinnable', () => {
+    expect(checkWinnability({
+      version: 2, startPlaceId: 'cliff', places: [{ id: 'cliff' }, { id: 'sea' }],
+      exits: [], items: [], clues: [],
+      solution: {
+        steps: [{
+          id: 'leap', placeId: 'cliff', conditions: {},
+          effects: [{ kind: 'end-adventure', endingId: 'fall' }],
+        }],
+        goal: { placeId: 'sea', conditions: {} },
+        endings: [{ id: 'fall', outcome: 'failure' }],
+      },
+    })).toEqual({
+      winnable: false, unreachableStepIds: [], reachableEndingIds: ['fall'], canGetStuck: true,
+    });
+  });
+
+  it('adds only the extra fields when a version 2 world has no choices', () => {
+    expect(checkWinnability({ ...sampleWorld(), version: 2 })).toEqual({
+      winnable: true, unreachableStepIds: [], reachableEndingIds: [], canGetStuck: false,
+    });
+  });
+
+  it.each<(world: AdventureWorld) => AdventureWorld>([
+    (world) => ({ ...world, solution: { ...world.solution, endings: [] } }),
+    (world) => ({
+      ...world, solution: {
+        ...world.solution,
+        steps: world.solution.steps.map((step) => ({ ...step, choiceId: 'pick' })),
+      },
+    }),
+    (world) => ({
+      ...world, solution: {
+        ...world.solution,
+        steps: world.solution.steps.map((step, index) => index ? step
+          : { ...step, effects: [{ kind: 'end-adventure' as const, endingId: 'x' }] }),
+      },
+    }),
+  ])('keeps choices and endings out of world version 1 %#', (change) => {
+    expect(() => checkWinnability(change(sampleWorld()))).toThrow('need world version 2');
+  });
+
+  it.each<[string, (world: AdventureWorld) => AdventureWorld, string]>([
+    ['a one-option choice', (world) => ({
+      ...world, solution: {
+        ...world.solution,
+        steps: world.solution.steps.map((step) =>
+          step.id === 'dig-tunnel' ? { ...step, choiceId: 'other' } : step),
+      },
+    }), 'needs at least two steps'],
+    ['an empty choice ID', (world) => ({
+      ...world, solution: {
+        ...world.solution,
+        steps: world.solution.steps.map((step) => ({ ...step, choiceId: ' ' })),
+      },
+    }), 'empty choice ID'],
+    ['an unknown ending', (world) => ({
+      ...world, solution: {
+        ...world.solution,
+        steps: world.solution.steps.map((step) => step.id === 'jump'
+          ? { ...step, effects: [{ kind: 'end-adventure' as const, endingId: 'missing' }] } : step),
+      },
+    }), 'Unknown ending ID "missing"'],
+    ['two endings from one step', (world) => ({
+      ...world, solution: {
+        ...world.solution,
+        steps: world.solution.steps.map((step) => step.id === 'jump' ? {
+          ...step, effects: [...step.effects, { kind: 'end-adventure' as const, endingId: 'escape' }],
+        } : step),
+      },
+    }), 'more than once'],
+    ['a repeated ending ID', (world) => ({
+      ...world, solution: {
+        ...world.solution, endings: [...world.solution.endings!, world.solution.endings![0]],
+      },
+    }), 'ending ID "fall" is empty or repeated'],
+    ['an unknown outcome', (world) => JSON.parse(JSON.stringify(world).replace('"failure"', '"draw"')),
+      'unknown outcome'],
+  ])('rejects %s', (_, change, message) => {
+    expect(() => validateWorld(change(choiceWorld()))).toThrow(message);
   });
 });

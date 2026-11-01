@@ -1,4 +1,4 @@
-import type { AdventureWorld, Clue, Conditions, Exit, Item } from './adventure-world';
+import type { AdventureWorld, Clue, Conditions, Exit, Item, PuzzleStep } from './adventure-world';
 
 /**
  * The most search states `checkWinnability` will create before it stops and
@@ -11,10 +11,18 @@ export const MAX_SEARCH_STATES = 10_000;
 
 /** The result for a world that the checker searched completely. */
 export interface CheckedWinnability {
-  /** True when at least one route reaches the goal. */
+  /** True when at least one route reaches the goal or a winning ending. */
   readonly winnable: boolean;
   /** IDs of puzzle steps that no route can complete, in world order. */
   readonly unreachableStepIds: readonly string[];
+  /** World version 2 only. IDs of endings some route can reach, in world order. */
+  readonly reachableEndingIds?: readonly string[];
+  /**
+   * World version 2 only. True when some route reaches a point where the
+   * player can no longer win. Failure endings don't count, but the point just
+   * before each one must still be able to win, so recovery from it works.
+   */
+  readonly canGetStuck?: boolean;
 }
 
 /**
@@ -44,12 +52,21 @@ interface SearchState {
  * Checks that a world uses a supported version, has unique non-empty IDs and
  * only refers to things that exist. The world is not changed.
  *
+ * @remarks
+ * Choices, endings and `end-adventure` effects need world version 2. Each
+ * choice needs at least two steps, and a step can end the adventure only once.
+ *
  * @throws RangeError when the world is invalid, with a message naming the problem.
  */
 export function validateWorld(world: AdventureWorld): void {
-  if (world.version !== 1) {
+  if (world.version !== 1 && world.version !== 2) {
     throw new RangeError(`World version ${world.version} is not supported.`);
   }
+  const needsVersionTwo = () => {
+    if (world.version === 1) {
+      throw new RangeError('Choices and endings need world version 2.');
+    }
+  };
 
   const idsFor = (entries: readonly { readonly id: string }[], kind: string) => {
     const ids = new Set<string>();
@@ -66,6 +83,13 @@ export function validateWorld(world: AdventureWorld): void {
   const items = idsFor(world.items, 'item');
   const clues = idsFor(world.clues, 'clue');
   const steps = idsFor(world.solution.steps, 'step');
+  if (world.solution.endings !== undefined) needsVersionTwo();
+  const endings = idsFor(world.solution.endings ?? [], 'ending');
+  for (const ending of world.solution.endings ?? []) {
+    if (ending.outcome !== 'win' && ending.outcome !== 'failure') {
+      throw new RangeError(`The ending "${ending.id}" has an unknown outcome.`);
+    }
+  }
   const requireId = (ids: Set<string>, id: string, kind: string) => {
     if (!ids.has(id)) {
       throw new RangeError(`Unknown ${kind} ID "${id}".`);
@@ -88,18 +112,67 @@ export function validateWorld(world: AdventureWorld): void {
   for (const entry of [...world.items, ...world.clues]) {
     if (entry.placeId !== undefined) requireId(places, entry.placeId, 'place');
   }
+  const choiceSizes = new Map<string, number>();
   for (const step of world.solution.steps) {
     requireId(places, step.placeId, 'place');
     checkConditions(step.conditions);
+    if (step.choiceId !== undefined) {
+      needsVersionTwo();
+      if (typeof step.choiceId !== 'string' || !step.choiceId.trim()) {
+        throw new RangeError(`The step "${step.id}" has an empty choice ID.`);
+      }
+      choiceSizes.set(step.choiceId, (choiceSizes.get(step.choiceId) ?? 0) + 1);
+    }
+    let endingEffects = 0;
     for (const effect of step.effects) {
       switch (effect.kind) {
         case 'unlock-exit': requireId(exits, effect.exitId, 'exit'); break;
         case 'give-item': requireId(items, effect.itemId, 'item'); break;
         case 'reveal-clue': requireId(clues, effect.clueId, 'clue'); break;
+        case 'end-adventure':
+          needsVersionTwo();
+          requireId(endings, effect.endingId, 'ending');
+          endingEffects++;
+          break;
         default: throw new RangeError('Unknown puzzle effect.');
       }
     }
+    if (endingEffects > 1) {
+      throw new RangeError(`The step "${step.id}" ends the adventure more than once.`);
+    }
   }
+  for (const [choiceId, size] of choiceSizes) {
+    if (size < 2) {
+      throw new RangeError(`The choice "${choiceId}" needs at least two steps.`);
+    }
+  }
+}
+
+// Decisions change what can happen next, so the search tries each one
+// separately instead of taking it automatically.
+function isDecision(step: PuzzleStep): boolean {
+  return step.choiceId !== undefined || step.effects.some(({ kind }) => kind === 'end-adventure');
+}
+
+function canTakeStep(world: AdventureWorld, state: SearchState, step: PuzzleStep): boolean {
+  return !state.stepsDone.has(step.id) && meetsConditions(state, step.conditions)
+    && (step.choiceId === undefined || !world.solution.steps.some((other) =>
+      other.choiceId === step.choiceId && state.stepsDone.has(other.id)));
+}
+
+// Returns the ending the step leads to, if any.
+function completeStep(state: SearchState, step: PuzzleStep): string | undefined {
+  state.stepsDone.add(step.id);
+  let endingId: string | undefined;
+  for (const effect of step.effects) {
+    switch (effect.kind) {
+      case 'unlock-exit': state.unlockedExits.add(effect.exitId); break;
+      case 'give-item': state.itemsHeld.add(effect.itemId); break;
+      case 'reveal-clue': state.cluesRevealed.add(effect.clueId); break;
+      case 'end-adventure': endingId = effect.endingId; break;
+    }
+  }
+  return endingId;
 }
 
 function meetsConditions(state: SearchState, conditions: Conditions): boolean {
@@ -161,22 +234,15 @@ function visitPlace(world: AdventureWorld, state: SearchState, placeId: string):
   pickUp(world.items, state.itemsHeld);
   pickUp(world.clues, state.cluesRevealed);
   for (const step of world.solution.steps) {
-    if (step.placeId !== placeId || state.stepsDone.has(step.id)
-      || !meetsConditions(state, step.conditions)) continue;
-    state.stepsDone.add(step.id);
+    if (step.placeId !== placeId || isDecision(step) || !canTakeStep(world, state, step)) continue;
+    completeStep(state, step);
     changed = true;
-    for (const effect of step.effects) {
-      switch (effect.kind) {
-        case 'unlock-exit': state.unlockedExits.add(effect.exitId); break;
-        case 'give-item': state.itemsHeld.add(effect.itemId); break;
-        case 'reveal-clue': state.cluesRevealed.add(effect.clueId); break;
-      }
-    }
   }
   return changed;
 }
 
-// Version 1 only adds progress, so taking everything in the area cannot block a win.
+// Steps taken here only add progress, so taking everything in the area cannot
+// block a win. Decisions are tried separately by the search.
 function settleArea(world: AdventureWorld, state: SearchState, links: Links): string[] {
   let area: string[];
   let changed: boolean;
@@ -188,6 +254,17 @@ function settleArea(world: AdventureWorld, state: SearchState, links: Links): st
     }
   } while (changed);
   return area;
+}
+
+function copyState(state: SearchState, placeId: string): SearchState {
+  return {
+    placeId,
+    itemsHeld: new Set(state.itemsHeld),
+    placesVisited: new Set(state.placesVisited),
+    stepsDone: new Set(state.stepsDone),
+    cluesRevealed: new Set(state.cluesRevealed),
+    unlockedExits: new Set(state.unlockedExits),
+  };
 }
 
 function stateKey(areaId: string, state: SearchState): string {
@@ -204,6 +281,11 @@ function stateKey(areaId: string, state: SearchState): string {
  *
  * The search creates at most `MAX_SEARCH_STATES` states. Bigger worlds get a
  * `TooLargeToCheck` result. The same world always gives the same result.
+ *
+ * @remarks
+ * For world version 2, the search tries each choice and early ending
+ * separately, and also reports reachable endings and whether a player can get
+ * stuck. Version 1 results keep their original shape.
  *
  * @throws RangeError when the world has invalid references, empty or repeated
  * IDs, an unsupported version or an unknown effect.
@@ -223,41 +305,78 @@ export function checkWinnability(world: AdventureWorld): WinnabilityResult {
   let statesCreated = queue.length;
   const seen = new Set<string>();
   const reachableSteps = new Set<string>();
+  const reachedEndings = new Set<string>();
+  const winningOutcome = new Set((world.solution.endings ?? [])
+    .filter(({ outcome }) => outcome === 'win').map(({ id }) => id));
+  const decisions = world.solution.steps.filter(isDecision);
+  // Links each searched state to the states it leads to, to find any that can't win.
+  const parents: (string | null)[] = [null];
+  const ledFrom = new Map<string, string[]>();
+  const winningKeys: string[] = [];
   let winnable = false;
+  const enqueue = (next: SearchState, parentKey: string): boolean => {
+    // Count every state created, including repeats, so both work and memory stay capped.
+    if (statesCreated >= MAX_SEARCH_STATES) return false;
+    statesCreated++;
+    queue.push(next);
+    parents.push(parentKey);
+    return true;
+  };
 
   for (let index = 0; index < queue.length; index++) {
     const state = queue[index];
     const area = settleArea(world, state, links);
     const key = stateKey(area[0], state);
+    const parentKey = parents[index];
+    if (parentKey !== null && world.version === 2) {
+      const sources = ledFrom.get(key);
+      if (sources) sources.push(parentKey);
+      else ledFrom.set(key, [parentKey]);
+    }
     if (seen.has(key)) continue;
     seen.add(key);
     for (const id of state.stepsDone) reachableSteps.add(id);
     const goal = world.solution.goal;
-    if (area.includes(goal.placeId) && meetsConditions(state, goal.conditions)) {
-      winnable = true;
-    }
+    let wins = area.includes(goal.placeId) && meetsConditions(state, goal.conditions);
     const inArea = new Set(area);
+    for (const step of decisions) {
+      if (!inArea.has(step.placeId) || !canTakeStep(world, state, step)) continue;
+      const chosen = copyState(state, step.placeId);
+      const endingId = completeStep(chosen, step);
+      if (endingId === undefined) {
+        if (!enqueue(chosen, key)) return { winnable: false, tooLarge: true };
+        continue;
+      }
+      // An ending stops the adventure, so there is no later state to search.
+      reachableSteps.add(step.id);
+      reachedEndings.add(endingId);
+      if (winningOutcome.has(endingId)) wins = true;
+    }
+    if (wins) {
+      winnable = true;
+      winningKeys.push(key);
+    }
     for (const placeId of area) {
       for (const exit of links.outgoing.get(placeId)!) {
         if (!isOpen(state, exit) || inArea.has(exit.toPlaceId)) continue;
-        // Count every state created, including repeats, so both work and memory stay capped.
-        if (statesCreated >= MAX_SEARCH_STATES) return { winnable: false, tooLarge: true };
-        statesCreated++;
-        queue.push({
-          placeId: exit.toPlaceId,
-          itemsHeld: new Set(state.itemsHeld),
-          placesVisited: new Set(state.placesVisited),
-          stepsDone: new Set(state.stepsDone),
-          cluesRevealed: new Set(state.cluesRevealed),
-          unlockedExits: new Set(state.unlockedExits),
-        });
+        if (!enqueue(copyState(state, exit.toPlaceId), key)) return { winnable: false, tooLarge: true };
       }
     }
   }
 
+  const unreachableStepIds = world.solution.steps
+    .filter((step) => !reachableSteps.has(step.id)).map((step) => step.id);
+  if (world.version === 1) return { winnable, unreachableStepIds };
+
+  const canStillWin = new Set(winningKeys);
+  for (const key of canStillWin) {
+    for (const parentKey of ledFrom.get(key) ?? []) canStillWin.add(parentKey);
+  }
   return {
     winnable,
-    unreachableStepIds: world.solution.steps
-      .filter((step) => !reachableSteps.has(step.id)).map((step) => step.id),
+    unreachableStepIds,
+    reachableEndingIds: (world.solution.endings ?? [])
+      .filter(({ id }) => reachedEndings.has(id)).map(({ id }) => id),
+    canGetStuck: canStillWin.size < seen.size,
   };
 }

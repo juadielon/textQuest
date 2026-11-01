@@ -119,8 +119,10 @@ keeps its original 27 worlds, share words, content and saved-command replay.
 Authored command names remain disabled in both versions; their save
 compatibility is separate work in
 [issue #56](https://github.com/juadielon/textQuest/issues/56).
-The current rules only add progress; mutually exclusive
-choices will need later rules and their own checks.
+The current rules only add progress. World format version 2 rules and checks
+for mutually exclusive choices and early win or failure endings are prepared
+([issue #79](https://github.com/juadielon/textQuest/issues/79)), but no
+adventure generates them and play does not accept them yet.
 
 ### 5. Commands and recovery
 

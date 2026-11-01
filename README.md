@@ -192,6 +192,20 @@ paths. Places the player can walk to and back from are checked together as
 one area, because visiting them all only adds progress. Choices between
 one-way paths still create separate routes.
 
+[Issue #79](https://github.com/juadielon/textQuest/issues/79) prepares world
+format version 2 for consequential choices. Steps that share a `choiceId` are
+mutually exclusive: once one is done, the others can never be done. A step
+can also end the adventure early with an `end-adventure` effect naming one of
+the world's `endings`, each a `win` or a `failure`. Version 1 worlds reject
+these fields, so released worlds, share words, saves and replays are
+unchanged. The checker tries each choice and ending separately. For version 2
+it also returns `reachableEndingIds` and `canGetStuck`, which is true when a
+route reaches a point where the player can no longer win. The point just
+before a failure must still be able to win, so recovery from it works. No
+released adventure generates version 2 worlds, and play refuses them until it
+supports choices and checkpoint recovery
+([issue #82](https://github.com/juadielon/textQuest/issues/82)).
+
 [Issue #16](https://github.com/juadielon/textQuest/issues/16) limits the
 search to `MAX_SEARCH_STATES` (10,000) states, so a large world cannot freeze
 the page. A world that needs more returns `{ winnable: false, tooLarge: true }`
