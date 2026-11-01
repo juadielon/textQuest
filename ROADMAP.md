@@ -176,9 +176,9 @@ saves listed and resume one by replaying its commands. Delete asks first, and
 unreadable saves are listed and kept. Export downloads a JSON file. Import
 validates files and adds a new save without overwriting others; bad files and
 storage problems show clear messages.
-The list shows Last saved; actual last-played
-tracking remains unfinished under issue #43 and requires safe separate metadata
-handling without changing stored progress on Resume.
+The list shows Last played and Last saved, most recently played first. Last
+played is kept in separate browser metadata, so Resume and play never change
+stored progress or exported files.
 
 ### 7. Browser game
 

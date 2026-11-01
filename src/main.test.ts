@@ -4,8 +4,8 @@ import * as adventureSettings from './adventure-settings';
 import { discoveredTargets, replayCommands, startPlay } from './engine/play';
 import { generateAdventureWorld } from './generate-world';
 import { describePlay, playScreenTitle, unplayableMessage } from './play-screen';
-import { createSave, createSaveStore, SAVE_KEY_PREFIX } from './saves';
-import { SAVE_LOCK_NAME } from './saves-screen';
+import { createSave, createSaveStore, PLAYED_KEY_PREFIX, SAVE_KEY_PREFIX } from './saves';
+import { formatSaveTime, SAVE_LOCK_NAME } from './saves-screen';
 import { summariseAdventure } from './start-screen-model';
 
 let app: HTMLElement;
@@ -219,10 +219,14 @@ it.each([1, 2])('saves, exports, imports and resumes version %i from a share lin
   for (const [key, value] of before) expect(localStorage.getItem(key)).toBe(value);
   expect(app.querySelectorAll('.save-item')).toHaveLength(2);
   expect(document.activeElement).toBe(get('#import-status'));
-  const importedKey = Object.keys(localStorage).find((key) => !before.has(key))!;
-  // Save IDs also settle timestamp ties, so find the imported entry by its heading.
-  get<HTMLHeadingElement>(`#save-${importedKey.slice(SAVE_KEY_PREFIX.length)}`)
-    .closest('.save-item')!.querySelector<HTMLButtonElement>('button')!.click();
+  const imported = createSaveStore(localStorage).list()
+    .find((entry) => entry.status === 'ready' && entry.name === 'My trip' && !entry.lastPlayedAt);
+  if (!imported) throw new Error('Missing imported save');
+  const importedTitle = document.getElementById(`save-${imported.id}`);
+  const resumeImported = importedTitle?.closest('.save-item')
+    ?.querySelector<HTMLButtonElement>('button[aria-label^="Resume:"]');
+  if (!resumeImported) throw new Error('Missing imported save');
+  resumeImported.click();
 
   expect(shownDetails()['Share word']).toBe(word);
   const view = describePlay(world, replayCommands(world, commands));
@@ -246,7 +250,7 @@ it.each([1, 2])('saves, exports, imports and resumes version %i from a share lin
   get<HTMLButtonElement>('#open-saves').click();
   expect(app.querySelectorAll('.save-item')).toHaveLength(2);
   for (const [key, value] of before) expect(localStorage.getItem(key)).toBe(value);
-  expect(request).toHaveBeenCalledTimes(2);
+  expect(request).toHaveBeenCalledTimes(5);
   const key = localStorage.key(0)!;
   const saved = localStorage.getItem(key);
 
@@ -257,8 +261,10 @@ it.each([1, 2])('saves, exports, imports and resumes version %i from a share lin
   expect(localStorage.getItem(key)).toBe(saved);
   get<HTMLButtonElement>('header button').click();
   get<HTMLButtonElement>('#open-saves').click();
-  get<HTMLHeadingElement>(`#save-${importedKey.slice(SAVE_KEY_PREFIX.length)}`)
-    .closest('.save-item')!.querySelector<HTMLButtonElement>('button')!.click();
+  const secondResumeImported = document.getElementById(`save-${imported.id}`)
+    ?.closest('.save-item')?.querySelector<HTMLButtonElement>('button[aria-label^="Resume:"]');
+  if (!secondResumeImported) throw new Error('Missing imported save');
+  secondResumeImported.click();
   expect([...app.querySelectorAll('.play-typed')].map((node) => node.textContent))
     .toEqual([...commands, 'inventory'].map((command) => `> ${command}`));
 });
@@ -397,6 +403,7 @@ it('retains the conflict and play session until both queued saves have finished'
   const id = store.add(saved);
   get<HTMLButtonElement>('#open-saves').click();
   get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+  waiting.shift()!();
   const form = get<HTMLFormElement>('.save-form');
   form.requestSubmit();
   form.requestSubmit();
@@ -559,6 +566,7 @@ it('reports an older conflict after name correction and skips the pre-warning qu
   const id = store.add(saved);
   get<HTMLButtonElement>('#open-saves').click();
   get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+  waiting.shift()!();
   const form = get<HTMLFormElement>('.save-form');
   form.requestSubmit();
   const name = get<HTMLInputElement>('#save-name');
@@ -588,20 +596,498 @@ async function openLink(word: string, path = '/textQuest/'): Promise<void> {
   await import('./main');
 }
 
-it('labels the stored timestamp Last saved without writing metadata on Resume or unsaved play', () => {
+it('records Last played on Resume and each command without changing the stored save', async () => {
+  // Like Web Locks shared by every tab: tasks run one at a time, later, in order.
+  let queue: Promise<unknown> = Promise.resolve();
+  const request = vi.fn((_name: string, task: () => unknown) => (queue = queue.then(task)));
+  Object.defineProperty(navigator, 'locks', { configurable: true, value: { request } });
+  const store = createSaveStore(localStorage);
+  const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
+  const id = store.add(saved);
+  const text = localStorage.getItem(SAVE_KEY_PREFIX + id);
+  get<HTMLButtonElement>('#open-saves').click();
+  expect(shownDetails()['Last played']).toBe('Not recorded');
+  expect(shownDetails()['Last saved']).toBe(formatSaveTime(saved.updatedAt));
+
+  const times = [new Date('2026-10-05T01:00:00.000Z'), new Date('2026-10-05T02:00:00.000Z')];
+  vi.useFakeTimers({ toFake: ['Date'], now: times[0] });
+  try {
+    get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+    // Written under the lock every tab shares, never straight away.
+    expect(localStorage.getItem(PLAYED_KEY_PREFIX + id)).toBeNull();
+    await queue;
+    expect(localStorage.getItem(PLAYED_KEY_PREFIX + id)).toBe(times[0].toISOString());
+    vi.setSystemTime(times[1]);
+    get<HTMLInputElement>('#play-command').value = 'look';
+    get<HTMLFormElement>('.play-command').requestSubmit();
+    await queue;
+    expect(localStorage.getItem(PLAYED_KEY_PREFIX + id)).toBe(times[1].toISOString());
+    expect(request.mock.calls.map(([name]) => name)).toEqual([SAVE_LOCK_NAME, SAVE_LOCK_NAME]);
+  } finally {
+    vi.useRealTimers();
+  }
+  get<HTMLButtonElement>('header button').click();
+  get<HTMLButtonElement>('#open-saves').click();
+
+  expect(localStorage.getItem(SAVE_KEY_PREFIX + id)).toBe(text);
+  expect(store.load(id)).toEqual(saved);
+  expect(shownDetails()['Last played']).toBe(formatSaveTime(times[1].toISOString()));
+  expect(shownDetails()['Last saved']).toBe(formatSaveTime(saved.updatedAt));
+});
+
+it('records play for a new save once saved, and stops after a conflict', async () => {
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: async (_name: string, task: () => void) => { task(); } },
+  });
+  openAdventure(adventureSettings.encodeShareWord(settings));
+  const play = (command: string) => {
+    get<HTMLInputElement>('#play-command').value = command;
+    get<HTMLFormElement>('.play-command').requestSubmit();
+  };
+  play('look');
+  expect(localStorage.length).toBe(0);
+  get<HTMLFormElement>('.save-form').requestSubmit();
+  await vi.waitFor(() => expect(get('#save-status').textContent).toContain('Saved'));
+  const store = createSaveStore(localStorage);
+  const [{ id }] = store.list();
+  play('inventory');
+  const recorded = localStorage.getItem(PLAYED_KEY_PREFIX + id);
+  expect(recorded).not.toBeNull();
+
+  const stored = store.load(id);
+  store.put(id, { ...stored, name: 'Other tab' });
+  localStorage.removeItem(PLAYED_KEY_PREFIX + id);
+  get<HTMLFormElement>('.save-form').requestSubmit();
+  await vi.waitFor(() => expect(get('#save-status').textContent).toContain('changed'));
+  play('look');
+  expect(localStorage.getItem(PLAYED_KEY_PREFIX + id)).toBeNull();
+  expect(store.load(id).name).toBe('Other tab');
+});
+
+it('records the latest play time on a new save immediately after a conflict', async () => {
+  const resumedAt = new Date('2026-10-05T01:00:00.000Z');
+  const playedAt = new Date('2026-10-05T02:00:00.000Z');
+  const copiedAt = new Date('2026-10-05T03:00:00.000Z');
+  vi.useFakeTimers({ toFake: ['Date'], now: resumedAt });
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: async (_name: string, task: () => void) => { task(); } },
+  });
+  try {
+    const store = createSaveStore(localStorage);
+    const saved = createSave('My trip', settings, [], resumedAt);
+    const id = store.add(saved);
+    get<HTMLButtonElement>('#open-saves').click();
+    get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+
+    vi.setSystemTime(playedAt);
+    get<HTMLInputElement>('#play-command').value = 'look';
+    get<HTMLFormElement>('.play-command').requestSubmit();
+    const timeBeforeConflict = localStorage.getItem(PLAYED_KEY_PREFIX + id);
+    store.put(id, { ...saved, name: 'Other tab' });
+    get<HTMLFormElement>('.save-form').requestSubmit();
+    await vi.waitFor(() => expect(get('#save-status').textContent).toContain('changed'));
+
+    vi.setSystemTime(copiedAt);
+    get<HTMLFormElement>('.save-form').requestSubmit();
+    const copy = store.list().find((entry) => entry.id !== id);
+
+    expect(copy).toMatchObject({ status: 'ready', lastPlayedAt: playedAt.toISOString() });
+    expect(localStorage.getItem(PLAYED_KEY_PREFIX + id)).toBe(timeBeforeConflict);
+    expect(store.load(id).name).toBe('Other tab');
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('clears only the deleted-save warning after recovery as a new save', async () => {
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: async (_name: string, task: () => void) => { task(); } },
+  });
+  const store = createSaveStore(localStorage);
+  const deletedId = store.add(createSave('Deleted', settings, [], new Date('2026-10-01T09:00:00.000Z')));
+  const otherId = store.add(createSave('Other', settings, [], new Date('2026-10-02T09:00:00.000Z')));
+  get<HTMLButtonElement>('#open-saves').click();
+  const originalSetItem = localStorage.setItem.bind(localStorage);
+  const failedWrite = vi.spyOn(localStorage, 'setItem').mockImplementation((key, value) => {
+    if (key === PLAYED_KEY_PREFIX + otherId) throw new DOMException('blocked', 'SecurityError');
+    originalSetItem(key, value);
+  });
+  try {
+    get<HTMLButtonElement>('button[aria-label="Resume: Other"]').click();
+    expect(get('#play-tracking-status').textContent).toContain('Last played time could not be recorded');
+  } finally {
+    failedWrite.mockRestore();
+  }
+
+  get<HTMLButtonElement>('header button').click();
+  get<HTMLButtonElement>('#open-saves').click();
+  get<HTMLButtonElement>('button[aria-label="Resume: Deleted"]').click();
+  store.remove(deletedId);
+  get<HTMLInputElement>('#play-command').value = 'look';
+  get<HTMLFormElement>('.play-command').requestSubmit();
+  expect(get('#play-tracking-status').textContent).toContain('This save was deleted in another tab');
+  get<HTMLFormElement>('.save-form').requestSubmit();
+  await vi.waitFor(() => expect(get('#save-status').textContent).toContain('deleted'));
+  get<HTMLFormElement>('.save-form').requestSubmit();
+
+  expect(get('#play-tracking-status').textContent).toContain('Last played time could not be recorded');
+  expect(get('#play-tracking-status').textContent).not.toContain('This save was deleted in another tab');
+  const recovered = store.list().find((entry) => entry.id !== otherId);
+  expect(recovered).toMatchObject({ status: 'ready', lastPlayedAt: expect.any(String) });
+});
+
+it('does not record a queued command after the save changes while the lock waits', () => {
+  const waiting: (() => void)[] = [];
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: (_name: string, task: () => void) => new Promise<void>((resolve) => {
+      waiting.push(() => { task(); resolve(); });
+    }) },
+  });
   const store = createSaveStore(localStorage);
   const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
   const id = store.add(saved);
   get<HTMLButtonElement>('#open-saves').click();
-  expect(get('.save-item dl').textContent).toContain('Last saved');
-  expect(get('.save-item dl').textContent).not.toContain('Last played');
+  get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+  waiting.shift()!();
+  localStorage.removeItem(PLAYED_KEY_PREFIX + id);
+
+  get<HTMLFormElement>('.save-form').requestSubmit();
+  get<HTMLInputElement>('#play-command').value = 'look';
+  get<HTMLFormElement>('.play-command').requestSubmit();
+  const changed = { ...saved, name: 'Other tab', commands: ['north'] };
+  store.put(id, changed);
+  waiting.shift()!();
+  waiting.shift()!();
+
+  expect(store.load(id)).toEqual(changed);
+  expect(localStorage.getItem(PLAYED_KEY_PREFIX + id)).toBeNull();
+});
+
+it('keeps a command played while the first save waits for its lock', () => {
+  const waiting: (() => void)[] = [];
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: (_name: string, task: () => void) => new Promise<void>((resolve) => {
+      waiting.push(() => { task(); resolve(); });
+    }) },
+  });
+  const first = new Date('2026-10-05T01:00:00.000Z');
+  const second = new Date('2026-10-05T02:00:00.000Z');
+  vi.useFakeTimers({ toFake: ['Date'], now: first });
+  try {
+    openAdventure(adventureSettings.encodeShareWord(settings));
+    const play = (command: string) => {
+      get<HTMLInputElement>('#play-command').value = command;
+      get<HTMLFormElement>('.play-command').requestSubmit();
+    };
+    play('look');
+    vi.setSystemTime(new Date('2026-10-05T01:30:00.000Z'));
+    get<HTMLFormElement>('.save-form').requestSubmit();
+    vi.setSystemTime(second);
+    play('inventory');
+    expect(localStorage.length).toBe(0);
+
+    waiting.shift()!();
+    waiting.shift()!();
+
+    const store = createSaveStore(localStorage);
+    const [entry] = store.list();
+    expect(entry.status).toBe('ready');
+    if (entry.status !== 'ready') throw new Error('Expected the new save to be readable.');
+    expect(entry.lastPlayedAt).toBe(second.toISOString());
+    expect(store.load(entry.id).commands).toEqual(['look']);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('does not record queued play time when the first save fails', () => {
+  const waiting: (() => void)[] = [];
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: (_name: string, task: () => void) => new Promise<void>((resolve) => {
+      waiting.push(() => { task(); resolve(); });
+    }) },
+  });
+  openAdventure(adventureSettings.encodeShareWord(settings));
+  const play = (command: string) => {
+    get<HTMLInputElement>('#play-command').value = command;
+    get<HTMLFormElement>('.play-command').requestSubmit();
+  };
+  play('look');
+  get<HTMLFormElement>('.save-form').requestSubmit();
+  play('inventory');
+  const write = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+    throw new DOMException('full', 'QuotaExceededError');
+  });
+  try {
+    waiting.shift()!();
+    expect(localStorage.length).toBe(0);
+    expect(get('#save-status').textContent).toContain('no room left');
+    expect(get('.play-log').children).toHaveLength(2);
+  } finally {
+    write.mockRestore();
+  }
+});
+
+it('refreshes the reopened saves list when a queued Resume time is recorded', () => {
+  const waiting: (() => void)[] = [];
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: (_name: string, task: () => void) => new Promise<void>((resolve) => {
+      waiting.push(() => { task(); resolve(); });
+    }) },
+  });
+  const store = createSaveStore(localStorage);
+  const first = store.add(createSave('First', settings, [], new Date('2026-10-01T09:00:00.000Z')));
+  const second = store.add(createSave('Second', settings, [], new Date('2026-10-02T09:00:00.000Z')));
+  get<HTMLButtonElement>('#open-saves').click();
+  const initialOrder = [...app.querySelectorAll('.save-item h2')].map((node) => node.textContent!);
+  const playedName = initialOrder[1]!;
+  const otherName = initialOrder[0]!;
+  get<HTMLButtonElement>(`button[aria-label="Resume: ${playedName}"]`).click();
+  get<HTMLButtonElement>('header button').click();
+  get<HTMLButtonElement>('#open-saves').click();
+  const focused = get<HTMLButtonElement>(`button[aria-label="Delete: ${otherName}"]`);
+  focused.focus();
+  expect([...app.querySelectorAll('.save-item h2')].map((node) => node.textContent)).toEqual(initialOrder);
+
+  waiting.shift()!();
+
+  expect([...app.querySelectorAll('.save-item h2')].map((node) => node.textContent)).toEqual([playedName, otherName]);
+  expect(document.activeElement?.getAttribute('aria-label')).toBe(`Delete: ${otherName}`);
+  expect(store.list()[0]).toMatchObject({ id: playedName === 'First' ? first : second, lastPlayedAt: expect.any(String) });
+});
+
+it.each(['start', 'saves', 'another play'])(
+  'reports a queued Last played failure on the current %s screen without replacing other statuses',
+  (destination) => {
+    const waiting: (() => void)[] = [];
+    Object.defineProperty(navigator, 'locks', {
+      configurable: true,
+      value: {
+        request: (_name: string, task: () => void) => new Promise<void>((resolve) => {
+          waiting.push(() => { task(); resolve(); });
+        }),
+      },
+    });
+    const store = createSaveStore(localStorage);
+    const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
+    const id = store.add(saved);
+    get<HTMLButtonElement>('#open-saves').click();
+    get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+    get<HTMLButtonElement>('header button').click();
+
+    if (destination === 'saves') {
+      get<HTMLButtonElement>('#open-saves').click();
+    } else if (destination === 'another play') {
+      openAdventure(adventureSettings.encodeShareWord(settings));
+      get<HTMLInputElement>('#play-command').value = 'look';
+      get<HTMLFormElement>('.play-command').requestSubmit();
+    } else {
+      get<HTMLInputElement>('#share-word').value = 'not-a-share-word';
+      get<HTMLFormElement>('#open-share-word').requestSubmit();
+    }
+
+    const otherStatus = destination === 'start'
+      ? get('#share-word-error')
+      : destination === 'saves'
+        ? get('#saves-status')
+        : get('.share-link [role="status"]');
+    if (destination !== 'start') otherStatus.textContent = 'An earlier screen message.';
+    const previousMessage = otherStatus.textContent;
+    const originalSetItem = localStorage.setItem.bind(localStorage);
+    const write = vi.spyOn(localStorage, 'setItem').mockImplementation((key, value) => {
+      if (key === PLAYED_KEY_PREFIX + id) throw new DOMException('blocked', 'SecurityError');
+      originalSetItem(key, value);
+    });
+    try {
+      waiting.shift()!();
+
+      expect(get('#play-tracking-status').textContent)
+        .toContain('Last played time could not be recorded');
+      expect(otherStatus.textContent).toBe(previousMessage);
+      expect(app.querySelector('h1')?.textContent).toBe(
+        destination === 'start' ? 'textQuest' : destination === 'saves' ? 'Your saves' : playScreenTitle,
+      );
+    } finally {
+      write.mockRestore();
+    }
+  },
+);
+
+it('reports a queued lock rejection after navigation without replacing other statuses', async () => {
+  let reject!: (error: DOMException) => void;
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: {
+      request: () => new Promise<void>((_resolve, fail) => { reject = fail; }),
+    },
+  });
+  const store = createSaveStore(localStorage);
+  const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
+  store.add(saved);
+  get<HTMLButtonElement>('#open-saves').click();
+  get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+  get<HTMLButtonElement>('header button').click();
+  get<HTMLInputElement>('#share-word').value = 'not-a-share-word';
+  get<HTMLFormElement>('#open-share-word').requestSubmit();
+  const shareError = get('#share-word-error').textContent;
+
+  reject(new DOMException('blocked', 'SecurityError'));
+  await vi.waitFor(() => expect(get('#play-tracking-status').textContent)
+    .toContain('Last played time could not be recorded'));
+
+  expect(get('#share-word-error').textContent).toBe(shareError);
+  expect(get('h1').textContent).toBe('textQuest');
+});
+
+it('reports when a save disappears before its queued Last played write runs', () => {
+  const waiting: (() => void)[] = [];
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: {
+      request: (_name: string, task: () => void) => new Promise<void>((resolve) => {
+        waiting.push(() => { task(); resolve(); });
+      }),
+    },
+  });
+  const store = createSaveStore(localStorage);
+  const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
+  const id = store.add(saved);
+  get<HTMLButtonElement>('#open-saves').click();
+  get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+  store.remove(id);
+
+  waiting.shift()!();
+
+  expect(get('#play-tracking-status').textContent)
+    .toContain('This save was deleted in another tab');
+  expect(get('#play-tracking-status').textContent).not.toContain('Your save is safe');
+  get<HTMLInputElement>('#play-command').value = 'look';
+  get<HTMLFormElement>('.play-command').requestSubmit();
+  waiting.shift()!();
+  expect(get('.play-log').children).toHaveLength(1);
+  expect(localStorage.getItem(PLAYED_KEY_PREFIX + id)).toBeNull();
+});
+
+it('keeps playing when the browser cannot record Last played', () => {
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: async (_name: string, task: () => void) => { task(); } },
+  });
+  const store = createSaveStore(localStorage);
+  const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
+  const id = store.add(saved);
+  get<HTMLButtonElement>('#open-saves').click();
+  const write = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+    throw new DOMException('full', 'QuotaExceededError');
+  });
+  try {
+    get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+    get<HTMLInputElement>('#play-command').value = 'look';
+    get<HTMLFormElement>('.play-command').requestSubmit();
+
+    expect(get('h1').textContent).toBe(playScreenTitle);
+    expect([...app.querySelectorAll('.play-typed')].map((node) => node.textContent)).toEqual(['> look']);
+    expect(localStorage.getItem(PLAYED_KEY_PREFIX + id)).toBeNull();
+    expect(store.load(id)).toEqual(saved);
+    expect(get('.hint[role="status"]').textContent).toContain('Last played time could not be recorded');
+  } finally {
+    write.mockRestore();
+  }
+});
+
+it('keeps playing without Web Locks and announces that Last played is unavailable', () => {
+  const store = createSaveStore(localStorage);
+  const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
+  const id = store.add(saved);
+  get<HTMLButtonElement>('#open-saves').click();
   get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
   get<HTMLInputElement>('#play-command').value = 'look';
   get<HTMLFormElement>('.play-command').requestSubmit();
-  get<HTMLButtonElement>('header button').click();
-  get<HTMLButtonElement>('#open-saves').click();
+
+  expect(get('h1').textContent).toBe(playScreenTitle);
+  expect([...app.querySelectorAll('.play-typed')].map((node) => node.textContent)).toEqual(['> look']);
+  expect(localStorage.getItem(PLAYED_KEY_PREFIX + id)).toBeNull();
   expect(store.load(id)).toEqual(saved);
-  expect(get('.save-item dl').textContent).toContain('Last saved');
+  expect(store.list()[0]).not.toHaveProperty('lastPlayedAt');
+  expect(get('.hint[role="status"]').textContent).toContain('Last played time could not be recorded');
+});
+
+it.each(['unavailable', 'throws'] as const)(
+  'announces a synchronous Resume tracking failure while its live region is mounted (%s)',
+  (lockMode) => {
+    const store = createSaveStore(localStorage);
+    store.add(createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z')));
+    if (lockMode === 'throws') {
+      Object.defineProperty(navigator, 'locks', {
+        configurable: true,
+        value: { request: () => { throw new DOMException('blocked', 'SecurityError'); } },
+      });
+    }
+    get<HTMLButtonElement>('#open-saves').click();
+    const setText = vi.spyOn(Element.prototype, 'textContent', 'set');
+
+    get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+
+    const trackingStatus = get('#play-tracking-status');
+    expect(trackingStatus.textContent).toContain('Last played time could not be recorded');
+    const statusWrites = setText.mock.contexts.filter(
+      (context): context is Element => context instanceof Element && context.id === trackingStatus.id,
+    );
+    expect(statusWrites.length).toBeGreaterThan(0);
+    expect(statusWrites.every((element) => element.isConnected)).toBe(true);
+  },
+);
+
+it('deduplicates displayed tracking warnings while retaining them per save', () => {
+  const store = createSaveStore(localStorage);
+  const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
+  store.add(saved);
+  store.add({ ...saved, name: 'Other trip' });
+  get<HTMLButtonElement>('#open-saves').click();
+  get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+  get<HTMLButtonElement>('button').click();
+  get<HTMLButtonElement>('#open-saves').click();
+  get<HTMLButtonElement>('button[aria-label="Resume: Other trip"]').click();
+
+  const status = get('#play-tracking-status').textContent ?? '';
+  expect(status.match(/Last played time could not be recorded/g)).toHaveLength(1);
+
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: async (_name: string, task: () => void) => { task(); } },
+  });
+  get<HTMLButtonElement>('button').click();
+  get<HTMLButtonElement>('#open-saves').click();
+  get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+
+  const remainingWarning = get('#play-tracking-status').textContent ?? '';
+  expect(remainingWarning.match(/Last played time could not be recorded/g)).toHaveLength(1);
+});
+
+it('announces a rejected play-time lock without stopping play', async () => {
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: () => Promise.reject(new DOMException('blocked', 'SecurityError')) },
+  });
+  const store = createSaveStore(localStorage);
+  const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
+  const id = store.add(saved);
+  get<HTMLButtonElement>('#open-saves').click();
+  get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+  await vi.waitFor(() => expect(get('.hint[role="status"]').textContent).toContain('Last played time could not be recorded'));
+  get<HTMLInputElement>('#play-command').value = 'look';
+  get<HTMLFormElement>('.play-command').requestSubmit();
+
+  expect([...app.querySelectorAll('.play-typed')].map((node) => node.textContent)).toEqual(['> look']);
+  expect(store.load(id)).toEqual(saved);
+  expect(store.list()[0]).not.toHaveProperty('lastPlayedAt');
 });
 
 it.each([1, 2])('opens version %i links in fresh play for all genres and lengths', async (version) => {
@@ -645,7 +1131,7 @@ it('copies the link and announces success without including any progress', async
   get<HTMLInputElement>('#play-command').value = 'look';
   get<HTMLFormElement>('.play-command').requestSubmit();
   get<HTMLButtonElement>('.share-link button').click();
-  await vi.waitFor(() => expect(get('[role="status"]').textContent).toBe('Adventure link copied.'));
+  await vi.waitFor(() => expect(get('.share-link [role="status"]').textContent).toBe('Adventure link copied.'));
   expect(writeText).toHaveBeenCalledExactlyOnceWith(originalLink);
   const link = new URL(originalLink);
   expect(link.pathname).toBe('/games/textQuest/index.html');
@@ -673,7 +1159,7 @@ it.each(['missing', 'denied'] as const)('offers an accessible manual link when c
   expect(get('label[for="adventure-link"]').textContent).toBe('Adventure link');
   expect(link.getAttribute('aria-describedby')).toBe('adventure-link-hint');
   get<HTMLButtonElement>('.share-link button').click();
-  await vi.waitFor(() => expect(get('[role="status"]').textContent).toContain('Could not copy'));
+  await vi.waitFor(() => expect(get('.share-link [role="status"]').textContent).toContain('Could not copy'));
   expect(document.activeElement).toBe(link);
   expect(link.selectionStart).toBe(0);
   expect(link.selectionEnd).toBe(link.value.length);

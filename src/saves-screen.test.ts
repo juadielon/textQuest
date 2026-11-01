@@ -2,25 +2,42 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAdventureSettings, type RandomValueSource } from './adventure-settings';
 import {
-  createSave, createSaveStore, MAX_SAVE_FILE_LENGTH, SAVE_KEY_PREFIX, SaveError, type SaveStore, type StorageLike,
+  createSave, createSaveStore, MAX_SAVE_FILE_LENGTH, PLAYED_KEY_PREFIX,
+  SAVE_KEY_PREFIX, SaveError, type SaveStore, type StorageLike,
 } from './saves';
 import {
-  buildSaveForm, formatLastSaved, noLocksMessage, noSavesMessage, renderSavesScreen, SAVE_LOCK_NAME,
-  saveNameMessage, type SaveLocks,
+  buildSaveForm, formatSaveTime, noLocksMessage, noSavesMessage, recordPlayed, renderSavesScreen,
+  SAVE_LOCK_NAME, saveNameMessage, type SaveLocks,
 } from './saves-screen';
 import { genreLabels, lengthLabels } from './start-screen-model';
 
 class MemoryStorage implements StorageLike {
   readonly items = new Map<string, string>();
   failWrites = false;
-  get length() { return this.items.size; }
+  failRemoveKey: string | null = null;
+  failListAfterRemove = false;
+  failList = false;
+  failReadKey: string | null = null;
+  get length() {
+    if (this.failList) throw new DOMException('blocked', 'SecurityError');
+    return this.items.size;
+  }
   key(index: number) { return [...this.items.keys()][index] ?? null; }
-  getItem(key: string) { return this.items.get(key) ?? null; }
+  getItem(key: string) {
+    if (key === this.failReadKey) throw new DOMException('blocked', 'SecurityError');
+    return this.items.get(key) ?? null;
+  }
   setItem(key: string, value: string) {
     if (this.failWrites) throw Object.assign(new Error('full'), { name: 'QuotaExceededError' });
     this.items.set(key, value);
   }
-  removeItem(key: string) { this.items.delete(key); }
+  removeItem(key: string) {
+    if (key === this.failRemoveKey) {
+      if (this.failListAfterRemove) this.failList = true;
+      throw new DOMException('blocked', 'SecurityError');
+    }
+    this.items.delete(key);
+  }
 }
 
 // Counts up, so new save IDs are predictable.
@@ -66,11 +83,118 @@ const texts = (selector: string) => [...app.querySelectorAll(selector)].map((nod
 const buttonNamed = (name: string) =>
   app.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)!;
 
-describe('formatLastSaved', () => {
+describe('formatSaveTime', () => {
   it('shows a readable Australian date and time', () => {
-    expect(formatLastSaved(later.toISOString())).toBe(
+    expect(formatSaveTime(later.toISOString())).toBe(
       new Intl.DateTimeFormat('en-AU', { dateStyle: 'medium', timeStyle: 'short' }).format(later),
     );
+  });
+});
+
+describe('recordPlayed', () => {
+  const firstPlay = new Date('2026-10-05T01:00:00.000Z');
+  const secondPlay = new Date('2026-10-05T02:00:00.000Z');
+  const addSave = () => store.add(createSave('Trip', settings, [], earlier));
+  const playedTime = (id: string) => storage.items.get(PLAYED_KEY_PREFIX + id);
+  function holdLock() {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    void lock.request(SAVE_LOCK_NAME, () => held);
+    return release;
+  }
+
+  it('writes the time it was called under the lock every tab shares', async () => {
+    const id = addSave();
+    const result = vi.fn();
+    recordPlayed(store, id, { now: firstPlay, locks: lock.locks, onResult: result });
+    expect(lock.request).toHaveBeenCalledWith(SAVE_LOCK_NAME, expect.any(Function));
+    expect(playedTime(id)).toBeUndefined();
+    await lock.settled();
+    expect(playedTime(id)).toBe(firstPlay.toISOString());
+    expect(result).toHaveBeenCalledWith('recorded');
+  });
+
+  it('cannot move the time back when another tab records a later play at the same moment', async () => {
+    // Regression: two tabs could both read the old time, then the earlier write could land last.
+    const id = addSave();
+    const release = holdLock();
+    const markPlayed = vi.spyOn(store, 'markPlayed');
+    recordPlayed(store, id, { now: secondPlay, locks: lock.locks });
+    recordPlayed(store, id, { now: firstPlay, locks: lock.locks });
+    await Promise.resolve();
+    expect(markPlayed).not.toHaveBeenCalled();
+    release();
+    await lock.settled();
+    expect(markPlayed).toHaveBeenCalledTimes(2);
+    expect(playedTime(id)).toBe(secondPlay.toISOString());
+  });
+
+  it('leaves no time behind for a save deleted in another tab while it waited', async () => {
+    const id = addSave();
+    const [listed] = store.list();
+    const release = holdLock();
+    void lock.locks.request(SAVE_LOCK_NAME, () => createSaveStore(storage).remove(id, listed.snapshot));
+    recordPlayed(store, id, { now: firstPlay, locks: lock.locks });
+    release();
+    await lock.settled();
+    expect(storage.items.size).toBe(0);
+  });
+
+  it('reports a save deleted before its queued play-time write runs', async () => {
+    const id = addSave();
+    const result = vi.fn();
+    let run!: () => void;
+    const delayed = {
+      request: vi.fn((_name: string, task: () => void) => new Promise<void>((resolve) => {
+        run = () => { task(); resolve(); };
+      })),
+    } as unknown as SaveLocks;
+    recordPlayed(store, id, { now: firstPlay, locks: delayed, onResult: result });
+    store.remove(id);
+
+    run();
+
+    expect(result).toHaveBeenCalledWith('missing');
+    expect(storage.items.has(PLAYED_KEY_PREFIX + id)).toBe(false);
+  });
+
+  it('keeps progress changed in another tab while the play time waits for the lock', async () => {
+    const id = addSave();
+    const updated = createSave('Changed elsewhere', settings, ['look'], later);
+    const release = holdLock();
+    void lock.locks.request(SAVE_LOCK_NAME, () => store.put(id, updated));
+    recordPlayed(store, id, { now: firstPlay, locks: lock.locks });
+    release();
+    await lock.settled();
+    expect(store.load(id)).toEqual(updated);
+    expect(playedTime(id)).toBe(firstPlay.toISOString());
+  });
+
+  it('reports unavailable tracking without Web Locks and leaves Last played unknown', () => {
+    const id = addSave();
+    const markPlayed = vi.spyOn(store, 'markPlayed');
+    const result = vi.fn();
+    recordPlayed(store, id, { now: firstPlay, locks: undefined, onResult: result });
+    expect(markPlayed).not.toHaveBeenCalled();
+    expect(store.list()[0]).not.toHaveProperty('lastPlayedAt');
+    expect(result).toHaveBeenCalledWith('failed');
+  });
+
+  it('never throws when storage or the lock fails', async () => {
+    const id = addSave();
+    const result = vi.fn();
+    storage.failWrites = true;
+    expect(() => recordPlayed(store, id, { now: firstPlay, locks: lock.locks, onResult: result })).not.toThrow();
+    await lock.settled();
+    expect(result).toHaveBeenLastCalledWith('failed');
+    storage.failWrites = false;
+    const rejecting = { request: vi.fn(() => Promise.reject(new Error('no lock'))) } as unknown as SaveLocks;
+    const throwing = { request: vi.fn(() => { throw new Error('no lock'); }) } as unknown as SaveLocks;
+    expect(() => recordPlayed(store, id, { now: firstPlay, locks: rejecting, onResult: result })).not.toThrow();
+    expect(() => recordPlayed(store, id, { now: firstPlay, locks: throwing, onResult: result })).not.toThrow();
+    await Promise.resolve();
+    expect(result).toHaveBeenLastCalledWith('failed');
+    expect(playedTime(id)).toBeUndefined();
   });
 });
 
@@ -203,6 +327,28 @@ describe('buildSaveForm', () => {
     expect(status.textContent).toBe('Saved “Trip”.');
     expect(store.load(id)).toEqual(elsewhere);
     expect(store.list().map((entry) => entry.id)).toHaveLength(2);
+  });
+
+  it('reports which stored save play belongs to after each save and conflict', async () => {
+    const save = createSave('Trip', settings, ['look'], earlier);
+    const id = store.add(save);
+    const onStoredChange = vi.fn();
+    const { form } = mountForm(['look', 'hint'], { resumed: { id, save }, now: () => later, onStoredChange });
+
+    form.requestSubmit();
+    await lock.settled();
+    expect(onStoredChange).toHaveBeenLastCalledWith({ id, save: store.load(id) });
+
+    store.put(id, { ...save, name: 'Other tab' });
+    form.requestSubmit();
+    await lock.settled();
+    expect(onStoredChange).toHaveBeenLastCalledWith(undefined);
+
+    form.requestSubmit();
+    await lock.settled();
+    const copy = store.list().find((entry) => entry.id !== id)!;
+    expect(onStoredChange).toHaveBeenLastCalledWith({ id: copy.id, save: store.load(copy.id) });
+    expect(onStoredChange).toHaveBeenCalledTimes(3);
   });
 
   it('does not bring back a save deleted elsewhere', async () => {
@@ -353,21 +499,78 @@ describe('renderSavesScreen', () => {
     expect(onBack).toHaveBeenCalledOnce();
   });
 
-  it('lists name, genre, length and last saved time, newest first', () => {
-    store.add(createSave('First', settings, [], earlier));
+  it('lists name, genre, length, last played and last saved time, most recently played first', () => {
+    const firstId = store.add(createSave('First', settings, [], earlier));
     store.add(createSave('<b>Second</b>', createAdventureSettings(3, 'short'), [], later));
 
     render();
 
-    expect(texts('.save-item h2')).toEqual(['<b>Second</b>', 'First']);
+    expect(texts('.save-item h2')).toEqual(['First', '<b>Second</b>']);
     expect(app.querySelector('b')).toBeNull();
-    const first = app.querySelectorAll('.save-item')[1];
+    const first = app.querySelectorAll('.save-item')[0];
     expect([...first.querySelectorAll('dt, dd')].map((node) => node.textContent)).toEqual([
       'Genre', genreLabels[settings.genre],
       'Length', lengthLabels.long,
-      'Last saved', formatLastSaved(earlier.toISOString()),
+      'Last played', 'Not recorded',
+      'Last saved', formatSaveTime(earlier.toISOString()),
     ]);
     expect(first.getAttribute('aria-labelledby')).toBe(first.querySelector('h2')?.id);
+
+    const played = new Date('2026-10-03T08:15:00.000Z');
+    store.markPlayed(firstId, played);
+    render();
+
+    expect(texts('.save-item h2')).toEqual(['First', '<b>Second</b>']);
+    expect([...app.querySelectorAll('.save-item')[0].querySelectorAll('dd')].map((node) => node.textContent))
+      .toEqual([
+        genreLabels[settings.genre], lengthLabels.long,
+        formatSaveTime(played.toISOString()), formatSaveTime(earlier.toISOString()),
+      ]);
+  });
+
+  it('keeps Resume and Export available when play-time metadata cannot be read', async () => {
+    const save = createSave('Trip', settings, ['look'], earlier);
+    const id = store.add(save);
+    storage.failReadKey = PLAYED_KEY_PREFIX + id;
+    vi.useFakeTimers();
+    let blob: Blob | undefined;
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((value) => {
+      if (value instanceof Blob) blob = value;
+      return 'blob:save-file';
+    });
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    render();
+
+    const row = app.querySelector('.save-item')!;
+    const playedLabel = [...row.querySelectorAll('dt')].find((label) => label.textContent === 'Last played');
+    expect(playedLabel?.nextElementSibling?.textContent).toBe('Unavailable (could not read)');
+    buttonNamed('Resume: Trip').click();
+    expect(onResume).toHaveBeenCalledWith({ id, save });
+    buttonNamed('Export: Trip').click();
+
+    expect(await blob?.text()).toBe(store.exportSave(id));
+    expect(app.querySelector('#export-status')?.textContent).toContain('download started');
+    vi.runAllTimers();
+  });
+
+  it('refreshes after a played time is recorded without moving keyboard focus', async () => {
+    const first = store.add(createSave('First', settings, [], earlier));
+    store.add(createSave('Second', settings, [], later));
+    const refresh = renderSavesScreen(app, { store, onResume, onBack, locks: lock.locks });
+    const focused = buttonNamed('Resume: Second');
+    focused.focus();
+    recordPlayed(store, first, {
+      now: new Date('2026-10-04T08:00:00.000Z'),
+      locks: lock.locks,
+      onResult: (result) => { if (result === 'recorded') refresh(); },
+    });
+
+    await lock.settled();
+
+    expect(texts('.save-item h2')).toEqual(['First', 'Second']);
+    expect(app.querySelectorAll('.save-item')[1].querySelectorAll('dd')[2].textContent).toBe('Not recorded');
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Resume: Second');
   });
 
   it('sets save names and import labels through textContent', () => {
@@ -821,6 +1024,46 @@ describe('renderSavesScreen', () => {
 
     expect(app.querySelector('[role="status"]')?.textContent).toMatch(/can’t safely delete.*kept/);
     expect(store.load(id)).toEqual(save);
+  });
+
+  it('says the save was deleted when its play-time metadata could not be removed', async () => {
+    const save = createSave('Trip', settings, [], earlier);
+    const id = store.add(save);
+    store.markPlayed(id, later);
+    storage.failRemoveKey = PLAYED_KEY_PREFIX + id;
+    render();
+    buttonNamed('Delete: Trip').click();
+    buttonNamed('Yes, delete: Trip').click();
+    await lock.settled();
+
+    expect(store.list()).toEqual([]);
+    expect(storage.items.has(PLAYED_KEY_PREFIX + id)).toBe(true);
+    expect(app.querySelector('[role="status"]')?.textContent)
+      .toContain('Deleted “Trip”, but its Last played time could not be removed');
+    expect(app.querySelector('[role="status"]')?.textContent).toContain('leftover time is ignored');
+  });
+
+  it('removes a deleted row when metadata cleanup and list refresh both fail', async () => {
+    const deletedId = store.add(createSave('Deleted', settings, [], earlier));
+    const keptId = store.add(createSave('Kept', settings, [], later));
+    store.markPlayed(deletedId, later);
+    storage.failRemoveKey = PLAYED_KEY_PREFIX + deletedId;
+    storage.failListAfterRemove = true;
+    render();
+    buttonNamed('Delete: Kept').click();
+    buttonNamed('Delete: Deleted').click();
+    buttonNamed('Yes, delete: Deleted').click();
+    await lock.settled();
+
+    expect(storage.items.has(SAVE_KEY_PREFIX + deletedId)).toBe(false);
+    expect(storage.items.has(PLAYED_KEY_PREFIX + deletedId)).toBe(true);
+    expect(app.querySelector(`#save-${deletedId}`)).toBeNull();
+    const keptTitle = app.querySelector(`#save-${keptId}`);
+    expect(keptTitle?.closest('.save-item')?.querySelector('button[aria-label="Keep: Kept"]')).not.toBeNull();
+    expect(app.querySelector('#saves-status')?.textContent)
+      .toContain('Deleted “Deleted”, but its Last played time could not be removed');
+    expect(app.querySelector('#saves-status')?.textContent)
+      .toContain('would not let textQuest use its save storage');
   });
 
   it('reports a save that became unreadable before resuming', () => {

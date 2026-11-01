@@ -88,6 +88,16 @@ Very long adventures have a limit of 10,000 typed commands and a limit on
 save size. If a command would exceed a limit, the game rejects it but lets
 you save your existing progress. A shorter command may fit the size limit.
 
+**Your saves** also shows **Last played** and **Last saved** times, with the
+most recently played save first. Last played is stored separately from save
+progress: Resume and commands update it without changing saved commands,
+deletion checks or exported files. A later Last played time means the save was
+resumed or played after its last save; it does not show whether that play was
+saved. Older saves and saves with missing or damaged times show **Not
+recorded**. If the browser cannot read the separate time, it is labelled
+unavailable; Last saved is never used as a substitute. Tracking problems do
+not stop play. Without Web Locks, play times are not recorded.
+
 ## How it works
 
 For each new adventure, the game picks a random number called a seed. The
