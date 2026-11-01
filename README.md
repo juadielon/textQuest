@@ -77,8 +77,9 @@ To keep tabs from overwriting one another, textQuest uses a browser feature
 called Web Locks. If it is unavailable, every save creates a new copy and
 the game cannot delete saves. For normal updates and deletion, use a browser
 that supports Web Locks on an HTTPS address or on localhost. If another tab
-changes or deletes a save you are playing, the game warns you rather than
-overwriting it; save again to keep your progress as a new copy.
+changes or deletes a save you are playing, you will see a warning the next
+time you try to save. The game will not overwrite the other tab's save; save
+again to keep your progress as a new copy.
 
 Very long adventures have a limit of 10,000 typed commands and a limit on
 save size. If a command would exceed a limit, the game rejects it but lets
@@ -86,11 +87,17 @@ you save your existing progress. A shorter command may fit the size limit.
 
 ## How it works
 
-For each new adventure, the game picks a random number called a seed. The seed
-and your chosen length select a genre and a story plan. They also determine
-where some items and clues appear. A share word records the starting details,
-so it can recreate the same adventure. Some story details can repeat between
-adventures.
+For each new adventure, the game picks a random number called a seed. The
+seed selects the genre and story plot. Your chosen length selects the plan
+size: 8 places and 4 required puzzle steps for a short adventure, 16 places
+and 8 steps for a medium one, or 24 places and 12 steps for a long one. The
+seed also helps choose where some items and clues appear.
+
+Each released version has 65,280 possible share words. They do not all make
+unique adventures: version 1 has 27 generated worlds, and version 2 varies
+item and clue locations, but stories and layouts can still repeat. A share
+word records the version, seed and length so it can recreate the same
+starting adventure.
 
 The game tracks your commands, location and discoveries. A save holds the
 starting details and the commands you entered. When you resume, the game
