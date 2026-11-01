@@ -9,11 +9,10 @@ import { prepareSeededPlacement } from './seeded-placement';
 import { createSeededRandom } from './seeded-random';
 
 describe('released version 1 compatibility', () => {
-  it('does not activate the preparation or accept new-version share words', () => {
-    expect(currentVersion).toBe(1);
-    expect(supportedVersions).toEqual([1]);
-    expect(() => createAdventureSettings(0, 'short', 2)).toThrow('version 2 is not supported');
-    expect(() => parseShareWord('ableacorn2')).toThrow('version 2');
+  it('keeps version 1 placement when new adventures default to version 2', () => {
+    expect(currentVersion).toBe(2);
+    expect(supportedVersions).toEqual([1, 2]);
+    expect(createAdventureSettings(0, 'short').version).toBe(2);
     const settings = parseShareWord('ableacorn');
     expect(settings).toEqual({ version: 1, seed: 0, length: 'short', genre: 'light-fantasy' });
     expect(encodeShareWord(settings)).toBe('ableacorn');
@@ -28,9 +27,9 @@ describe('released version 1 compatibility', () => {
   });
 
   it.each([
-    ['ableacorn', ['go well', 'take peg'], 'well', 'peg'],
-    ['ablebadger', ['go tea room', 'take apron'], 'tea-room', 'apron'],
-    ['tallanchor', ['go cargo bay', 'take sealant'], 'cargo-bay', 'sealant'],
+    ['ableacorn', ['take ash peg', 'go well', 'take peg', 'talk mara', 'use peg'], 'well', 'peg'],
+    ['ablebadger', ['take volunteer apron', 'go tea room', 'take apron', 'talk nell', 'use apron'], 'tea-room', 'apron'],
+    ['tallanchor', ['take sealant tube', 'go cargo bay', 'take sealant', 'talk eri', 'use sealant'], 'cargo-bay', 'sealant'],
   ] as const)('%s: imports old saved commands and replays their original pickups', (word, commands, placeId, itemId) => {
     const settings = parseShareWord(word);
     const save = createSave('Original adventure', settings, commands, new Date('2026-10-12T04:00:00Z'));
@@ -47,6 +46,7 @@ describe('released version 1 compatibility', () => {
     expect(replay.itemsHeld).toContain(itemId);
     expect(replay.previous).toMatchObject({ placeId, turns: 1 });
     expect(replay.previous?.itemsHeld).not.toContain(itemId);
+    expect(replayCommands(world, commands)).toEqual(replayCommands(world, commands.slice(1, 3)));
     expect(replayCommands(generateAdventureWorld(parseShareWord(word)), commands)).toEqual(replay);
     expect(exportSaveFile(restored)).toBe(file);
   });

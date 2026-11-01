@@ -62,6 +62,11 @@ repeatable engine worlds ([issue #31](https://github.com/juadielon/textQuest/iss
 implemented in [pull request #35](https://github.com/juadielon/textQuest/pull/35).
 [Issue #40](https://github.com/juadielon/textQuest/issues/40) extends this to the
 cosy mystery and science fiction genres.
+New adventures now use separately versioned seeded placement
+([issue #51](https://github.com/juadielon/textQuest/issues/51)).
+Version 2 share words end in `2` and recreate the same starting world;
+version 1 words and saves retain their original rules. Both versions have
+exhaustive share-word round-trip tests. Browser save/load remains planned.
 
 ### 4. Stories, places and puzzles
 
@@ -102,12 +107,18 @@ format and checks. The generator builds worlds from both
 tests and pinned worlds for each genre. Commands run through the play module;
 authored names and story text remain planned.
 Seeded item and clue placement
-([issue #51](https://github.com/juadielon/textQuest/issues/51)) is prepared and
-tested separately, but not available to players. Version 1 is released and
+([issue #51](https://github.com/juadielon/textQuest/issues/51)) is now playable
+in adventure version 2, using the final matching wording prepared in
+[pull request #63](https://github.com/juadielon/textQuest/pull/63).
+Its complete content, word lists and representative worlds are pinned
+separately. Tests sweep seeds 0 to 999 at every length, with at least 80%
+distinct worlds in each genre/plot/length group and winnability with and
+without optional steps. Places, routes and prose are still authored, not
+unique for every seed. Version 1 is released and
 keeps its original 27 worlds, share words, content and saved-command replay.
-A later layer above finalised new content must add a new adventure version
-with distinct share words before placement variation can be activated.
-Issue #51 remains only partly addressed until then.
+Authored command names remain disabled in both versions; their save
+compatibility is separate work in
+[issue #56](https://github.com/juadielon/textQuest/issues/56).
 The current rules only add progress; mutually exclusive
 choices will need later rules and their own checks.
 
@@ -144,7 +155,10 @@ or import save files. Invalid files and storage errors are reported clearly.
 **Depends on:** Milestones 3 and 5.
 
 The first step stores settings and typed commands, with unit tests. Replaying
-commands into a world and the save screens are not implemented.
+commands into regenerated version 1 and version 2 worlds is covered by unit
+tests, including successful and failed commands and undo. The browser does
+not yet connect saves to play; save screens remain planned. The save format
+stays version 1, with the adventure version kept in its settings.
 
 ### 7. Browser game
 

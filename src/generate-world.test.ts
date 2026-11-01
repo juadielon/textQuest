@@ -143,7 +143,7 @@ describe('version 1 world generation', () => {
   });
 
   it.each([
-    [{ version: 2 }, 'Adventure version 2 is not supported.'],
+    [{ version: 3 }, 'Adventure version 3 is not supported.'],
     [{ seed: -1 }, 'seed must be a whole number'],
     [{ seed: 0.5 }, 'seed must be a whole number'],
     [{ seed: Number.NaN }, 'seed must be a whole number'],

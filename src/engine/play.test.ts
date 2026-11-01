@@ -1,9 +1,10 @@
 ﻿import { describe, expect, it } from 'vitest';
-import { createAdventureSettings } from '../adventure-settings';
+import { adventureLengths, createAdventureSettings } from '../adventure-settings';
 import type { AdventureWorld } from '../adventure-world';
 import { lightFantasy } from '../content/v1/light-fantasy';
 import { worldNamesFrom } from '../content/v1/world-names';
 import { generateAdventureWorld } from '../generate-world';
+import { createSave, exportSaveFile, importSaveFile } from '../saves';
 import { checkWinnability } from '../winnability';
 import { commandHelp } from './commands';
 import {
@@ -455,8 +456,8 @@ describe('undo', () => {
 describe('replaying a long save', () => {
   // Regression: repeated target resolution made large saves slow to resume.
   it('replays thousands of commands on a long named world quickly', () => {
-    let settings = createAdventureSettings(0, 'long');
-    while (settings.genre !== 'light-fantasy') settings = createAdventureSettings(settings.seed + 1, 'long');
+    let settings = createAdventureSettings(0, 'long', 1);
+    while (settings.genre !== 'light-fantasy') settings = createAdventureSettings(settings.seed + 1, 'long', 1);
     const generated = generateAdventureWorld(settings);
     const world: PlayWorld = { ...generated, names: worldNamesFrom(lightFantasy, generated) };
     const started = Date.now();
@@ -516,7 +517,7 @@ describe('hints', () => {
 
 // A simple player that only types what the hints suggest. If the checker calls
 // a world winnable, following the hints must win it with typed commands.
-function playByHints(world: PlayWorld): PlayState {
+function playByHints(world: PlayWorld, commands: string[] = []): PlayState {
   let state = startPlay(world);
   for (let guard = 0; guard < 200 && !state.goalReached; guard++) {
     const message = playCommand(world, state, 'hint').message;
@@ -536,11 +537,44 @@ function playByHints(world: PlayWorld): PlayState {
       break;
     }
     const before = state;
-    for (const input of inputs) state = playCommand(world, state, input).state;
+    for (const input of inputs) {
+      commands.push(input);
+      state = playCommand(world, state, input).state;
+    }
     if (state === before) break;
   }
   return state;
 }
+
+describe.each([1, 2])('version %i generated play and saved replay', (version) => {
+  it.each([0, 1, 17000])('seed %i: wins every length and resumes the exact command history', (seed) => {
+    for (const length of adventureLengths) {
+      const settings = createAdventureSettings(seed, length, version);
+      const world = generateAdventureWorld(settings);
+      for (const optional of [true, false]) {
+        const required = world.solution.goal.conditions.stepsDone ?? [];
+        const played = optional ? world : {
+          ...world, solution: {
+            ...world.solution, steps: world.solution.steps.filter(({ id }) => required.includes(id)),
+          },
+        };
+        const commands: string[] = ['look', 'take unknown item', 'talk unknown person'];
+        const won = playByHints(played, commands);
+        expect(won.goalReached, `${settings.genre}/${length}/${optional}`).toBe(true);
+        expect(replayCommands(played, commands)).toEqual(won);
+        if (optional) {
+          commands.push('undo', 'look');
+          const savedState = replayCommands(world, commands);
+          expect(savedState.goalReached).toBe(false);
+          const save = createSave('Shared trip', settings, commands);
+          const restored = importSaveFile(exportSaveFile(save));
+          expect(restored).toEqual(save);
+          expect(replayCommands(generateAdventureWorld(restored.settings), restored.commands)).toEqual(savedState);
+        }
+      }
+    }
+  }, 30_000);
+});
 
 describe('agreement with the winnability checker', () => {
   const chain = (length: number): AdventureWorld => {
@@ -791,10 +825,10 @@ describe('play with content-pack names', () => {
 
   it('wins generated light fantasy worlds by hints using only pack names', () => {
     const seeds = Array.from({ length: 64 }, (_, seed) => seed)
-      .filter((seed) => createAdventureSettings(seed, 'short').genre === 'light-fantasy').slice(0, 3);
+      .filter((seed) => createAdventureSettings(seed, 'short', 1).genre === 'light-fantasy').slice(0, 3);
     expect(seeds).toHaveLength(3);
     for (const seed of seeds) {
-      const base = generateAdventureWorld(createAdventureSettings(seed, 'short'));
+      const base = generateAdventureWorld(createAdventureSettings(seed, 'short', 1));
       const world: PlayWorld = { ...base, names: worldNamesFrom(lightFantasy, base) };
       expect(playByHints(world).goalReached).toBe(true);
       const packNames = new Set([...lightFantasy.places, ...lightFantasy.items, ...lightFantasy.clues,

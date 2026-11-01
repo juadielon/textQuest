@@ -5,10 +5,12 @@ authored content and game rules, without using an LLM while you play.
 
 This repository includes a Docker-run browser start screen, the rules for
 repeatable adventure settings and share words, a world model with a
-winnability checker, deterministic world generation for all three version 1
+winnability checker, deterministic world generation for all three
 genres, a command parser and a save format. A pure play module that runs parsed commands against
 a world is also implemented, with a browser play screen built on it.
-All three genres can be played from the start screen. Names still
+New adventures use version 2's seeded item and clue placement; version 1
+share words and saves keep their original worlds. All three genres can be
+played from the start screen. Names still
 come from IDs; authored story text and the saves screen remain
 planned.
 
@@ -103,26 +105,37 @@ It also checks that every genre and plot is reached. Changes to these
 generator rules require a new adventure version. The generator supplies the
 browser play screen; command handling and player progress live in the play module.
 
-### Seeded placement preparation
+## Version 2 varied adventures
 
-[Issue #51](https://github.com/juadielon/textQuest/issues/51) is partly addressed
-by `src/seeded-placement.ts`. It prepares item and clue placement for a future
-adventure version; no player-facing code calls it. Tests supply a seeded
-stream after the genre and plot draws and check repeatability, placement
-rules, winnability with and without optional steps, and at least 80% distinct
-worlds in each genre/plot/length group across seeds 0 to 999.
+[Issue #51](https://github.com/juadielon/textQuest/issues/51) adds a separately
+versioned adventure with seeded item and clue placement. New games use
+version 2; opening a share word or regenerating a save uses its own version.
+The genre and plot draws stay first. Placement then draws in authored item
+order followed by clue order, skipping awarded or unused pickups. A pickup
+can move only along open paths with a return path, no further from the start
+than its nearest use. Places, exits and puzzle graphs still use authored plans.
+
+Tests generate seeds 0 to 999 at every length, covering all genres and plots.
+At least 80% of seeds within each genre/plot/length group give distinct worlds.
+Every swept world regenerates identically from settings and its share word
+and is winnable with and without optional steps. This is placement variety,
+not a promise of unique prose or a different world for every share word.
 
 Version 1 is released and stays exactly as authored: it has 27 distinct
 worlds. Its world and content digests, share words and saved-command replay
-must not change. Seeded placement cannot be activated until a new adventure
-version has distinct share words and final matching content.
+remain unchanged. Version 2 selects the final matching content from
+`src/content/v2/place-wording.ts`, prepared in
+[pull request #63](https://github.com/juadielon/textQuest/pull/63). Its place
+descriptions and one puzzle prompt no longer claim a movable pickup is at
+its original place. Separate SHA-256 pins cover each complete version 2 pack,
+both ordered share-word lists and representative complete worlds.
+Changing these released rules or content needs another adventure version.
 
-Place descriptions in version 1 can still name a starting item or clue that
-seeded placement may move. src/content/v2/place-wording.ts holds separate
-future content that rewrites only those descriptions (and one puzzle prompt),
-so that no place describes something that may be elsewhere. Nothing selects it
-yet: it has no share words, save wiring or digest pin. Activation belongs in a
-later layer once the content is final.
+Saved-command replay tests cover both versions, all genres and lengths,
+including failed commands and undo. Names still come from IDs in both
+versions. Authored names and their command compatibility belong to
+[issue #56](https://github.com/juadielon/textQuest/issues/56), not this release.
+The save format remains version 1; a browser save/load screen is still planned.
 
 ## Adventure settings and share words
 
@@ -134,12 +147,14 @@ it does not create stories on its own.
   numbers. The player chooses a short, medium or long adventure.
 - The seed and version always choose the same genre: light fantasy, cosy
   mystery or science fiction.
-- A share word, such as `silverlantern`, joins two words from fixed lists. It
-  holds the seed and length, so there are about 65,000 share words, but
-  version 1 maps them to only 27 distinct starting worlds. More variety needs
-  a new adventure version. It never includes player progress or save data.
+- A share word joins two words from fixed, versioned lists. Version 1 words
+  have no suffix, such as `silverlantern`; version 2 words end in `2`, such
+  as `sunlitsaucer2`. Version 2 uses separate copies of the released lists
+  in reverse order. Each version has 65,280 canonical words encoding a seed
+  and length. Version 1 maps them to 27 worlds; version 2 varies placement.
+  A word never includes player progress or save data.
 - Share words ignore capitals, spaces and hyphens. Misspelt words, and words
-  from newer versions such as `silverlantern2`, are rejected with a clear
+  from unsupported versions such as `silverlantern3`, are rejected with a clear
   message.
 - Version 1 must always give the same results. Changes that would alter them
   need a new version with its own word lists. Unit tests pin both complete

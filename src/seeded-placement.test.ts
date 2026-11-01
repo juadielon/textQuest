@@ -13,7 +13,7 @@ function prepare(seed: number, world: AdventureWorld): AdventureWorld {
   return prepareSeededPlacement(world, random);
 }
 
-describe('unreleased seeded placement preparation', () => {
+describe('seeded placement rules', () => {
   for (const length of adventureLengths) {
     it(`${length}: varies every genre and plot without blocking a win`, () => {
       const groups = new Map<string, { seeds: number; worlds: Set<string> }>();

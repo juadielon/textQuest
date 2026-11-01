@@ -3,8 +3,8 @@ import { cosyMystery } from '../v1/cosy-mystery';
 import { lightFantasy } from '../v1/light-fantasy';
 import { scienceFiction } from '../v1/science-fiction';
 
-/** A content pack for the future adventure version 2; nothing selects it yet. */
-export type FutureContentPack = Omit<ContentPack, 'version'> & { readonly version: 2 };
+/** Released version 2 content; its complete data and order are pinned separately. */
+export type VersionTwoContentPack = Omit<ContentPack, 'version'> & { readonly version: 2 };
 
 // Reuses the released data and rewrites only the place descriptions (and any
 // prompt) that named a starting item or clue the generator can now move.
@@ -12,7 +12,7 @@ function reword(
   pack: ContentPack,
   descriptions: Readonly<Record<string, string>>,
   prompts: Readonly<Record<string, string>> = {},
-): FutureContentPack {
+): VersionTwoContentPack {
   return {
     ...pack,
     version: 2,

@@ -17,13 +17,13 @@ function distancesFromStart(world: AdventureWorld): Map<string, number> {
 }
 
 /**
- * Prepares seeded item and clue placement for an unreleased adventure version.
- * No released generator or player-facing code calls this function.
+ * Places items and clues using the released adventure version 2 rules.
  *
  * @param world - A valid authored world with its selected steps and goal.
  * @param random - The seeded stream, already advanced past the genre and plot draws.
  * @returns A detached world with pickups no further away than their nearest use.
- * @remarks Activation needs a new adventure version, distinct share words and final content.
+ * @remarks Items then clues use authored array order, skipping awarded and unused
+ * pickups. Keep this draw order unchanged; version 1 must never call it.
  */
 export function prepareSeededPlacement(world: AdventureWorld, random: SeededRandom): AdventureWorld {
   const distances = distancesFromStart(world);
