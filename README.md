@@ -5,11 +5,11 @@ authored content and game rules, without using an LLM while you play.
 
 This repository includes a Docker-run browser start screen, the rules for
 repeatable adventure settings and share words, a world model with a
-winnability checker, deterministic light fantasy world generation, a command
-parser and a save format. A pure play module that runs parsed commands against
+winnability checker, deterministic world generation for all three version 1
+genres, a command parser and a save format. A pure play module that runs parsed commands against
 a world is also implemented, with a browser play screen built on it.
-Light fantasy adventures can be played from the start screen. Names still
-come from IDs; authored story text, other genres and the saves screen remain
+All three genres can be played from the start screen. Names still
+come from IDs; authored story text and the saves screen remain
 planned.
 
 ## Start screen
@@ -29,7 +29,8 @@ keyboard and screen reader, on narrow and wide screens.
 
 [Issue #26](https://github.com/juadielon/textQuest/issues/26) adds a typed
 content format in `src/content/v1/` and the light fantasy pack. It is not
-connected to the browser. The generator uses its authored plans.
+connected to the browser. The generator uses its authored plans, and those
+of the two packs below.
 
 The pack has 24 places, motivated characters, items, clues, 12 required puzzle
 templates across four families, optional discoveries, route choices and
@@ -77,10 +78,10 @@ content change. Existing share words and player saves are unchanged.
 
 [Issue #31](https://github.com/juadielon/textQuest/issues/31) adds
 `generateAdventureWorld(settings)` in `src/generate-world.ts`. It accepts
-valid version 1 settings whose seed chooses light fantasy. Cosy mystery and
-science fiction settings throw a clear `RangeError` until the generator uses
-their packs ([issue #40](https://github.com/juadielon/textQuest/issues/40));
-invalid settings and a genre that does not match the seed are also rejected.
+valid version 1 settings and uses the content pack for the seed's genre: light
+fantasy, cosy mystery or science fiction
+([issue #40](https://github.com/juadielon/textQuest/issues/40)). Invalid
+settings and a genre that does not match the seed throw a clear `RangeError`.
 The existing genre and share-word rules are unchanged.
 
 The first seeded draw chooses the genre, and the second chooses one of the
@@ -94,11 +95,11 @@ conditions.
 
 The returned world contains engine data, not plot prose, character
 descriptions or player progress. It is a detached copy: generation and callers
-cannot change the pack through it. Unit tests cover all nine plot/length
-combinations, optional routes and winnability, seed variation, share-word
-round trips, and pinned complete worlds. Changes to these generator rules
-require a new adventure version. The generator supplies the browser play
-screen; command handling and player progress live in the play module.
+cannot change the pack through it. For each genre, unit tests cover all nine
+plot/length combinations, optional routes and winnability, seed variation,
+share-word round trips, and pinned complete worlds. Changes to these
+generator rules require a new adventure version. The generator supplies the
+browser play screen; command handling and player progress live in the play module.
 
 ## Adventure settings and share words
 
@@ -175,8 +176,9 @@ forms include `n`, `x`, `i`, `h` and `u`; `u` means undo, so use `up` to move
 upwards. `commandHelp` provides grammar help without puzzle advice.
 
 The caller supplies only discovered targets with IDs, names, kinds and optional
-discovered aliases. Names match exactly after ignoring case, extra whitespace
-and the articles `a`, `an` and `the`; there is no fuzzy or partial matching.
+discovered aliases. Names and aliases match exactly after ignoring case, extra
+whitespace, trailing `.`, `!` or `?` and the articles `a`, `an` and `the`;
+there is no fuzzy or partial matching. Punctuation inside a command is kept.
 For example, two discovered keys may both have the alias `key`. The parser
 reports both options rather than choosing one. Choice numbers such as `choose 1`
 work only when supplied as discovered aliases for authored options.
@@ -219,8 +221,12 @@ elsewhere or places out of sight. Targets use world IDs with their kind, so a
 place and an item may share an ID. Names come from IDs until content packs are
 connected to play. Names that collide after parser normalisation get stable
 numbered suffixes, such as `red key (item 4)`. Look, inventory and hints use
-these same names. Original names stay available as aliases, but can be
+these same names. Names that clash with movement or item-use grammar get a
+short numbered name, such as `exit 4` or `item 5`, instead.
+Original names stay available as aliases, but can be
 ambiguous; use the displayed name to pick a particular target.
+Names are checked together after renaming, so movement and item use remain
+unambiguous even when a fallback name is already occupied.
 Version 1 worlds have no compass directions, people or story choices, so
 those commands get a plain explanation. Prose, autocomplete and checkpoints
 are later steps.
@@ -235,11 +241,13 @@ Commands, including help, hint and undo, run through the play module. When
 the goal is reached, an ending says how many turns it took; undo still works.
 
 Everything can be done with the keyboard: type a command and press Enter.
+The screen starts with one "Your adventure" heading, focused on navigation.
+The share word and navigation controls sit immediately below it.
 Each new response is announced through a polite live region. The layout is
 one column on narrow screens, with a progress column on wide ones. Typed and
-world text is always added as plain text, never as markup. If a world can't
-be generated, such as a cosy mystery or science fiction world for now, a
-plain message is shown instead.
+world text is always added as plain text, never as markup. Light fantasy,
+cosy mystery and science fiction worlds can all be played. If a world can't
+be generated from the settings, a plain message is shown instead.
 
 The start screen opens play for new adventures and share words
 ([issue #54](https://github.com/juadielon/textQuest/issues/54)).

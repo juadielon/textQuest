@@ -54,33 +54,59 @@ interface Target {
   readonly id: string;
 }
 
+// Naming parses every target, which is slow, so each world's names are kept.
+// Play never changes a world, so the names stay correct.
+const namesByWorld = new WeakMap<AdventureWorld, readonly CommandTarget[]>();
+
 // Keep names stable as targets are discovered, including parser normalisation.
-function namedTargets(world: AdventureWorld): CommandTarget[] {
+function namedTargets(world: AdventureWorld): readonly CommandTarget[] {
+  const cached = namesByWorld.get(world);
+  if (cached) return cached;
+  const named = nameTargets(world);
+  namesByWorld.set(world, named);
+  return named;
+}
+
+function nameTargets(world: AdventureWorld): CommandTarget[] {
   const targets = (['place', 'exit', 'item', 'clue'] as const).flatMap((kind) =>
     world[`${kind}s`].map(({ id }): CommandTarget => ({
       id, kind, name: id.replace(/[-_]+/g, ' ').trim() || id,
     })),
   );
   const original = [...targets];
-  // Places and exits must also work with go, where words such as north mean a direction.
   const reachable = (target: CommandTarget, list: readonly CommandTarget[]) => {
-    if (target.kind !== 'place' && target.kind !== 'exit') return true;
-    const result = parseCommand(`go ${target.name}`, list);
-    return result.ok && 'targetId' in result.action;
+    const verbs = target.kind === 'item' ? ['examine', 'use']
+      : target.kind === 'place' || target.kind === 'exit' ? ['examine', 'go'] : ['examine'];
+    return verbs.every((verb) => {
+      const result = parseCommand(`${verb} ${target.name}`, list);
+      if (!result.ok) return false;
+      if (result.action.kind === 'use') {
+        return result.action.itemId === target.id && !('targetId' in result.action);
+      }
+      return 'targetId' in result.action && result.action.targetId === target.id
+        && result.action.targetKind === target.kind;
+    });
   };
-  return targets.map((target, index) => {
-    const result = parseCommand(`examine ${target.name}`, original);
-    if (result.ok && reachable(target, original)) return target;
-    let name = `${target.name} (${target.kind} ${index + 1})`;
+  // A later rename can change how an earlier item's use command is parsed.
+  while (true) {
+    const index = targets.findIndex((target) => !reachable(target, targets));
+    if (index < 0) return targets;
+    const target = original[index];
+    let attempt = 0;
     while (true) {
+      const name = attempt === 0 ? `${target.name} (${target.kind} ${index + 1})`
+        : `${target.kind} ${index + 1}${attempt > 1 ? ` ${attempt - 1}` : ''}`;
+      const named = { ...target, name, aliases: [target.name] };
       const candidate = parseCommand(`examine ${name}`, targets);
-      if (!candidate.ok && candidate.problem === 'unknown-target') break;
-      name += '!';
+      const withCandidate = targets.map((entry, position) => position === index ? named : entry);
+      if (!candidate.ok && candidate.problem === 'unknown-target'
+        && reachable(named, withCandidate)) {
+        targets[index] = named;
+        break;
+      }
+      attempt++;
     }
-    const named = { ...target, name, aliases: [target.name] };
-    targets[index] = named;
-    return named;
-  });
+  }
 }
 
 function nameOf(world: AdventureWorld, kind: Target['kind'], id: string): string {
@@ -395,7 +421,9 @@ function progressKey(progress: Progress): string {
 }
 
 // Finds the first place to head for on a shortest route to the goal.
-function nextPlaceToGoal(world: AdventureWorld, start: Progress): string | null | 'too-large' {
+const searchLimitReached = Symbol('search-limit');
+
+function nextPlaceToGoal(world: AdventureWorld, start: Progress): string | null | typeof searchLimitReached {
   const first = cloneProgress(start);
   settleGreedily(world, first);
   const queue: { progress: Progress; firstPlaceId: string | null }[] = [{ progress: first, firstPlaceId: null }];
@@ -411,7 +439,7 @@ function nextPlaceToGoal(world: AdventureWorld, start: Progress): string | null 
       if (goalMet(world, next)) return placeId;
       const key = progressKey(next);
       if (seen.has(key)) continue;
-      if (seen.size >= MAX_SEARCH_STATES) return 'too-large';
+      if (seen.size >= MAX_SEARCH_STATES) return searchLimitReached;
       seen.add(key);
       queue.push({ progress: next, firstPlaceId: placeId });
     }
@@ -419,7 +447,7 @@ function nextPlaceToGoal(world: AdventureWorld, start: Progress): string | null 
   return null;
 }
 
-function hint(world: AdventureWorld, progress: Progress): string {
+function hint(world: AdventureWorld, progress: Progress, canUndo: boolean): string {
   const { steps, goal } = world.solution;
   const neededItems = new Set([goal, ...steps].flatMap(({ conditions }) => conditions.itemsHeld ?? []));
   if (itemsHere(world, progress).some((id) => neededItems.has(id))) {
@@ -429,8 +457,10 @@ function hint(world: AdventureWorld, progress: Progress): string {
     return 'Something you are carrying could be useful here.';
   }
   const next = nextPlaceToGoal(world, progress);
-  if (next === 'too-large') return 'Try exploring somewhere you have not been yet.';
-  if (next === null) return 'There seems to be no way forward from here. Try undo.';
+  if (next === searchLimitReached) return 'Try exploring somewhere you have not been yet.';
+  if (next === null) {
+    return `There seems to be no way forward from here.${canUndo ? ' Try undo.' : ''}`;
+  }
   return `Try going to the ${nameOf(world, 'place', next)}.`;
 }
 
@@ -444,7 +474,8 @@ function hint(world: AdventureWorld, progress: Progress): string {
  * when the player uses one of those items at its place; other steps happen by
  * themselves once their conditions hold. These match the winnability
  * checker's rules, so any winnable world can be won with typed commands.
- * Hints point at the next useful step without naming puzzle answers.
+ * Hints point at the next useful step without naming puzzle answers, and
+ * suggest undo at a dead end only when a previous turn exists.
  *
  * @throws RangeError when the world is invalid.
  */
@@ -462,7 +493,8 @@ export function runAction(world: AdventureWorld, state: PlayState, action: Comma
         ? `You are carrying ${listNames(world, 'item', state.itemsHeld)}.`
         : 'You are not carrying anything.');
     case 'hint':
-      return reply(state.goalReached ? 'You have already finished this adventure.' : hint(world, progress));
+      return reply(state.goalReached ? 'You have already finished this adventure.'
+        : hint(world, progress, state.previous !== null));
     case 'undo':
       return state.previous
         ? { state: state.previous, message: 'You undo your last turn.' }
