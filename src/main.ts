@@ -124,6 +124,7 @@ if (app) {
     if (playable) {
       header.append(buildSaveForm({
         store, settings, resumed, suggestedName: summary.shareWord, commands: () => commands,
+        onPendingChange: (pending) => { back.disabled = pending; },
       }));
     }
     heading.after(header);
