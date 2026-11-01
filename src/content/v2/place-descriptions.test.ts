@@ -54,6 +54,12 @@ describe('version 2 place descriptions', () => {
       .toEqual(oldPuzzles.map(({ id, placeId, family, completion }) => [id, placeId, family, completion]));
   });
 
+  it('moves the align-mirrors prompt off the garden while version 1 keeps it', () => {
+    const prompt = (pack: Pick<ContentPack, 'puzzles'>) => pack.puzzles.find(({ id }) => id === 'align-mirrors')?.prompt;
+    expect(prompt(lightFantasy)).toEqual(['Arrange the mirrors to follow the garden labels.']);
+    expect(prompt(lightFantasyV2)).toEqual(['Arrange the mirrors to follow the sun labels.']);
+  });
+
   it('leaves released version 1 wording alone', () => {
     expect(movableMentions(lightFantasy)).toContain('bridge mentions Tide verse');
   });
