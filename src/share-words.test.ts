@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { versionOneFirstWords, versionOneSecondWords } from './share-words';
+import {
+  versionOneFirstWords, versionOneSecondWords, versionTwoFirstWords, versionTwoSecondWords,
+} from './share-words';
+
+it('pins both complete version 2 word lists without sharing the version 1 arrays', async () => {
+  expect(versionTwoFirstWords).not.toBe(versionOneFirstWords);
+  expect(versionTwoSecondWords).not.toBe(versionOneSecondWords);
+  const digest = await crypto.subtle.digest('SHA-256',
+    new TextEncoder().encode(JSON.stringify([versionTwoFirstWords, versionTwoSecondWords])));
+  expect([...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join(''))
+    .toBe('591433161cd29222244bed8f5e6bd80567a76959ad078e86277604c272de844a');
+});
 
 // Keep these released fixtures unchanged; new lists need a new version.
 describe('released version 1 share-word lists', () => {

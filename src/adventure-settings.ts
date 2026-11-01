@@ -1,5 +1,7 @@
 import { createSeededRandom } from './seeded-random';
-import { versionOneFirstWords, versionOneSecondWords } from './share-words';
+import {
+  versionOneFirstWords, versionOneSecondWords, versionTwoFirstWords, versionTwoSecondWords,
+} from './share-words';
 
 /*
  * The starting settings that a share word identifies. Player progress, saves
@@ -38,7 +40,7 @@ export type AdventureGenre = (typeof adventureGenres)[number];
  * that could give a different adventure for the same seed needs a new
  * version, and every released version must keep working unchanged.
  */
-export const currentVersion = 1;
+export const currentVersion = 2;
 
 interface VersionRules {
   readonly genres: readonly AdventureGenre[];
@@ -55,6 +57,15 @@ const versionRules: ReadonlyMap<number, VersionRules> = new Map([
       genres: ['light-fantasy', 'cosy-mystery', 'science-fiction'],
       firstWords: versionOneFirstWords,
       secondWords: versionOneSecondWords,
+    },
+  ],
+  [
+    2,
+    {
+      // Version 2 keeps these genre draws but adds seeded placement after the plot.
+      genres: ['light-fantasy', 'cosy-mystery', 'science-fiction'],
+      firstWords: versionTwoFirstWords,
+      secondWords: versionTwoSecondWords,
     },
   ],
 ]);
@@ -206,8 +217,8 @@ export function createNewAdventureSettings(
  *
  * @remarks
  * A share word joins one word from each list, such as "silverlantern".
- * Version 1 words have no number. Later versions will end with their number,
- * such as "silverlantern2", so older copies can say they do not support them.
+ * Version 1 words have no number. Later versions end with their number,
+ * such as "sunlitsaucer2", so older copies can say they do not support them.
  *
  * @param settings - The settings to share.
  * @returns A lowercase share word.

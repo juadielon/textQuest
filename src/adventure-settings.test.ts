@@ -54,7 +54,7 @@ describe('version 1 share words', () => {
   it('uses fixed lists of simple, unique lowercase words', () => {
     expect(versionOneFirstWords).toHaveLength(256);
     expect(versionOneSecondWords).toHaveLength(255);
-    expect(supportedVersions).toEqual([1]);
+    expect(supportedVersions).toEqual([1, 2]);
 
     for (const words of [versionOneFirstWords, versionOneSecondWords]) {
       expect(new Set(words).size).toBe(words.length);
@@ -84,12 +84,12 @@ describe('version 1 share words', () => {
 
   // Checking every seed takes a few seconds, so a busy machine can push it past
   // Vitest's 5-second default. Give it more room.
-  it('round-trips every version 1 seed and length to one canonical word', () => {
+  it.each([1, 2])('round-trips every version %i seed and length to one canonical word', (version) => {
     const words = new Set<string>();
 
-    for (let seed = 0; seed < seedCountFor(1); seed += 1) {
+    for (let seed = 0; seed < seedCountFor(version); seed += 1) {
       for (const length of adventureLengths) {
-        const settings = createAdventureSettings(seed, length);
+        const settings = createAdventureSettings(seed, length, version);
         const word = encodeShareWord(settings);
 
         expect(parseShareWord(word)).toEqual(settings);
@@ -135,7 +135,7 @@ describe('parseShareWord', () => {
     expect(problemOf(42)).toBe('malformed');
   });
 
-  it.each(['silverlantern2', 'silverlantern10', 'unknownword7', 'silverlantern99999999999999999999'])(
+  it.each(['silverlantern3', 'silverlantern10', 'unknownword7', 'silverlantern99999999999999999999'])(
     'rejects %j as an unsupported version without reading it as version 1',
     (input) => {
       expect(problemOf(input)).toBe('unsupported-version');
@@ -144,7 +144,7 @@ describe('parseShareWord', () => {
 
   it('explains the problem in plain words', () => {
     expect(() => parseShareWord('nonsense')).toThrow(/not one textQuest knows/);
-    expect(() => parseShareWord('silverlantern2')).toThrow(/version 2.*does not support/);
+    expect(() => parseShareWord('silverlantern3')).toThrow(/version 3.*does not support/);
   });
 });
 
@@ -175,7 +175,7 @@ describe('createAdventureSettings', () => {
       expect(() => createAdventureSettings(seed, 'short')).toThrow(RangeError);
     }
     expect(() => createAdventureSettings(1, 'huge' as never)).toThrow(RangeError);
-    expect(() => createAdventureSettings(1, 'short', 2)).toThrow(RangeError);
+    expect(() => createAdventureSettings(1, 'short', 3)).toThrow(RangeError);
   });
 });
 
@@ -207,7 +207,7 @@ describe('createSeed', () => {
 
   it('starts a new adventure with the chosen length and a fresh seed', () => {
     expect(createNewAdventureSettings('long', fixedSource([1234]))).toEqual({
-      version: 1,
+      version: 2,
       seed: 1234,
       length: 'long',
       genre: 'light-fantasy',
