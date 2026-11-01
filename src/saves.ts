@@ -295,10 +295,11 @@ export function importSaveFile(text: string): AdventureSave {
  */
 export type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'key' | 'length'>;
 
-/** A short description of one stored save, for a list of saves. */
+/** A listed save and its exact stored text, used to confirm deletion without losing later changes. */
 export type SaveListEntry =
   | {
       readonly id: string;
+      readonly snapshot: string;
       readonly status: 'ready';
       readonly name: string;
       readonly settings: AdventureSettings;
@@ -309,6 +310,7 @@ export type SaveListEntry =
   | {
       /** A stored save that can't be read. It is left in place, never deleted. */
       readonly id: string;
+      readonly snapshot: string;
       readonly status: 'unreadable';
       readonly message: string;
     };
@@ -339,8 +341,12 @@ export interface SaveStore {
   replace(id: string, expected: AdventureSave, save: AdventureSave): void;
   /** Loads the save with this ID. */
   load(id: string): AdventureSave;
-  /** Deletes the save with this ID. Deleting a save that is already gone does nothing. */
-  remove(id: string): void;
+  /**
+   * Deletes a save, optionally only if its stored text still matches the listed
+   * snapshot. A mismatch throws `changed` and keeps it. Already deleted saves
+   * are ignored. Use a shared lock around checked deletions.
+   */
+  remove(id: string, snapshot?: string): void;
   /** Returns export file text for the save with this ID. */
   exportSave(id: string): string;
   /** Checks an import file and stores it as a new save. Existing saves are never changed. */
@@ -490,10 +496,13 @@ export function createSaveStore(
       const ready: ReadySave[] = [];
       const unreadable: SaveListEntry[] = [];
       for (const id of storedIds()) {
+        const snapshot = read(keyFor(id));
+        if (snapshot === null) continue;
         try {
-          const save = load(id);
+          const save = importSaveFile(snapshot);
           ready.push({
             id,
+            snapshot,
             status: 'ready',
             name: save.name,
             settings: save.settings,
@@ -506,7 +515,7 @@ export function createSaveStore(
             throw error;
           }
           const message = error instanceof SaveError ? error.message : 'This save could not be read.';
-          unreadable.push({ id, status: 'unreadable', message });
+          unreadable.push({ id, snapshot, status: 'unreadable', message });
         }
       }
       // Plain comparisons, not localeCompare, keep the order the same everywhere.
@@ -519,8 +528,15 @@ export function createSaveStore(
     put,
     replace,
     load,
-    remove(id) {
+    remove(id, snapshot) {
       const key = keyFor(id);
+      if (snapshot !== undefined) {
+        const stored = read(key);
+        if (stored === null) return;
+        if (stored !== snapshot) {
+          throw new SaveError('changed', 'This save changed after it was listed and was not deleted. Review the refreshed list and confirm Delete again.');
+        }
+      }
       try {
         storage.removeItem(key);
       } catch (error) {

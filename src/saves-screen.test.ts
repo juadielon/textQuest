@@ -144,6 +144,43 @@ describe('buildSaveForm', () => {
     });
   });
 
+  it('keeps Last played when the clock moves between creation and the previous update', async () => {
+    const save = { ...createSave('Trip', settings, ['look'], later), createdAt: earlier.toISOString() };
+    const id = store.add(save);
+    const { form, status } = mountForm(['look', 'hint'], {
+      resumed: { id, save }, now: () => new Date('2026-10-01T12:00:00.000Z'),
+    });
+
+    form.requestSubmit();
+    await lock.settled();
+
+    expect(status.textContent).toBe('Saved “Trip”.');
+    expect(store.load(id)).toMatchObject({
+      commands: ['look', 'hint'], createdAt: earlier.toISOString(), updatedAt: later.toISOString(),
+    });
+  });
+
+  it.each(['rejects', 'throws'])('reports a lock request that %s without changing the save', async (failure) => {
+    const save = createSave('Trip', settings, ['look'], earlier);
+    const id = store.add(save);
+    const { form, status } = mountForm(['look', 'hint'], { resumed: { id, save } });
+    lock.request.mockImplementationOnce(() => {
+      const error = new DOMException('blocked', 'SecurityError');
+      if (failure === 'throws') throw error;
+      return Promise.reject(error);
+    });
+
+    form.requestSubmit();
+    await Promise.resolve();
+
+    expect(status.textContent).toBe('Your browser could not lock save storage. Nothing was changed. Please try again.');
+    expect(store.load(id)).toEqual(save);
+    expect(store.list()).toHaveLength(1);
+    form.requestSubmit();
+    await lock.settled();
+    expect(store.load(id).commands).toEqual(['look', 'hint']);
+  });
+
   it('keeps newer progress saved elsewhere, then saves this progress as a new save', async () => {
     const save = createSave('Trip', settings, ['look'], earlier);
     const id = store.add(save);
@@ -243,7 +280,7 @@ describe('renderSavesScreen', () => {
   function render(): void {
     onResume.mockClear();
     onBack.mockClear();
-    renderSavesScreen(app, { store, onResume, onBack });
+    renderSavesScreen(app, { store, onResume, onBack, locks: lock.locks });
   }
 
   it('says when there are no saves and focuses the heading', () => {
@@ -336,7 +373,7 @@ describe('renderSavesScreen', () => {
     expect(tab.querySelector('[role="status"]')?.textContent).toMatch(/^This save was deleted in another tab/);
   });
 
-  it('only deletes after confirmation, and Keep cancels', () => {
+  it('only deletes after confirmation, and Keep cancels', async () => {
     const id = store.add(createSave('Trip', settings, [], earlier));
     render();
 
@@ -352,6 +389,7 @@ describe('renderSavesScreen', () => {
 
     buttonNamed('Delete: Trip').click();
     buttonNamed('Yes, delete: Trip').click();
+    await lock.settled();
 
     expect(store.list()).toEqual([]);
     expect(app.querySelector('[role="status"]')?.textContent).toBe('Deleted “Trip”.');
@@ -359,7 +397,7 @@ describe('renderSavesScreen', () => {
     expect(texts('.saves-list li')).toEqual([noSavesMessage]);
   });
 
-  it('shows unreadable saves with the reason and keeps them', () => {
+  it('shows unreadable saves with the reason and keeps them', async () => {
     store.add(createSave('Trip', settings, [], earlier));
     const key = `${SAVE_KEY_PREFIX}${'f'.repeat(32)}`;
     storage.items.set(key, '{not json');
@@ -373,7 +411,83 @@ describe('renderSavesScreen', () => {
     expect(storage.items.get(key)).toBe('{not json');
     buttonNamed('Delete: Unreadable save').click();
     buttonNamed('Yes, delete: Unreadable save').click();
+    await lock.settled();
     expect(storage.items.has(key)).toBe(false);
+  });
+
+  it.each(['rename', 'progress'])('keeps a save with a same-timestamp %s before delete gets the lock', async (change) => {
+    const save = createSave('Old name', settings, ['look'], earlier);
+    const id = store.add(save);
+    render();
+    buttonNamed('Delete: Old name').click();
+    const updated = change === 'rename' ? { ...save, name: 'New name' } : { ...save, commands: ['look', 'hint'] };
+    void lock.request(SAVE_LOCK_NAME, () => store.put(id, updated));
+
+    buttonNamed('Yes, delete: Old name').click();
+    await lock.settled();
+
+    expect(store.load(id)).toEqual(updated);
+    expect(app.querySelector('[role="status"]')?.textContent).toMatch(/not deleted.*refreshed list.*confirm Delete again/);
+    expect(document.activeElement).toBe(app.querySelector('[role="status"]'));
+    expect(buttonNamed('Yes, delete: Old name')).toBeNull();
+    buttonNamed(`Delete: ${updated.name}`).click();
+    buttonNamed(`Yes, delete: ${updated.name}`).click();
+    await lock.settled();
+    expect(store.list()).toEqual([]);
+  });
+
+  it.each(['recovered', 'still unreadable'])('keeps an unreadable save changed elsewhere to %s', async (change) => {
+    const save = createSave('Recovered', settings, [], earlier);
+    const id = store.add(save);
+    const key = SAVE_KEY_PREFIX + id;
+    storage.items.set(key, 'broken');
+    render();
+    buttonNamed('Delete: Unreadable save').click();
+    if (change === 'recovered') store.put(id, save);
+    else storage.items.set(key, 'different broken text');
+    const before = storage.items.get(key);
+
+    buttonNamed('Yes, delete: Unreadable save').click();
+    await lock.settled();
+
+    expect(storage.items.get(key)).toBe(before);
+    expect(app.querySelector('[role="status"]')?.textContent).toMatch(/not deleted/);
+    expect(texts('.save-item h2')).toEqual([change === 'recovered' ? 'Recovered' : 'Unreadable save']);
+  });
+
+  it.each(['rejects', 'throws'])('reports a delete lock request that %s and leaves storage alone', async (failure) => {
+    const save = createSave('Trip', settings, [], earlier);
+    const id = store.add(save);
+    render();
+    const before = new Map(storage.items);
+    lock.request.mockImplementationOnce(() => {
+      const error = new DOMException('blocked', 'SecurityError');
+      if (failure === 'throws') throw error;
+      return Promise.reject(error);
+    });
+    buttonNamed('Delete: Trip').click();
+
+    buttonNamed('Yes, delete: Trip').click();
+    await Promise.resolve();
+
+    expect(app.querySelector('[role="status"]')?.textContent).toBe(
+      'Your browser could not lock save storage. Nothing was changed. Please try again.',
+    );
+    expect(document.activeElement).toBe(app.querySelector('[role="status"]'));
+    expect(storage.items).toEqual(before);
+    expect(store.load(id)).toEqual(save);
+  });
+
+  it('refuses deletion when the browser has no Web Locks', () => {
+    const save = createSave('Trip', settings, [], earlier);
+    const id = store.add(save);
+    renderSavesScreen(app, { store, onResume, onBack, locks: undefined });
+    buttonNamed('Delete: Trip').click();
+
+    buttonNamed('Yes, delete: Trip').click();
+
+    expect(app.querySelector('[role="status"]')?.textContent).toMatch(/can’t safely delete.*kept/);
+    expect(store.load(id)).toEqual(save);
   });
 
   it('reports a save that became unreadable before resuming', () => {

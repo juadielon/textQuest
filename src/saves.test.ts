@@ -289,6 +289,7 @@ describe('save store', () => {
     expect(store.list()).toEqual([
       {
         id: second,
+        snapshot: storage.items.get(SAVE_KEY_PREFIX + second),
         status: 'ready',
         name: 'Second',
         settings,
@@ -298,6 +299,7 @@ describe('save store', () => {
       },
       {
         id: first,
+        snapshot: storage.items.get(SAVE_KEY_PREFIX + first),
         status: 'ready',
         name: 'First',
         settings,
@@ -354,6 +356,30 @@ describe('save store', () => {
     expect(store.load(idFor(1)).name).toBe('Old');
   });
 
+  it('checks the full listed snapshot before deleting, including unreadable saves', () => {
+    const { storage, store } = setUp();
+    const save = sampleSave();
+    const id = store.add(save);
+    const key = SAVE_KEY_PREFIX + id;
+    const [listed] = store.list();
+    store.put(id, { ...save, commands: ['look', 'hint'] });
+    const changed = storage.items.get(key);
+
+    expect(problemOf(() => store.remove(id, listed.snapshot))).toBe('changed');
+    expect(storage.items.get(key)).toBe(changed);
+
+    storage.items.set(key, 'broken');
+    const [unreadable] = store.list();
+    expect(unreadable).toMatchObject({ status: 'unreadable', snapshot: 'broken' });
+    storage.items.set(key, 'other broken text');
+    expect(problemOf(() => store.remove(id, unreadable.snapshot))).toBe('changed');
+    expect(storage.items.get(key)).toBe('other broken text');
+    const [latest] = store.list();
+    store.remove(id, latest.snapshot);
+    store.remove(id, latest.snapshot);
+    expect(storage.items.has(key)).toBe(false);
+  });
+
   it('treats unknown or odd IDs as not found', () => {
     const { store } = setUp();
     expect(problemOf(() => store.load(idFor(9)))).toBe('not-found');
@@ -371,8 +397,8 @@ describe('save store', () => {
 
     expect(store.list()).toEqual([
       expect.objectContaining({ id: good, status: 'ready' }),
-      { id: idFor(7), status: 'unreadable', message: expect.stringMatching(/damaged/) },
-      { id: idFor(8), status: 'unreadable', message: expect.stringMatching(/newer version/) },
+      { id: idFor(7), snapshot: 'broken', status: 'unreadable', message: expect.stringMatching(/damaged/) },
+      { id: idFor(8), snapshot: storage.items.get(SAVE_KEY_PREFIX + idFor(8)), status: 'unreadable', message: expect.stringMatching(/newer version/) },
     ]);
     expect(storage.items.size).toBe(5);
   });

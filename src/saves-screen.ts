@@ -35,13 +35,19 @@ export type SaveLocks = Pick<LockManager, 'request'>;
 export const SAVE_LOCK_NAME = 'textquest:saves';
 
 // Without Web Locks the task runs straight away, and callers must not update in place.
-function withSaveLock(locks: SaveLocks | undefined, task: () => void): void {
+function withSaveLock(locks: SaveLocks | undefined, task: () => void, onFailure: () => void): void {
   if (locks) {
-    void locks.request(SAVE_LOCK_NAME, () => task());
+    try {
+      void locks.request(SAVE_LOCK_NAME, () => task()).catch(onFailure);
+    } catch {
+      onFailure();
+    }
   } else {
     task();
   }
 }
+
+const lockFailureMessage = 'Your browser could not lock save storage. Nothing was changed. Please try again.';
 
 function browserLocks(): SaveLocks | undefined {
   return globalThis.navigator?.locks ?? undefined;
@@ -120,7 +126,8 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
         if (current && locks) {
           // A clock set backwards must not make the update look older than the save.
           const createdAt = current.save.createdAt;
-          const save = { ...fresh, createdAt, updatedAt: fresh.updatedAt < createdAt ? createdAt : fresh.updatedAt };
+          const updatedAt = current.save.updatedAt;
+          const save = { ...fresh, createdAt, updatedAt: fresh.updatedAt < updatedAt ? updatedAt : fresh.updatedAt };
           options.store.replace(current.id, current.save, save);
           current = { id: current.id, save };
           status.textContent = `Saved “${name}”.`;
@@ -134,7 +141,7 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
         if (conflict) current = undefined;
         status.textContent = conflict ?? messageFor(error);
       }
-    });
+    }, () => { status.textContent = lockFailureMessage; });
   });
   return form;
 }
@@ -167,7 +174,9 @@ export interface SavesScreenOptions {
  * its name, genre, length and last played time, with Resume, Export and Delete.
  *
  * @remarks
- * Delete asks for confirmation first. Saves that can't be read are listed
+ * Delete confirms the exact listed save under a shared lock; changed saves
+ * stay stored and need fresh confirmation. Without a lock, deletion is refused.
+ * Saves that can't be read are listed
  * with the reason and kept; only the player can delete them. All text goes in
  * through `textContent`. Export downloads JSON; import validates a file and
  * adds a new save without changing existing ones. Results are announced.
@@ -289,16 +298,26 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
         remove.focus();
       });
       // Delete waits for any save in progress in another tab, so that save can't bring it back.
-      const confirm = button('Yes, delete', name, () => withSaveLock(locks, () => {
-        try {
-          options.store.remove(entry.id);
-          status.textContent = `Deleted “${name}”.`;
-        } catch (error) {
-          status.textContent = messageFor(error);
+      const confirm = button('Yes, delete', name, () => {
+        if (!locks) {
+          status.textContent = 'This browser can’t safely delete saves without Web Locks. Your save has been kept.';
+          status.focus();
+          return;
         }
-        refresh();
-        status.focus();
-      }));
+        withSaveLock(locks, () => {
+          try {
+            options.store.remove(entry.id, entry.snapshot);
+            status.textContent = `Deleted “${name}”.`;
+          } catch (error) {
+            status.textContent = messageFor(error);
+          }
+          refresh();
+          status.focus();
+        }, () => {
+          status.textContent = lockFailureMessage;
+          status.focus();
+        });
+      });
       const question = create('p', { id: `delete-question-${entry.id}` }, `Delete “${name}”? This can’t be undone.`);
       // Screen readers hear the question along with whichever button has focus.
       for (const choice of [confirm, keep]) choice.setAttribute('aria-describedby', question.id);

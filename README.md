@@ -134,7 +134,8 @@ Saved-command replay tests cover both versions, all genres and lengths,
 including failed commands and undo. Names still come from IDs in both
 versions. Authored names and their command compatibility belong to
 [issue #56](https://github.com/juadielon/textQuest/issues/56), not this release.
-The save format remains version 1; a browser save/load screen is still planned.
+The save format remains version 1; the browser can save and resume both
+adventure versions.
 
 ## Adventure settings and share words
 
@@ -335,14 +336,19 @@ overwrites newer progress or brings back a deleted save. Instead it says the
 save was changed or deleted elsewhere, and saving again keeps its progress as
 a new save. Browsers without Web Locks save a resumed adventure as a new save
 rather than updating it.
+Deletion checks the exact save shown in the list, including unreadable files.
+If it changed, it is kept and the refreshed list needs a new confirmation.
+Browsers without Web Locks cannot safely delete saves, so deletion is refused.
+Lock failures are reported without changing storage.
 
 **Resume** regenerates the world from the save's settings and replays its
 commands through the play module, so the place, inventory, clues, turns, undo
 history and response log match where the player left off. **Delete** asks for
 confirmation first. A save that can't be read is listed with the reason and
 kept; it is only removed if the player deletes it. Storage problems are shown
-as plain messages. The screen works by keyboard and screen reader, and all
-names are added as plain text. **Export** downloads a readable save as a
+as plain messages. Keyboard navigation, focus and screen-reader attributes
+are covered by unit tests; a real screen reader has not been checked.
+All names are added as plain text. **Export** downloads a readable save as a
 `.json` file. Choose a **Save file** and select **Import save** to add it as
 a new save, even if its name matches an existing one. Damaged, oversized
 and newer-version files show a clear message without changing existing
