@@ -87,6 +87,7 @@ export interface SaveFormOptions {
  * save is still exactly the version this form last loaded or wrote. If
  * another tab or window changed or deleted it, nothing is overwritten or
  * brought back; the player is told and can save again as a new save.
+ * Submissions queued before that warning cannot create the retry's new save.
  * Browsers without Web Locks always save as a new save instead of updating.
  * Results and problems go to a polite status message as plain text.
  * A failed save leaves any stored version as it was.
@@ -95,6 +96,7 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
   const now = options.now ?? (() => new Date());
   const locks = 'locks' in options ? options.locks : browserLocks();
   let current = options.resumed;
+  let conflictCount = 0;
 
   const input = create('input', {
     type: 'text', id: 'save-name', maxLength: MAX_SAVE_NAME_LENGTH, autocomplete: 'off',
@@ -120,7 +122,9 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
     // Take the commands now, so a save matches the moment the player chose.
     const commands = [...options.commands()];
     const time = now();
+    const conflictsAtSubmit = conflictCount;
     withSaveLock(locks, () => {
+      if (conflictsAtSubmit !== conflictCount) return;
       try {
         const fresh = createSave(name, options.settings, commands, time);
         if (current && locks) {
@@ -138,10 +142,15 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
         }
       } catch (error) {
         const conflict = conflictMessage(error);
-        if (conflict) current = undefined;
+        if (conflict) {
+          current = undefined;
+          conflictCount += 1;
+        }
         status.textContent = conflict ?? messageFor(error);
       }
-    }, () => { status.textContent = lockFailureMessage; });
+    }, () => {
+      if (conflictsAtSubmit === conflictCount) status.textContent = lockFailureMessage;
+    });
   });
   return form;
 }

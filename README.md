@@ -356,7 +356,9 @@ that tab last loaded or wrote. Updates and deletes take turns through a Web
 Locks lock shared by every tab, so a stale or simultaneous tab never
 overwrites newer progress or brings back a deleted save. Instead it says the
 save was changed or deleted elsewhere, and saving again keeps its progress as
-a new save. Browsers without Web Locks save a resumed adventure as a new save
+a new save. Submissions already waiting when the conflict is reported do not
+create a copy or replace the warning; a new submission is needed.
+Browsers without Web Locks save a resumed adventure as a new save
 rather than updating it.
 Deletion checks the exact save shown in the list, including unreadable files.
 If it changed, it is kept and the refreshed list needs a new confirmation.
