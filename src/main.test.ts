@@ -47,7 +47,7 @@ function expectPlay(settings: adventureSettings.AdventureSettings): void {
   const named = { ...world, names: worldNamesFrom(adventurePack(settings.version, settings.genre), world) };
   const view = describePlay(named, startPlay(named));
   expect(get('.play-place-name').textContent).toBe(view.placeName);
-  expect(get('.play-place p:nth-of-type(4)').textContent).toBe(view.placeText);
+  expect(get('.play-place p:nth-of-type(3)').textContent).toBe(view.placeText);
   expect(shownDetails()).toEqual({
     'Share word': adventureSettings.encodeShareWord(settings),
     Genre: summariseAdventure(settings).genreLabel,
@@ -55,7 +55,8 @@ function expectPlay(settings: adventureSettings.AdventureSettings): void {
   });
   expect(document.activeElement).toBe(get('h1'));
   expect(app.querySelectorAll('h1')).toHaveLength(1);
-  expect(get('h1').textContent).toBe(playScreenTitle);
+  expect(adventurePack(settings.version, settings.genre).plots.map(({ name }) => name))
+    .toContain(get('h1').textContent);
   expect(app.firstElementChild).toBe(get('h1'));
   expect(get('h1').nextElementSibling).toBe(get('header'));
   expect(get('h1').getAttribute('tabindex')).toBe('-1');
@@ -89,6 +90,12 @@ it.each<adventureSettings.AdventureGenre>(['light-fantasy', 'cosy-mystery', 'sci
     expect(random).toHaveBeenCalledOnce();
     expect(create).toHaveBeenCalledExactlyOnceWith('short', undefined);
     expectPlay(newSettings);
+    const title = get('h1').textContent;
+    const word = shownDetails()['Share word'];
+    get<HTMLButtonElement>('header button').click();
+    openAdventure(word);
+    expectPlay(newSettings);
+    expect(get('h1').textContent).toBe(title);
   },
 );
 

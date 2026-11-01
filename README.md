@@ -20,8 +20,13 @@ browser screen. Players can choose a short, medium or long adventure, or
 type a share word to open the same starting adventure as a friend.
 [Issue #54](https://github.com/juadielon/textQuest/issues/54) connects both
 forms to play. Invalid words show a clear message beside the field.
-The play screen shows the share word, genre and length and a **Back to start**
-button. Going back ends the current session; opening its share word starts
+The play screen shows a readable story title alongside the share word, genre
+and length and a **Back to start** button
+([issue #81](https://github.com/juadielon/textQuest/issues/81)).
+The title is the selected plot's authored name, stays the same for new and
+shared adventures in versions 1 and 2, and reveals no hidden discoveries.
+Titles can repeat: pass on the exact share word, not just the title.
+Going back ends the current session; opening its share word starts
 again with no progress. There is no save or load interface yet.
 Focus moves to the new screen's heading on navigation. Both screens work by
 keyboard and screen reader, on narrow and wide screens.
@@ -290,7 +295,8 @@ Commands, including help, hint and undo, run through the play module. When
 the goal is reached, an ending says how many turns it took; undo still works.
 
 Everything can be done with the keyboard: type a command and press Enter.
-The screen starts with one "Your adventure" heading, focused on navigation.
+The screen starts with the story title as its heading, focused on navigation.
+An unplayable adventure keeps the fallback heading "Your adventure".
 The share word and navigation controls sit immediately below it.
 Each new response is announced through a polite live region. The layout is
 one column on narrow screens, with a progress column on wide ones. Typed and

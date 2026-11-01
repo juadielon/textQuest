@@ -25,8 +25,7 @@ export interface PlayView {
 }
 
 /**
- * The play screen's top-level heading. It can be focused from code, so a
- * caller can move focus to it when the screen opens.
+ * The fallback heading when an adventure cannot be played.
  */
 export const playScreenTitle = 'Your adventure';
 
@@ -59,7 +58,9 @@ export function describePlay(world: AdventureWorld, state: PlayState): PlayView 
  * including help, hint and undo. The ending shows once the goal is reached.
  *
  * @remarks
- * The screen always starts with a focusable `h1` heading, {@link playScreenTitle}.
+ * The screen starts with the authored plot name as a focusable `h1` heading,
+ * or {@link playScreenTitle} when the adventure cannot be played. Titles can
+ * repeat; the share word remains the exact adventure identifier.
  * Player and world text is only ever inserted with `textContent`. New
  * responses are announced through a polite live region. If the world can't
  * be generated or started because of a validation `RangeError`, a plain
@@ -88,9 +89,9 @@ export function renderPlayScreen(target: HTMLElement, settings: AdventureSetting
     return;
   }
 
+  title.textContent = plot.name;
   const placeName = element('h2', 'play-place-name');
   placeName.id = 'play-place-name';
-  const plotName = element('p', 'play-plot-name');
   const introduction = element('p', 'play-introduction');
   const description = element('p', 'play-description');
   const placeText = element('p');
@@ -100,7 +101,7 @@ export function renderPlayScreen(target: HTMLElement, settings: AdventureSetting
   const itemsHere = element('ul', 'play-items-here');
   const storyHeading = element('h3', undefined, 'Story');
   const story = element('ul', 'play-story');
-  const place = element('section', 'play-place', placeName, plotName, introduction, description,
+  const place = element('section', 'play-place', placeName, introduction, description,
     placeText, peopleHeading, people, itemsHeading, itemsHere, storyHeading, story);
   place.setAttribute('aria-labelledby', placeName.id);
 
@@ -138,7 +139,6 @@ export function renderPlayScreen(target: HTMLElement, settings: AdventureSetting
     const view = describePlay(world, state);
     const targets = discoveredTargets(world, state);
     placeName.textContent = view.placeName;
-    plotName.textContent = plot.name;
     introduction.textContent = renderProse(plot.introduction, pack, world, state, targets);
     const authoredPlace = pack.places.find(({ id }) => id === state.placeId);
     description.textContent = authoredPlace

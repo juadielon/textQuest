@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  createAdventureSettings, type AdventureGenre, type AdventureSettings,
+  adventureLengths, createAdventureSettings, encodeShareWord, parseShareWord,
+  type AdventureGenre, type AdventureSettings,
 } from './adventure-settings';
 import type { AdventureWorld } from './adventure-world';
 import type { ContentPack } from './content/v1/format';
@@ -252,7 +253,7 @@ describe('renderPlayScreen', () => {
 
     const title = target.firstElementChild as HTMLElement;
     expect(title.tagName).toBe('H1');
-    expect(title.textContent).toBe(playScreenTitle);
+    expect(title.textContent).toBe('Tiny adventure');
     expect(title.tabIndex).toBe(-1);
     expect(target.querySelectorAll('h1')).toHaveLength(1);
     expect(text(target, 'h2')).toEqual(['gate', 'The end', 'Inventory', 'Clues found']);
@@ -273,6 +274,50 @@ describe('renderPlayScreen', () => {
       expect(target.querySelector('form')).not.toBeNull();
     },
   );
+
+  it.each([
+    [0, 'Restore the warning chain'],
+    [1, 'Follow the teapot trail'],
+    [2, 'Guide the overdue ship'],
+    [5, 'Honour the station charter'],
+    [8, 'Find the missing keeper'],
+    [9, 'Renew the river pact'],
+    [10, 'Follow two threads'],
+    [11, 'Hear every side'],
+    [20, 'Wake the quiet station'],
+  ] as const)('pins seed %i title "%s" across released versions and lengths', (seed, title) => {
+    const target = document.createElement('main');
+    for (const version of [1, 2]) for (const length of adventureLengths) {
+      const settings = createAdventureSettings(seed, length, version);
+      const before = generateAdventureWorld(settings);
+      const word = encodeShareWord(settings);
+      renderPlayScreen(target, settings);
+      expect(target.querySelector('h1')?.textContent).toBe(title);
+      renderPlayScreen(target, parseShareWord(word));
+      expect(target.querySelector('h1')?.textContent).toBe(title);
+      expect(generateAdventureWorld(settings)).toEqual(before);
+      expect(encodeShareWord(settings)).toBe(word);
+    }
+  });
+
+  it('keeps the story title unchanged by commands and undo', () => {
+    const target = renderTiny();
+    type(target, 'take brass key');
+    type(target, 'undo');
+    expect(target.querySelector('h1')?.textContent).toBe('Tiny adventure');
+    expect(target.querySelector('.play-plot-name')).toBeNull();
+  });
+
+  it('inserts the authored title as plain text', () => {
+    vi.mocked(generateAdventureWorld).mockReturnValueOnce(tinyWorld);
+    vi.mocked(adventurePack).mockReturnValueOnce({
+      ...tinyPack, plots: [{ ...tinyPack.plots[0], name: '<img src=x onerror=alert(1)>' }],
+    });
+    const target = document.createElement('main');
+    renderPlayScreen(target, settingsFor('light-fantasy'));
+    expect(target.querySelector('h1')?.textContent).toBe('<img src=x onerror=alert(1)>');
+    expect(target.querySelector('img')).toBeNull();
+  });
 
   it.each([1, 2])('shows authored names and safe prose for adventure version %i', (version) => {
     const settings = settingsFor('light-fantasy', version);

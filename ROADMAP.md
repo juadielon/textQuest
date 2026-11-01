@@ -57,6 +57,10 @@ two-word share words such as `silverlantern`, with unit tests. The start
 screen ([issue #41](https://github.com/juadielon/textQuest/issues/41)) opens
 play for new adventures or share words, and play shows the share word
 ([issue #54](https://github.com/juadielon/textQuest/issues/54)).
+Play also shows the selected plot's readable title beside the share word
+([issue #81](https://github.com/juadielon/textQuest/issues/81)).
+The same adventure has the same title in versions 1 and 2; titles can repeat,
+so only the share word identifies the exact starting adventure.
 Version 1 settings generate
 repeatable engine worlds ([issue #31](https://github.com/juadielon/textQuest/issues/31)),
 implemented in [pull request #35](https://github.com/juadielon/textQuest/pull/35).
@@ -189,7 +193,8 @@ Returning to start ends the session, and reopening a word starts fresh.
 Invalid settings or worlds show the accessible unplayable message; unexpected
 errors while opening play are rethrown
 ([issue #74](https://github.com/juadielon/textQuest/issues/74)).
-The play screen shows the matching pack's names and prose, with hidden
+The play heading uses the selected plot's authored name beside the exact
+share word. The play screen shows the matching pack's names and prose, with hidden
 references withheld until discovered. Saves remain planned.
 
 ### 8. Release checks and hosting guide
