@@ -789,6 +789,38 @@ describe('renderSavesScreen', () => {
     expect(store.load(id).name).toBe('Updated A');
   });
 
+  it.each(['first', 'last'])('updates a failed %s deletion row\'s Resume when its list refresh fails', (order) => {
+    const saved = createSave('A', settings, [], earlier);
+    const id = store.add(saved);
+    store.add(createSave('B', settings, [], earlier));
+    const waiting = new Map<string, () => void>();
+    let next = '';
+    lock.request.mockImplementation((_name: string, task: () => unknown) => new Promise<void>((resolve) => {
+      waiting.set(next, () => { task(); resolve(); });
+    }));
+    render();
+    // A waits first, so B is still pending when A fails; or B waits first, so A fails last.
+    for (const name of order === 'first' ? ['A', 'B'] : ['B', 'A']) {
+      next = name;
+      buttonNamed(`Delete: ${name}`).click();
+      buttonNamed(`Yes, delete: ${name}`).click();
+    }
+    const back = [...app.querySelectorAll('button')].find((node) => node.textContent === 'Back to start')!;
+    store.put(id, { ...saved, commands: ['look'] });
+    if (order === 'last') waiting.get('B')!();
+    vi.spyOn(store, 'list').mockImplementationOnce(() => { throw new Error('storage blocked'); });
+    waiting.get('A')!();
+    expect(app.querySelector('[role="status"]')!.textContent).toContain('Something went wrong');
+    if (order === 'first') {
+      expect(buttonNamed('Resume: A').disabled).toBe(true);
+      expect(back.disabled).toBe(true);
+      waiting.get('B')!();
+    }
+    expect(buttonNamed('Resume: A').disabled).toBe(false);
+    expect(back.disabled).toBe(false);
+    expect(store.load(id).commands).toEqual(['look']);
+  });
+
   it('shows unreadable saves with the reason and keeps them', async () => {
     store.add(createSave('Trip', settings, [], earlier));
     const key = `${SAVE_KEY_PREFIX}${'f'.repeat(32)}`;
