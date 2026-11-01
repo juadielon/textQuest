@@ -127,11 +127,146 @@ describe('startPlay', () => {
     expect(() => startPlay({ ...sampleWorld(), startPlaceId: 'nowhere' })).toThrow(RangeError);
   });
 
-  it('refuses world version 2 until play supports choices and checkpoints', () => {
-    const world: AdventureWorld = { ...sampleWorld(), version: 2 };
-    expect(() => startPlay(world)).toThrow('World version 2 cannot be played yet.');
-    expect(() => runAction(world, startPlay(sampleWorld()), { kind: 'look' }))
-      .toThrow('cannot be played yet');
+  it('refuses failure endings until checkpoint recovery exists', () => {
+    const world = choiceWorld();
+    const unsafe: AdventureWorld = {
+      ...world,
+      solution: {
+        ...world.solution,
+        endings: [...world.solution.endings!, { id: 'lost', outcome: 'failure' }],
+        steps: [...world.solution.steps, {
+          id: 'jump', placeId: 'gate', conditions: {},
+          effects: [{ kind: 'end-adventure', endingId: 'lost' }],
+        }],
+      },
+    };
+    expect(() => startPlay(unsafe)).toThrow(
+      'Failure endings cannot be played until checkpoint recovery exists.',
+    );
+    expect(() => runAction(unsafe, startPlay(world), { kind: 'look' }))
+      .toThrow('Failure endings cannot be played');
+  });
+});
+
+// A world version 2 example: one choice opens one of two paths. The right
+// path leads to a winning ending and the left path leads to the goal.
+function choiceWorld(): AdventureWorld {
+  return {
+    version: 2,
+    startPlaceId: 'gate',
+    places: [{ id: 'gate' }, { id: 'left-path' }, { id: 'right-path' }, { id: 'tower' }],
+    exits: [
+      { id: 'left-way', fromPlaceId: 'gate', toPlaceId: 'left-path', locked: true },
+      { id: 'right-way', fromPlaceId: 'gate', toPlaceId: 'right-path', locked: true },
+      { id: 'back', fromPlaceId: 'right-path', toPlaceId: 'gate', locked: false },
+      { id: 'climb', fromPlaceId: 'left-path', toPlaceId: 'tower', locked: false },
+    ],
+    items: [{ id: 'crown', placeId: 'right-path' }],
+    clues: [],
+    solution: {
+      steps: [
+        {
+          id: 'head-left', placeId: 'gate', conditions: {}, choiceId: 'route',
+          effects: [{ kind: 'unlock-exit', exitId: 'left-way' }],
+        },
+        {
+          id: 'head-right', placeId: 'gate', conditions: {}, choiceId: 'route',
+          effects: [{ kind: 'unlock-exit', exitId: 'right-way' }],
+        },
+        {
+          id: 'wear-crown', placeId: 'right-path', conditions: { itemsHeld: ['crown'] },
+          effects: [{ kind: 'end-adventure', endingId: 'crowned' }],
+        },
+      ],
+      goal: { placeId: 'tower', conditions: {} },
+      endings: [{ id: 'crowned', outcome: 'win' }],
+    },
+  };
+}
+
+const choiceIds = (world: PlayWorld, state: PlayState) => discoveredTargets(world, state)
+  .filter(({ kind }) => kind === 'choice').map(({ id }) => id);
+
+describe('playing world version 2 choices', () => {
+  it('agrees with the checker on the example world', () => {
+    expect(checkWinnability(choiceWorld())).toMatchObject({
+      winnable: true, unreachableStepIds: [], reachableEndingIds: ['crowned'],
+    });
+  });
+
+  it('offers open choices here without doing them by themselves', () => {
+    const world = choiceWorld();
+    const start = startPlay(world);
+    expect(start.stepsDone).toEqual([]);
+    expect(choiceIds(world, start)).toEqual(['head-left', 'head-right']);
+    expect(playCommand(world, start, 'look').message).toContain('You can choose head left and head right.');
+    expect(playCommand(world, start, 'examine head left').message).toBe('You could choose head left here.');
+  });
+
+  it('shuts out the other steps of a choice once one is made, until undo', () => {
+    const world = choiceWorld();
+    const start = startPlay(world);
+    const turn = playCommand(world, start, 'choose head left');
+    expect(turn.message).toBe('You choose head left. The left way is now open.');
+    expect(turn.state).toMatchObject({ stepsDone: ['head-left'], unlockedExits: ['left-way'], turns: 1 });
+    expect(choiceIds(world, turn.state)).toEqual([]);
+    expect(playCommand(world, turn.state, 'choose head right').state).toBe(turn.state);
+    expect(runAction(world, turn.state, { kind: 'choose', targetId: 'head-right', targetKind: 'choice' }))
+      .toEqual({ state: turn.state, message: 'There is no choice to make here.' });
+    expect(playCommand(world, turn.state, 'go right way').message).toBe('The right way is locked.');
+    const undone = playCommand(world, turn.state, 'undo').state;
+    expect(undone).toBe(start);
+    expect(choiceIds(world, undone)).toEqual(['head-left', 'head-right']);
+  });
+
+  it('reaches the goal along the chosen route', () => {
+    const world = choiceWorld();
+    const state = replayCommands(world, ['choose head left', 'go left path', 'go tower']);
+    expect(state.goalReached).toBe(true);
+    expect(playCommand(world, replayCommands(world, ['choose head left', 'go left path']), 'go tower')
+      .message).toContain('You have reached your goal. Well done!');
+  });
+
+  it('keeps an ending hidden until its conditions hold, then wins when chosen', () => {
+    const world = choiceWorld();
+    const there = replayCommands(world, ['choose head right', 'go right path']);
+    expect(choiceIds(world, there)).toEqual([]);
+    expect(playCommand(world, there, 'choose wear crown').state).toBe(there);
+    const holding = playCommand(world, there, 'take crown').state;
+    expect(playCommand(world, holding, 'use crown')).toEqual({ state: holding, message: 'Nothing happens.' });
+    expect(choiceIds(world, holding)).toEqual(['wear-crown']);
+    const won = playCommand(world, holding, 'choose wear crown');
+    expect(won.message).toBe('You choose wear crown. Your adventure ends here, and you have won. Well done!');
+    expect(won.state).toMatchObject({ goalReached: true, stepsDone: ['head-right', 'wear-crown'], turns: 4 });
+    expect(playCommand(world, won.state, 'go gate').message)
+      .toBe('You have already finished this adventure. Type undo to go back a turn.');
+    expect(playCommand(world, won.state, 'undo').state).toBe(holding);
+  });
+
+  it('gives general hints that never name a choice or a closed route', () => {
+    const world = choiceWorld();
+    const start = startPlay(world);
+    const atStart = playCommand(world, start, 'hint').message;
+    expect(atStart).toBe('There is a choice to make here. Think before you choose.');
+    const chosen = playCommand(world, start, 'choose head left').state;
+    expect(playCommand(world, chosen, 'hint').message)
+      .toBe('Try exploring somewhere you have not been yet. If you seem stuck, try undo.');
+    const room: AdventureWorld = {
+      version: 2, startPlaceId: 'room', places: [{ id: 'room' }], exits: [],
+      items: [{ id: 'lamp', placeId: 'room' }], clues: [],
+      solution: {
+        steps: [
+          { id: 'light-lamp', placeId: 'room', conditions: { itemsHeld: ['lamp'] }, choiceId: 'mood', effects: [] },
+          { id: 'sit-dark', placeId: 'room', conditions: {}, choiceId: 'mood', effects: [] },
+        ],
+        goal: { placeId: 'room', conditions: { stepsDone: ['light-lamp'] } },
+      },
+    };
+    const roomStart = startPlay(room);
+    expect(playCommand(room, roomStart, 'hint').message).toBe('Look around. Something here is worth taking.');
+    const dark = playCommand(room, roomStart, 'choose sit dark').state;
+    expect(playCommand(room, dark, 'hint').message)
+      .toBe('Try exploring somewhere you have not been yet. If you seem stuck, try undo.');
   });
 });
 

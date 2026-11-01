@@ -229,9 +229,19 @@ that would win, without counting actions taken after a win. For version 2
 it also returns `reachableEndingIds` and `canGetStuck`, which is true when a
 route reaches a point where the player can no longer win. The point just
 before a failure must still be able to win, so recovery from it works. No
-released adventure generates version 2 worlds, and play refuses them until it
-supports choices and checkpoint recovery
-([issue #82](https://github.com/juadielon/textQuest/issues/82)).
+released adventure generates version 2 worlds.
+
+The play engine can play version 2 worlds whose endings are all wins. Choices
+and steps that end the adventure never happen by themselves or through
+`use`. Once their conditions hold at their place, they are listed as options
+and `choose <option>` makes one, counting as an undoable turn. Making one
+step of a choice shuts out the others, and a winning ending finishes the
+adventure straight away. Options appear only while they can be chosen, and
+their outcomes stay hidden. Version 2 hints stay general and never suggest a
+route, because the hint route search does not model choices yet. Play refuses
+worlds with a failure ending until checkpoint recovery
+([issue #82](https://github.com/juadielon/textQuest/issues/82)) exists. Choice
+options use names built from step IDs until content packs can name them.
 
 [Issue #16](https://github.com/juadielon/textQuest/issues/16) limits the
 search to `MAX_SEARCH_STATES` (10,000) states, so a large world cannot freeze

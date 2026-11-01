@@ -23,9 +23,9 @@ export interface PlayState {
   readonly stepsDone: readonly string[];
   /** Locked exits the player has opened. */
   readonly unlockedExits: readonly string[];
-  /** Turns that changed progress: moves, takes and successful uses. */
+  /** Turns that changed progress: moves, takes, successful uses and choices. */
   readonly turns: number;
-  /** True once the player has reached the goal. */
+  /** True once the player has reached the goal or a winning ending. */
   readonly goalReached: boolean;
   /** The state before the last turn, for undo. Null at the start. */
   readonly previous: PlayState | null;
@@ -220,7 +220,8 @@ function disambiguateExitTargets(targets: readonly CommandTarget[]): CommandTarg
   const reachable = (target: CommandTarget, list: readonly CommandTarget[]) => {
     const verbs = target.kind === 'item' ? ['examine', 'take', 'use']
       : target.kind === 'place' || target.kind === 'exit' ? ['examine', 'go']
-        : target.kind === 'person' ? ['examine', 'talk to'] : ['examine'];
+        : target.kind === 'person' ? ['examine', 'talk to']
+          : target.kind === 'choice' ? ['examine', 'choose'] : ['examine'];
     return verbs.every((verb) => {
       const parsed = parseCommand(`${verb} ${target.name}`, list);
       if (!parsed.ok) return false;
@@ -268,6 +269,7 @@ function stateTargets(world: PlayWorld, progress: Progress): CommandTarget[] {
       : [...progress.itemsHeld, ...itemsHere(world, progress)]).map(target('item')),
     ...[...progress.cluesRevealed].map(target('clue')),
     ...peopleHere(world, progress).map(target('person')),
+    ...choicesHere(world, progress).map((id): CommandTarget => ({ id, kind: 'choice', name: idName(id) })),
   ];
   return world.names ? disambiguateExitTargets(targets) : targets;
 }
@@ -390,22 +392,49 @@ function completeStep(world: PlayWorld, progress: Progress, step: PuzzleStep, in
         progress.cluesRevealed.add(effect.clueId);
         if (includeMessages) messages.push(`You found ${stateListNames(world, progress, 'clue', [effect.clueId])} clue.`);
         break;
+      case 'end-adventure':
+        break;
     }
   }
   return messages;
 }
 
+// Version 2 decisions: choices and steps that end the adventure. The player
+// makes them with choose, so they never happen by themselves or through use.
+const isDecision = (step: PuzzleStep) => step.choiceId !== undefined
+  || step.effects.some(({ kind }) => kind === 'end-adventure');
+
+// Once one step of a choice is done, the other steps of that choice are gone.
+const choiceTaken = (world: PlayWorld, progress: Progress, step: PuzzleStep) =>
+  step.choiceId !== undefined && world.solution.steps.some((other) =>
+    other.choiceId === step.choiceId && progress.stepsDone.has(other.id));
+
 function stepsReadyHere(world: PlayWorld, progress: Progress): PuzzleStep[] {
   return world.solution.steps.filter((step) => step.placeId === progress.placeId
-    && !progress.stepsDone.has(step.id) && meets(progress, step.conditions));
+    && !progress.stepsDone.has(step.id) && meets(progress, step.conditions)
+    && !choiceTaken(world, progress, step));
+}
+
+const actionsReadyHere = (world: PlayWorld, progress: Progress) =>
+  stepsReadyHere(world, progress).filter((step) => !isDecision(step));
+
+const choicesHere = (world: PlayWorld, progress: Progress) =>
+  stepsReadyHere(world, progress).filter(isDecision).map(({ id }) => id);
+
+// Only winning endings can be played until checkpoint recovery exists.
+function winningEndingReached(world: PlayWorld, progress: Progress): boolean {
+  const wins = new Set((world.solution.endings ?? [])
+    .filter(({ outcome }) => outcome === 'win').map(({ id }) => id));
+  return world.solution.steps.some((step) => progress.stepsDone.has(step.id)
+    && step.effects.some((effect) => effect.kind === 'end-adventure' && wins.has(effect.endingId)));
 }
 
 // Steps that need no item happen by themselves once their conditions hold.
 // Steps that need items wait for the player to use one of those items.
 function settle(world: PlayWorld, progress: Progress): string[] {
   const messages: string[] = [];
-  for (let step = stepsReadyHere(world, progress).find((ready) => !needsItems(ready)); step;
-    step = stepsReadyHere(world, progress).find((ready) => !needsItems(ready))) {
+  for (let step = actionsReadyHere(world, progress).find((ready) => !needsItems(ready)); step;
+    step = actionsReadyHere(world, progress).find((ready) => !needsItems(ready))) {
     messages.push('Something changes here.', ...completeStep(world, progress, step));
   }
   return messages;
@@ -420,12 +449,11 @@ const itemsHere = (world: PlayWorld, progress: Progress) => world.items
   .filter((item) => item.placeId === progress.placeId && !progress.itemsHeld.has(item.id))
   .map(({ id }) => id);
 
-// Play only knows version 1 rules. Version 2 choices and failure endings stay
-// out of play until it can handle them and checkpoint recovery exists.
+// Failure endings stay out of play until checkpoint recovery exists (issue #82).
 function validatePlayWorld(world: PlayWorld): void {
   validateWorld(world);
-  if (world.version !== 1) {
-    throw new RangeError(`World version ${world.version} cannot be played yet.`);
+  if ((world.solution.endings ?? []).some(({ outcome }) => outcome === 'failure')) {
+    throw new RangeError('Failure endings cannot be played until checkpoint recovery exists.');
   }
 }
 
@@ -434,7 +462,7 @@ function validatePlayWorld(world: PlayWorld): void {
  * and any steps that need no items happen straight away. The world is not changed.
  *
  * @throws RangeError when the world is invalid, as `checkWinnability` would
- * report, or uses world version 2, which play does not support yet.
+ * report, or has a failure ending, which play does not support yet.
  */
 export function startPlay(world: PlayWorld): PlayState {
   validatePlayWorld(world);
@@ -452,7 +480,9 @@ export function startPlay(world: PlayWorld): PlayState {
 /**
  * Lists the things the player has discovered, ready to pass to `parseCommand`.
  * Puzzle steps, the goal, unvisited places out of sight, items elsewhere and
- * unfound clues never appear.
+ * unfound clues never appear. World version 2 choices appear only while the
+ * player is at their place, their conditions hold and the choice is still
+ * open. Their outcomes are never shown.
  *
  * @remarks
  * Targets use world IDs with their kind, because IDs are only unique within
@@ -482,6 +512,10 @@ function describePlace(world: PlayWorld, progress: Progress): string {
   if (clues.length) {
     parts.push(`Clues here: ${listOf(clues.map((id) => stateThe(world, progress, 'clue', id, targets)))}.`);
   }
+  const choices = choicesHere(world, progress);
+  if (choices.length) {
+    parts.push(`You can choose ${listOf(choices.map((id) => stateNameOf(world, progress, 'choice', id, targets)))}.`);
+  }
   const exits = exitsFrom(world, progress.placeId).map((exit) => {
     if (world.names) {
       const name = withThe(exitName(world, progress, exit, targets));
@@ -498,7 +532,7 @@ function describePlace(world: PlayWorld, progress: Progress): string {
 function examine(world: PlayWorld, progress: Progress, { kind, id }: Target): string {
   if (kind === 'place' && id === progress.placeId) return describePlace(world, progress);
   const targets = stateTargets(world, progress);
-  const name = kind === 'person'
+  const name = kind === 'person' || kind === 'choice'
     ? stateNameOf(world, progress, kind, id, targets)
     : stateThe(world, progress, kind, id, targets);
   switch (kind) {
@@ -524,6 +558,10 @@ function examine(world: PlayWorld, progress: Progress, { kind, id }: Target): st
       return progress.cluesRevealed.has(id) ? `You have found ${name} clue.` : 'You have not found that.';
     case 'person':
       return peopleHere(world, progress).includes(id) ? `${name} is here.` : 'They are not here.';
+    case 'choice':
+      return choicesHere(world, progress).includes(id)
+        ? `You could choose ${name} here.`
+        : 'That choice is not here.';
     default:
       return 'You see nothing special.';
   }
@@ -537,6 +575,7 @@ function isPresent(world: PlayWorld, progress: Progress, { kind, id }: Target): 
     case 'item': return progress.itemsHeld.has(id) || itemsHere(world, progress).includes(id);
     case 'clue': return progress.cluesRevealed.has(id);
     case 'person': return peopleHere(world, progress).includes(id);
+    case 'choice': return choicesHere(world, progress).includes(id);
     default: return false;
   }
 }
@@ -622,7 +661,7 @@ function use(
   if (target && !isPresent(world, progress, target)) {
     return { done: false, message: 'That is not here.' };
   }
-  const ready = stepsReadyHere(world, progress)
+  const ready = actionsReadyHere(world, progress)
     .filter((step) => (step.conditions.itemsHeld ?? []).includes(id));
   // Prefer a step that opens the exit the player named, but never block progress on the target.
   const step = ready.find((entry) => target?.kind === 'exit'
@@ -643,6 +682,15 @@ function use(
       ...completeStep(world, progress, step),
     ].join(' '),
   };
+}
+
+function choose(world: PlayWorld, progress: Progress, { kind, id }: Target): Change {
+  if (kind !== 'choice' || !choicesHere(world, progress).includes(id)) {
+    return { done: false, message: 'There is no choice to make here.' };
+  }
+  const name = stateNameOf(world, progress, 'choice', id);
+  const step = world.solution.steps.find((entry) => entry.id === id)!;
+  return { done: true, message: [`You choose ${name}.`, ...completeStep(world, progress, step)].join(' ') };
 }
 
 // Takes and uses everything possible here. Progress only grows in version 1,
@@ -699,12 +747,20 @@ function nextPlaceToGoal(
 
 function hint(world: PlayWorld, progress: Progress, canUndo: boolean): string {
   const { steps, goal } = world.solution;
-  const neededItems = new Set([goal, ...steps].flatMap(({ conditions }) => conditions.itemsHeld ?? []));
+  const open = steps.filter((step) => !choiceTaken(world, progress, step));
+  const neededItems = new Set([goal, ...open].flatMap(({ conditions }) => conditions.itemsHeld ?? []));
   if (itemsHere(world, progress).some((id) => neededItems.has(id))) {
     return 'Look around. Something here is worth taking.';
   }
-  if (stepsReadyHere(world, progress).length) {
+  if (actionsReadyHere(world, progress).length) {
     return 'Something you are carrying could be useful here.';
+  }
+  // The route search below takes every step greedily, which is wrong once
+  // choices shut other steps out. Version 2 hints stay general instead, so
+  // they never point at a route that a choice has closed or name an option.
+  if (world.version === 2) {
+    if (choicesHere(world, progress).length) return 'There is a choice to make here. Think before you choose.';
+    return `Try exploring somewhere you have not been yet.${canUndo ? ' If you seem stuck, try undo.' : ''}`;
   }
   const next = nextPlaceToGoal(world, progress);
   if (next === searchLimitReached) return 'Try exploring somewhere you have not been yet.';
@@ -719,16 +775,25 @@ function hint(world: PlayWorld, progress: Progress, canUndo: boolean): string {
  * Neither the world nor the input state is changed.
  *
  * @remarks
- * Moves, takes and successful uses count as turns and can be undone. Look,
+ * Moves, takes, successful uses and choices count as turns and can be undone. Look,
  * examine, inventory, hint, help and talking are free. People from
  * `world.names` can be talked to and examined at their place. A step that needs items happens
  * when the player uses one of those items at its place; other steps happen by
  * themselves once their conditions hold. These match the winnability
  * checker's rules, so any winnable world can be won with typed commands.
- * Hints point at the next useful step without naming puzzle answers, and
- * suggest undo at a dead end only when a previous turn exists.
  *
- * @throws RangeError when the world is invalid or uses world version 2.
+ * World version 2 decisions, meaning steps with a `choiceId` or an
+ * `end-adventure` effect, never happen by themselves or through use. Once
+ * their conditions hold at their place they are offered as choices, and
+ * `choose` makes one. Making one step of a choice shuts out the others. A
+ * winning ending finishes the adventure straight away.
+ *
+ * Hints point at the next useful step without naming puzzle answers, and
+ * suggest undo at a dead end only when a previous turn exists. Version 2
+ * hints stay general and never suggest a route, because the route search
+ * does not model choices yet.
+ *
+ * @throws RangeError when the world is invalid or has a failure ending.
  */
 export function runAction(world: PlayWorld, state: PlayState, action: CommandAction): PlayTurn {
   validatePlayWorld(world);
@@ -765,12 +830,17 @@ export function runAction(world: PlayWorld, state: PlayState, action: CommandAct
       change = take(world, progress, { kind: action.targetKind, id: action.targetId });
       break;
     case 'use': change = use(world, progress, action); break;
-    case 'choose': change = { done: false, message: 'There is no choice to make here.' }; break;
+    case 'choose':
+      change = choose(world, progress, { kind: action.targetKind, id: action.targetId });
+      break;
   }
   if (!change.done) return reply(change.message);
-  const messages = [change.message, ...settle(world, progress)];
-  const goalReached = goalMet(world, progress);
-  if (goalReached) messages.push('You have reached your goal. Well done!');
+  // An ending stops the adventure straight away, as the checker's routes do.
+  const endedWell = winningEndingReached(world, progress);
+  const messages = [change.message, ...endedWell ? [] : settle(world, progress)];
+  const goalReached = endedWell || goalMet(world, progress);
+  if (endedWell) messages.push('Your adventure ends here, and you have won. Well done!');
+  else if (goalReached) messages.push('You have reached your goal. Well done!');
   return {
     state: { ...stateFrom(world, progress), turns: state.turns + 1, goalReached, previous: state },
     message: messages.join(' '),

@@ -126,8 +126,10 @@ compatibility is separate work in
 [issue #56](https://github.com/juadielon/textQuest/issues/56).
 The current rules only add progress. World format version 2 rules and checks
 for mutually exclusive choices and early win or failure endings are prepared
-([issue #79](https://github.com/juadielon/textQuest/issues/79)), but no
-adventure generates them and play does not accept them yet.
+([issue #79](https://github.com/juadielon/textQuest/issues/79)). Play
+supports choices and winning endings in those worlds, but no adventure
+generates them, and failure endings stay refused until checkpoint recovery
+([issue #82](https://github.com/juadielon/textQuest/issues/82)).
 
 ### 5. Commands and recovery
 
