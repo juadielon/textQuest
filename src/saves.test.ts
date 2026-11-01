@@ -289,6 +289,7 @@ describe('save store', () => {
     expect(store.list()).toEqual([
       {
         id: second,
+        snapshot: storage.items.get(SAVE_KEY_PREFIX + second),
         status: 'ready',
         name: 'Second',
         settings,
@@ -298,6 +299,7 @@ describe('save store', () => {
       },
       {
         id: first,
+        snapshot: storage.items.get(SAVE_KEY_PREFIX + first),
         status: 'ready',
         name: 'First',
         settings,
@@ -322,11 +324,60 @@ describe('save store', () => {
     expect(store.list()).toHaveLength(1);
   });
 
+  it('replaces a save only while it still matches the expected version', () => {
+    const { storage, store } = setUp();
+    const original = sampleSave();
+    const id = store.add(original);
+    const mine = { ...original, commands: ['look', 'go north'] };
+    store.replace(id, original, mine);
+    expect(store.load(id)).toEqual(mine);
+
+    // Another tab saved different commands with the very same timestamp.
+    const theirs = { ...mine, commands: ['look', 'go south'] };
+    store.put(id, theirs);
+    const key = SAVE_KEY_PREFIX + id;
+    const before = storage.items.get(key);
+    expect(problemOf(() => store.replace(id, mine, { ...mine, commands: ['look'] }))).toBe('changed');
+    expect(storage.items.get(key)).toBe(before);
+
+    storage.items.set(key, '{not json');
+    expect(problemOf(() => store.replace(id, theirs, mine))).toBe('changed');
+    expect(storage.items.get(key)).toBe('{not json');
+
+    store.remove(id);
+    expect(problemOf(() => store.replace(id, theirs, mine))).toBe('not-found');
+    expect(storage.items.has(key)).toBe(false);
+  });
+
   it('skips IDs that are already taken', () => {
     const { storage, store } = setUp();
     storage.setItem(SAVE_KEY_PREFIX + idFor(1), exportSaveFile(sampleSave('Old')));
     expect(store.add(sampleSave('New'))).toBe(idFor(2));
     expect(store.load(idFor(1)).name).toBe('Old');
+  });
+
+  it('checks the full listed snapshot before deleting, including unreadable saves', () => {
+    const { storage, store } = setUp();
+    const save = sampleSave();
+    const id = store.add(save);
+    const key = SAVE_KEY_PREFIX + id;
+    const [listed] = store.list();
+    store.put(id, { ...save, commands: ['look', 'hint'] });
+    const changed = storage.items.get(key);
+
+    expect(problemOf(() => store.remove(id, listed.snapshot))).toBe('changed');
+    expect(storage.items.get(key)).toBe(changed);
+
+    storage.items.set(key, 'broken');
+    const [unreadable] = store.list();
+    expect(unreadable).toMatchObject({ status: 'unreadable', snapshot: 'broken' });
+    storage.items.set(key, 'other broken text');
+    expect(problemOf(() => store.remove(id, unreadable.snapshot))).toBe('changed');
+    expect(storage.items.get(key)).toBe('other broken text');
+    const [latest] = store.list();
+    store.remove(id, latest.snapshot);
+    store.remove(id, latest.snapshot);
+    expect(storage.items.has(key)).toBe(false);
   });
 
   it('treats unknown or odd IDs as not found', () => {
@@ -346,8 +397,8 @@ describe('save store', () => {
 
     expect(store.list()).toEqual([
       expect.objectContaining({ id: good, status: 'ready' }),
-      { id: idFor(7), status: 'unreadable', message: expect.stringMatching(/damaged/) },
-      { id: idFor(8), status: 'unreadable', message: expect.stringMatching(/newer version/) },
+      { id: idFor(7), snapshot: 'broken', status: 'unreadable', message: expect.stringMatching(/damaged/) },
+      { id: idFor(8), snapshot: storage.items.get(SAVE_KEY_PREFIX + idFor(8)), status: 'unreadable', message: expect.stringMatching(/newer version/) },
     ]);
     expect(storage.items.size).toBe(5);
   });
@@ -385,7 +436,7 @@ describe('save store', () => {
     expect(problemOf(() => store.add(sampleSave()))).toBe('storage-full');
     expect(problemOf(() => store.importSave(store.exportSave(id)))).toBe('storage-full');
     expect(messageOf(() => store.add(sampleSave()))).toBe(
-      'Your browser has no room left for saves. Delete or export an old save, then try again. Your other saves are safe.',
+      'Your browser has no room left for saves. Try deleting an old save or freeing browser storage, then try again. Your other saves are safe.',
     );
     expect(storage.items).toEqual(before);
     expect(store.load(id)).toEqual(sampleSave());

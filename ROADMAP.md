@@ -66,7 +66,7 @@ New adventures now use separately versioned seeded placement
 ([issue #51](https://github.com/juadielon/textQuest/issues/51)).
 Version 2 share words end in `2` and recreate the same starting world;
 version 1 words and saves retain their original rules. Both versions have
-exhaustive share-word round-trip tests. Browser save/load remains planned.
+exhaustive share-word round-trip tests. Browser saving and resuming are implemented.
 Shareable links ([issue #80](https://github.com/juadielon/textQuest/issues/80))
 now open the exact versioned starting adventure without player progress.
 They keep the hosting sub-path and report invalid or unsupported words through
@@ -156,18 +156,26 @@ implemented.
 ### 6. Saves
 
 **Status:** In progress — save format and storage wrapper implemented
-([issue #34](https://github.com/juadielon/textQuest/issues/34)).
+([issue #34](https://github.com/juadielon/textQuest/issues/34)); saving,
+listing, resuming, deleting, exporting and importing in the browser implemented
+([issue #43](https://github.com/juadielon/textQuest/issues/43)).
 
 **Outcome:** Players can save several adventures in their browser and export
 or import save files. Invalid files and storage errors are reported clearly.
 
 **Depends on:** Milestones 3 and 5.
 
-The first step stores settings and typed commands, with unit tests. Replaying
-commands into regenerated version 1 and version 2 worlds is covered by unit
-tests, including successful and failed commands and undo. The browser does
-not yet connect saves to play; save screens remain planned. The save format
-stays version 1, with the adventure version kept in its settings.
+A save stores the settings and typed commands. The save format stays version
+1, with the adventure version kept in its settings. Replaying commands into
+regenerated version 1 and version 2 worlds is covered by unit tests, including
+successful and failed commands and undo. Players save during play, see their
+saves listed and resume one by replaying its commands. Delete asks first, and
+unreadable saves are listed and kept. Export downloads a JSON file. Import
+validates files and adds a new save without overwriting others; bad files and
+storage problems show clear messages.
+The list shows Last saved; actual last-played
+tracking remains unfinished under issue #43 and requires safe separate metadata
+handling without changing stored progress on Resume.
 
 ### 7. Browser game
 
@@ -181,7 +189,7 @@ A start screen for new adventures and share words
 in [pull request #46](https://github.com/juadielon/textQuest/pull/46).
 The play screen is implemented in
 [pull request #52](https://github.com/juadielon/textQuest/pull/52).
-Saves remain planned.
+Play can be saved, and saves can be listed, resumed, deleted, exported and imported.
 
 **Outcome:** A responsive, accessible browser app brings together adventure
 creation, play, clues, inventory, sharing and saves.
@@ -200,7 +208,8 @@ relative URLs for static sub-path hosting.
 Invalid settings or worlds show the accessible unplayable message; unexpected
 errors while opening play are rethrown
 ([issue #74](https://github.com/juadielon/textQuest/issues/74)).
-Content-pack names and prose, and saves remain planned.
+A saves screen resumes, deletes, exports and imports saved adventures.
+Content-pack names and prose remain planned.
 
 ### 8. Release checks and hosting guide
 

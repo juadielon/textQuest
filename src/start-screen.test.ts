@@ -120,6 +120,18 @@ describe('renderStartScreen', () => {
     expect(onStart).toHaveBeenCalledExactlyOnceWith(createAdventureSettings(0, 'medium'));
   });
 
+  it('shows a saves button only when there is somewhere to open', () => {
+    expect(app.querySelector('#open-saves')).toBeNull();
+    const onOpenSaves = vi.fn();
+    renderStartScreen(app, { onStart, onOpenSaves });
+
+    get<HTMLButtonElement>('#open-saves').click();
+
+    expect(get('#open-saves').textContent).toBe('Your saves');
+    expect(onOpenSaves).toHaveBeenCalledOnce();
+    expect(document.activeElement).toBe(get('h1'));
+  });
+
   it('opens an incoming share word through the same callback as a typed word', () => {
     renderStartScreen(app, { onStart, shareWord: ' Silver-Lantern ' });
     expect(onStart).toHaveBeenCalledExactlyOnceWith(parseShareWord('silverlantern'));
