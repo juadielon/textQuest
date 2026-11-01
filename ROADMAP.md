@@ -140,8 +140,10 @@ commands into a world and the save screens are not implemented.
 ### 7. Browser game
 
 **Status:** In progress — start and play screens are connected
-([issue #54](https://github.com/juadielon/textQuest/issues/54)), completing the
-play interface in [issue #44](https://github.com/juadielon/textQuest/issues/44).
+([issue #54](https://github.com/juadielon/textQuest/issues/54)).
+The play interface in [issue #44](https://github.com/juadielon/textQuest/issues/44)
+still needs content-pack names and prose
+([issue #56](https://github.com/juadielon/textQuest/issues/56)).
 A start screen for new adventures and share words
 ([issue #41](https://github.com/juadielon/textQuest/issues/41)) is implemented
 in [pull request #46](https://github.com/juadielon/textQuest/pull/46).

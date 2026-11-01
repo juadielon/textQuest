@@ -68,16 +68,27 @@ it('mounts the start screen and focuses its heading', () => {
   expect(document.activeElement).toBe(get('h1'));
 });
 
-it('opens a new adventure in play with the selected settings', async () => {
-  const module = await import('./adventure-settings');
-  const create = vi.spyOn(module, 'createNewAdventureSettings').mockReturnValue(settings);
-  get<HTMLInputElement>('#length-short').checked = true;
+it.each<adventureSettings.AdventureGenre>(['light-fantasy', 'cosy-mystery', 'science-fiction'])(
+  'starts a playable %s adventure from a fresh random seed', async (genre) => {
+    const newSettings = Array.from({ length: 100 }, (_, seed) =>
+      adventureSettings.createAdventureSettings(seed, 'short'))
+      .find((value) => value.genre === genre)!;
+    const random = vi.spyOn(globalThis.crypto, 'getRandomValues').mockImplementationOnce((array) => {
+      if (!(array instanceof Uint32Array)) throw new Error('Expected a seed buffer');
+      array[0] = newSettings.seed;
+      return array;
+    });
+    const module = await import('./adventure-settings');
+    const create = vi.spyOn(module, 'createNewAdventureSettings');
+    get<HTMLInputElement>('#length-short').checked = true;
 
-  get<HTMLFormElement>('#new-adventure').requestSubmit();
+    get<HTMLFormElement>('#new-adventure').requestSubmit();
 
-  expect(create).toHaveBeenCalledExactlyOnceWith('short', undefined);
-  expectPlay(settings);
-});
+    expect(random).toHaveBeenCalledOnce();
+    expect(create).toHaveBeenCalledExactlyOnceWith('short', undefined);
+    expectPlay(newSettings);
+  },
+);
 
 it.each<adventureSettings.AdventureGenre>(['light-fantasy', 'cosy-mystery', 'science-fiction'])(
   'opens a shared %s adventure directly in play, accepting capitals and hyphens', (genre) => {
