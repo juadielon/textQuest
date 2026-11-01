@@ -328,6 +328,14 @@ resumed adventure, updates that save. **Your saves** on the start screen
 lists every save with its name, genre, length and last played time, newest
 first.
 
+An update only goes ahead if the stored save is still exactly the version
+that tab last loaded or wrote. Updates and deletes take turns through a Web
+Locks lock shared by every tab, so a stale or simultaneous tab never
+overwrites newer progress or brings back a deleted save. Instead it says the
+save was changed or deleted elsewhere, and saving again keeps its progress as
+a new save. Browsers without Web Locks save a resumed adventure as a new save
+rather than updating it.
+
 **Resume** regenerates the world from the save's settings and replays its
 commands through the play module, so the place, inventory, clues, turns, undo
 history and response log match where the player left off. **Delete** asks for
