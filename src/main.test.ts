@@ -4,7 +4,7 @@ import * as adventureSettings from './adventure-settings';
 import { discoveredTargets, startPlay } from './engine/play';
 import { adventurePack, generateAdventureWorld } from './generate-world';
 import { worldNamesFrom } from './content/v1/world-names';
-import { describePlay, playScreenTitle, unplayableMessage } from './play-screen';
+import { describePlay, playScreenTitle, renderPlayScreen, unplayableMessage } from './play-screen';
 import { summariseAdventure } from './start-screen-model';
 
 let app: HTMLElement;
@@ -107,6 +107,10 @@ it.each([1, 2])('opens all version %i shared genres directly in play, accepting 
     openAdventure(` ${adventureSettings.encodeShareWord(sharedSettings).toUpperCase()}- `);
 
     expectPlay(sharedSettings);
+    const direct = document.createElement('main');
+    renderPlayScreen(direct, sharedSettings);
+    expect(get('h1').textContent).toBe(direct.querySelector('h1')?.textContent);
+    expect(get('h1').textContent).not.toBe(playScreenTitle);
     get<HTMLButtonElement>('header button').click();
   }
 });
