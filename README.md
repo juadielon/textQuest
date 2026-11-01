@@ -234,8 +234,12 @@ supports choices and checkpoint recovery
 ([issue #82](https://github.com/juadielon/textQuest/issues/82)).
 
 [Issue #16](https://github.com/juadielon/textQuest/issues/16) limits the
-search to `MAX_SEARCH_STATES` (10,000) states, so a large world cannot freeze
-the page. Version 2 terminal-option copies count towards this limit as well.
+search to `MAX_SEARCH_STATES` (10,000) states. Version 2 terminal-option
+copies count towards this limit as well. The limit caps how many states are
+created, not how long it takes to read a very large world, so it does not
+promise that any input finishes instantly. Version 2 choice checks look up
+already-taken choices once per state instead of rescanning every step for each
+option.
 A world that needs more returns `{ winnable: false, tooLarge: true }`
 instead. It must be treated as rejected, never as winnable. The same world
 always gives the same result, whatever the time, locale or browser. Tests show

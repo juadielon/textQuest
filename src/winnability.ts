@@ -154,10 +154,12 @@ function isDecision(step: PuzzleStep): boolean {
   return step.choiceId !== undefined || step.effects.some(({ kind }) => kind === 'end-adventure');
 }
 
-function canTakeStep(world: AdventureWorld, state: SearchState, step: PuzzleStep): boolean {
+// Only decisions have a choice, so automatic steps can omit the closed choices.
+function canTakeStep(
+  state: SearchState, step: PuzzleStep, closedChoices: ReadonlySet<string> = new Set(),
+): boolean {
   return !state.stepsDone.has(step.id) && meetsConditions(state, step.conditions)
-    && (step.choiceId === undefined || !world.solution.steps.some((other) =>
-      other.choiceId === step.choiceId && state.stepsDone.has(other.id)));
+    && (step.choiceId === undefined || !closedChoices.has(step.choiceId));
 }
 
 // Returns the ending the step leads to, if any.
@@ -234,7 +236,7 @@ function visitPlace(world: AdventureWorld, state: SearchState, placeId: string):
   pickUp(world.items, state.itemsHeld);
   pickUp(world.clues, state.cluesRevealed);
   for (const step of world.solution.steps) {
-    if (step.placeId !== placeId || isDecision(step) || !canTakeStep(world, state, step)) continue;
+    if (step.placeId !== placeId || isDecision(step) || !canTakeStep(state, step)) continue;
     completeStep(state, step);
     changed = true;
   }
@@ -264,10 +266,10 @@ function settleHere(world: AdventureWorld, state: SearchState): string[] {
   }
   for (let step = world.solution.steps.find((entry) => entry.placeId === state.placeId
     && !isDecision(entry) && !(entry.conditions.itemsHeld ?? []).length
-    && canTakeStep(world, state, entry)); step;
+    && canTakeStep(state, entry)); step;
     step = world.solution.steps.find((entry) => entry.placeId === state.placeId
       && !isDecision(entry) && !(entry.conditions.itemsHeld ?? []).length
-      && canTakeStep(world, state, entry))) {
+      && canTakeStep(state, entry))) {
     completeStep(state, step);
   }
   return [state.placeId];
@@ -328,6 +330,8 @@ export function checkWinnability(world: AdventureWorld): WinnabilityResult {
     .filter(({ outcome }) => outcome === 'win').map(({ id }) => id));
   const decisions = world.solution.steps.filter((step) =>
     isDecision(step) || (world.version === 2 && (step.conditions.itemsHeld ?? []).length > 0));
+  const choiceOfStep = new Map(world.solution.steps.flatMap(({ id, choiceId }) =>
+    choiceId === undefined ? [] : [[id, choiceId] as const]));
   // Links each searched state to the states it leads to, to find any that can't win.
   const parents: (string | null)[] = [null];
   const ledFrom = new Map<string, string[]>();
@@ -371,8 +375,14 @@ export function checkWinnability(world: AdventureWorld): WinnabilityResult {
         if (!enqueue(taken, key)) return { winnable: false, tooLarge: true };
       }
     }
+    // Built once per state, so each option is checked without rescanning every step.
+    const closedChoices = new Set<string>();
+    for (const id of state.stepsDone) {
+      const choiceId = choiceOfStep.get(id);
+      if (choiceId !== undefined) closedChoices.add(choiceId);
+    }
     for (const step of decisions) {
-      if (!inArea.has(step.placeId) || !canTakeStep(world, state, step)) continue;
+      if (!inArea.has(step.placeId) || !canTakeStep(state, step, closedChoices)) continue;
       if (statesCreated >= MAX_SEARCH_STATES) return { winnable: false, tooLarge: true };
       const chosen = copyState(state, step.placeId);
       const endingId = completeStep(chosen, step);
