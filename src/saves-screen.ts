@@ -22,10 +22,10 @@ export const noSavesMessage = 'You have no saves yet. Save during an adventure t
 const controlCharacterPattern = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
 
 /**
- * Turns a save's last-saved ISO time into a short, readable local date and time,
- * such as "12 Oct 2026, 3:40 pm".
+ * Turns an ISO save time, such as last played or last saved, into a short,
+ * readable local date and time, such as "12 Oct 2026, 3:40 pm".
  */
-export function formatLastSaved(isoTime: string): string {
+export function formatSaveTime(isoTime: string): string {
   return new Intl.DateTimeFormat('en-AU', { dateStyle: 'medium', timeStyle: 'short' })
     .format(new Date(isoTime));
 }
@@ -55,6 +55,59 @@ function browserLocks(): SaveLocks | undefined {
   return globalThis.navigator?.locks ?? undefined;
 }
 
+/** Options for {@link recordPlayed}. */
+export interface RecordPlayedOptions {
+  /** When the save was played. Defaults to the clock when called, not when the lock arrives. */
+  readonly now?: Date;
+  /** Locks shared between tabs. Defaults to the browser's Web Locks, if it has them. */
+  readonly locks?: SaveLocks;
+  /** Checks that this play still belongs to the save when its lock is granted. */
+  readonly isCurrent?: () => boolean;
+  /** Called after recording, or when the save is missing or tracking fails. */
+  readonly onResult?: (result: RecordPlayedResult) => void;
+}
+
+/** The result of trying to record a save's Last played time. */
+export type RecordPlayedResult = 'recorded' | 'missing' | 'failed';
+
+/**
+ * Records that the save with this ID was just played, so the saves list can
+ * show its Last played time.
+ *
+ * @remarks
+ * The time is written under the lock that saves and deletes already share
+ * across tabs, so two tabs can't both read the old time and then move it
+ * backwards, and a save deleted at the same moment never keeps a time.
+ * Browsers without Web Locks record nothing. Failures do not stop play; the
+ * caller is told so it can explain that Last played is unavailable. A queued
+ * write checks `isCurrent` again when its lock is granted.
+ *
+ * @param store - Where saves are kept.
+ * @param id - The ID of the save being played.
+ * @param options - The play time and locks to use.
+ * @returns Nothing; `onResult` reports whether it recorded, found the save
+ * missing or could not track the time.
+ */
+export function recordPlayed(store: SaveStore, id: string, options: RecordPlayedOptions = {}): void {
+  const time = options.now ?? new Date();
+  const locks = 'locks' in options ? options.locks : browserLocks();
+  if (!locks) {
+    options.onResult?.('failed');
+    return;
+  }
+  withSaveLock(locks, () => {
+    if (options.isCurrent && !options.isCurrent()) return;
+    let exists: boolean;
+    try {
+      exists = store.markPlayed(id, time);
+    } catch {
+      options.onResult?.('failed');
+      return;
+    }
+    options.onResult?.(exists ? 'recorded' : 'missing');
+  }, () => options.onResult?.('failed'));
+}
+
 /** A save the player is playing, and the ID it is stored under. */
 export interface StoredSave {
   readonly id: string;
@@ -81,6 +134,11 @@ export interface SaveFormOptions {
   readonly locks?: SaveLocks;
   /** Keeps navigation in play while any submitted save is waiting or being written. */
   readonly onPendingChange?: (pending: boolean) => void;
+  /**
+   * Told which stored save this adventure now belongs to after each successful
+   * save, or `undefined` after a conflict, so play time goes to the right save.
+   */
+  readonly onStoredChange?: (saved: StoredSave | undefined) => void;
 }
 
 /**
@@ -177,10 +235,12 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
           const save = { ...fresh, createdAt, updatedAt: fresh.updatedAt < updatedAt ? updatedAt : fresh.updatedAt };
           options.store.replace(current.id, current.save, save);
           current = { id: current.id, save };
+          options.onStoredChange?.(current);
           if (pending === 1 && validationAtSubmit === validationCount) savedMessage = `Saved “${name}”.`;
         } else {
           const copied = current !== undefined;
           current = { id: options.store.add(fresh), save: fresh };
+          options.onStoredChange?.(current);
           if (pending === 1 && validationAtSubmit === validationCount) {
             savedMessage = copied ? `Saved “${name}” as a new save. ${noLocksMessage}` : `Saved “${name}”.`;
           }
@@ -190,6 +250,7 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
         if (conflict) {
           current = undefined;
           conflictCount += 1;
+          options.onStoredChange?.(undefined);
         }
         reportFailure(conflict ?? messageFor(error));
       } finally {
@@ -229,8 +290,11 @@ export interface SavesScreenOptions {
 }
 
 /**
- * Replaces the contents of `target` with the list of saves. Each save shows
- * its name, genre, length and last saved time, with Resume, Export and Delete.
+ * Replaces the contents of `target` with the list of saves, most recently
+ * played first. Each save shows its name, genre, length, last played time and
+ * last saved time, with Resume, Export and Delete. Unrecorded play times are
+ * labelled "Not recorded"; unreadable play-time metadata is shown as
+ * unavailable, not shown as saved times.
  *
  * @remarks
  * Delete confirms the exact listed save under a shared lock; changed saves
@@ -238,15 +302,16 @@ export interface SavesScreenOptions {
  * Keep cancels deletion even while it is waiting for the lock.
  * Refresh preserves live confirmations and focus. Pending deletes keep Back and Resume
  * unavailable, so failures remain visible until completion or cancellation.
- * Saves that can't be read are listed
- * with the reason and kept; only the player can delete them. All text goes in
- * through `textContent`. Export downloads JSON; import validates a file and
- * adds a new save without changing existing ones. Results are announced without
- * taking focus from an interaction started while the file was being read.
- * Separate import, export and save-list status regions keep overlapping results visible.
- * Focus moves to the heading.
+ * Saves that can't be read are listed with the reason and kept; only the
+ * player can delete them. All text goes in through `textContent`. Focus moves
+ * to the heading. Export downloads JSON; import validates files and adds new
+ * saves without changing existing ones. Results use separate status regions.
+ *
+ * @param target - The element to render into.
+ * @param options - The save store and navigation actions.
+ * @returns A focus-preserving refresh function for later metadata updates.
  */
-export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptions): void {
+export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptions): () => void {
   const locks = 'locks' in options ? options.locks : browserLocks();
   const heading = create('h1', { tabIndex: -1 }, 'Your saves');
   const status = create('p', { className: 'saves-status', id: 'saves-status', tabIndex: -1 });
@@ -383,7 +448,13 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
       item.append(details([
         ['Genre', genreLabels[entry.settings.genre]],
         ['Length', lengthLabels[entry.settings.length]],
-        ['Last saved', formatLastSaved(entry.updatedAt)],
+        [
+          'Last played',
+          entry.lastPlayedUnavailable
+            ? 'Unavailable (could not read)'
+            : entry.lastPlayedAt ? formatSaveTime(entry.lastPlayedAt) : 'Not recorded',
+        ],
+        ['Last saved', formatSaveTime(entry.updatedAt)],
       ]));
       actions.append(button('Resume', name, () => {
         let save: AdventureSave;
@@ -452,7 +523,11 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
             item.remove();
             reportDeletion(`Deleted “${name}”.`);
           } catch (error) {
-            reportDeletion(messageFor(error));
+            const message = error instanceof SaveError && error.problem === 'metadata-cleanup'
+              ? `Deleted “${name}”, but its Last played time could not be removed. The leftover time is ignored.`
+              : messageFor(error);
+            if (error instanceof SaveError && error.problem === 'metadata-cleanup') item.remove();
+            reportDeletion(message);
           }
           refresh(focused);
         }, () => {
@@ -479,6 +554,7 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
   target.replaceChildren(heading, status, exportStatus, importForm, list, back);
   heading.focus();
   refresh();
+  return () => refresh();
 }
 
 function downloadSave(text: string, name: string): void {

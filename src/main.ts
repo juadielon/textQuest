@@ -1,7 +1,7 @@
 import './style.css';
 import { renderStartScreen } from './start-screen';
 import { renderPlayScreen } from './play-screen';
-import { buildSaveForm, renderSavesScreen, type StoredSave } from './saves-screen';
+import { buildSaveForm, recordPlayed, renderSavesScreen, type StoredSave } from './saves-screen';
 import { createSaveStore, type StorageLike } from './saves';
 import { summariseAdventure } from './start-screen-model';
 import type { AdventureSettings } from './adventure-settings';
@@ -23,12 +23,24 @@ const browserStorage: StorageLike = {
 
 if (app) {
   const store = createSaveStore(browserStorage);
+  let refreshSaves: (() => void) | undefined;
+  const trackingStatus = document.createElement('p');
+  trackingStatus.id = 'play-tracking-status';
+  trackingStatus.className = 'hint';
+  trackingStatus.setAttribute('role', 'status');
+  const trackingWarnings = new Map<string, string>();
+  const deletedSaveWarning = 'This save was deleted in another tab. Last played was not recorded; save this adventure again to keep your current progress.';
+  const showTrackingWarnings = (): void => {
+    trackingStatus.textContent = [...new Set(trackingWarnings.values())].join(' ');
+  };
 
   const showStart = (shareWord?: string): void => {
     renderStartScreen(app, { onStart: showPlay, onOpenSaves: showSaves, shareWord });
+    app.append(trackingStatus);
   };
 
   const backToStart = (): void => {
+    refreshSaves = undefined;
     const url = new URL(window.location.href);
     url.searchParams.delete('adventure');
     window.history.replaceState(null, '', url);
@@ -36,23 +48,57 @@ if (app) {
   };
 
   const showSaves = (): void => {
-    renderSavesScreen(app, {
-      store, onBack: backToStart, onResume: (saved) => showPlay(saved.save.settings, saved),
+    refreshSaves = renderSavesScreen(app, {
+      store,
+      onBack: backToStart,
+      onResume: (saved) => showPlay(saved.save.settings, saved),
     });
+    app.append(trackingStatus);
   };
 
   const showPlay = (settings: AdventureSettings, resumed?: StoredSave): void => {
+    refreshSaves = undefined;
     let commands: readonly string[] = resumed?.save.commands ?? [];
     let commandModes = resumed?.save.commandModes ?? [];
+    let playing = resumed?.id;
+    let pendingPlayTime: Date | undefined;
+    let latestPlayTime: Date | undefined;
+    let detachedSaveId: string | undefined;
+    const record = (id: string, time: Date): void => {
+      recordPlayed(store, id, {
+        now: time,
+        isCurrent: () => playing === id,
+        onResult: (result) => {
+          if (result === 'recorded') {
+            trackingWarnings.delete(id);
+            showTrackingWarnings();
+            refreshSaves?.();
+          } else if (result === 'missing') {
+            trackingWarnings.set(id, deletedSaveWarning);
+            showTrackingWarnings();
+            refreshSaves?.();
+          } else {
+            trackingWarnings.set(id, 'Last played time could not be recorded. Your saved progress was not changed, and you can keep playing.');
+            showTrackingWarnings();
+          }
+        },
+      });
+    };
+    const markPlayed = (): void => {
+      const time = new Date();
+      latestPlayTime = time;
+      if (playing === undefined) pendingPlayTime = time;
+      else record(playing, time);
+    };
     const playable = renderPlayScreen(app, settings, {
       commands,
       commandModes,
       onCommand: (latest, latestModes) => {
         commands = latest;
         commandModes = latestModes;
+        markPlayed();
       },
     });
-
     const header = document.createElement('header');
     const heading = app.querySelector('h1')!;
     const details = document.createElement('dl');
@@ -123,15 +169,32 @@ if (app) {
     notice.textContent = playable
       ? 'Going back ends this play session. Save first to carry on later.'
       : 'Going back ends this play session. Keep the share word to start again.';
-    header.append(details, back, notice, sharing);
+    header.append(details, back, notice, trackingStatus, sharing);
     if (playable) {
       header.append(buildSaveForm({
         store, settings, resumed, suggestedName: summary.shareWord, commands: () => commands,
         commandModes: () => commandModes,
         onPendingChange: (pending) => { back.disabled = pending; },
+        onStoredChange: (saved) => {
+          const previousId = playing;
+          playing = saved?.id;
+          if (!saved) {
+            detachedSaveId = previousId;
+            pendingPlayTime = latestPlayTime;
+            return;
+          }
+          if (pendingPlayTime) record(saved.id, pendingPlayTime);
+          pendingPlayTime = undefined;
+          if (detachedSaveId && trackingWarnings.get(detachedSaveId) === deletedSaveWarning) {
+            trackingWarnings.delete(detachedSaveId);
+            showTrackingWarnings();
+          }
+          detachedSaveId = undefined;
+        },
       }));
     }
     heading.after(header);
+    if (playable) markPlayed();
     heading.focus();
   };
 

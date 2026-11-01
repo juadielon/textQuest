@@ -38,6 +38,10 @@ Node.js or npm on the host.
 
 The Docker-based TypeScript and Vite shell, production container and tests
 are in place. The start and play screens now use this setup.
+The lint dependency patch for
+[issue #72](https://github.com/juadielon/textQuest/issues/72) uses
+version-scoped minimatch overrides and regression checks, pending an upstream
+dependency update. It does not change adventure generation or player saves.
 
 ### 3. Repeatable adventures and sharing
 
@@ -121,15 +125,19 @@ Its complete content, word lists and representative worlds are pinned
 separately. Tests sweep seeds 0 to 999 at every length, with at least 80%
 distinct worlds in each genre/plot/length group and winnability with and
 without optional steps. Places, routes and prose are still authored, not
-unique for every seed. Version 1 is released and keeps its original 27 worlds,
-share words, content and ID-based saved-command replay. New play accepts
-authored names and aliases in both versions; each saved command records
-whether it used ID or content names. Old histories, including failed
-commands, stay in ID mode.
-The current engine rules only add progress. World format version 2 rules and
-checks for mutually exclusive choices and early win or failure endings are
-prepared ([issue #79](https://github.com/juadielon/textQuest/issues/79)), but
-no adventure generates them and play does not accept them yet.
+unique for every seed. Version 1 is released and
+keeps its original 27 worlds, share words, content and saved-command replay.
+The browser uses each version's authored names and prose. Save format 2 keeps
+an ID or content-name replay mode for every command; format 1 histories
+migrate to ID mode so old failed commands keep their meaning.
+Released generated worlds only add progress. World format version 2 rules
+and checks for mutually exclusive choices and early win or failure endings
+are prepared ([issue #79](https://github.com/juadielon/textQuest/issues/79)),
+building on [pull request #89](https://github.com/juadielon/textQuest/pull/89).
+Play supports choices and winning endings in those worlds, but no adventure
+generates them, and failure endings stay refused until checkpoint recovery
+([issue #82](https://github.com/juadielon/textQuest/issues/82)). This play
+support is in [pull request #93](https://github.com/juadielon/textQuest/pull/93).
 
 ### 5. Commands and recovery
 
@@ -151,7 +159,8 @@ forms without changing state. A pure play module runs those actions against a
 world with turn counting, hints and undo, following the winnability checker's
 rules. It can show and accept content-pack names and aliases, and lets the
 player talk to people at their place. Suggestions and checkpoints are not
-implemented.
+implemented; checkpoint recovery is tracked in
+[issue #82](https://github.com/juadielon/textQuest/issues/82).
 
 ### 6. Saves
 
@@ -165,15 +174,19 @@ or import save files. Invalid files and storage errors are reported clearly.
 
 **Depends on:** Milestones 3 and 5.
 
-Saves store settings, typed commands and one ID/content replay mode per
-command. Format 2 migrates format 1 histories to ID mode, preserving old
-histories and failed commands. Unit tests cover mixed histories and re-saving
-imported files. Players save during play, list and resume saves, and can delete,
-export and import them. Delete asks first; unreadable saves are listed and
-kept. Pre-execution command-count and serialised-size guards protect the
-history as it grows. The list shows Last saved; actual last-played tracking
-remains unfinished under issue #43 and requires safe separate metadata
-handling without changing stored progress on Resume.
+A save stores the settings, typed commands and one ID/content replay mode per
+command. Format 2 migrates format 1 histories to ID mode and retains mixed
+histories, including failed commands. Replaying commands into regenerated
+version 1 and version 2 worlds is covered by unit tests. Players save during
+play, see their saves listed and resume one by replaying its commands. Delete
+asks first, and unreadable saves are listed and kept. Export downloads a JSON
+file. Import validates files and adds a new save without overwriting others;
+bad files and storage problems show clear messages. Pre-execution command-count
+and serialised-size checks reject commands or undo that would exceed save
+limits without changing play state.
+The list shows Last played and Last saved, most recently played first. Last
+played is kept in separate browser metadata, so Resume and play never change
+stored progress or exported files.
 
 ### 7. Browser game
 

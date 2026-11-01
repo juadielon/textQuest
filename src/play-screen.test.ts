@@ -310,7 +310,7 @@ describe('renderPlayScreen', () => {
     expect(size([...commands, 'look'], [...modes, 'content'])).toBe(MAX_SAVE_FILE_LENGTH);
 
     const append = vi.spyOn(HTMLOListElement.prototype, 'append').mockImplementation(() => undefined);
-    vi.spyOn(play, 'playCommand').mockImplementation((_world, state) => ({
+    const execute = vi.spyOn(play, 'playCommand').mockImplementation((_world, state) => ({
       state, message: 'A saved command was replayed.',
     }));
     vi.mocked(generateAdventureWorld).mockReturnValueOnce(tinyWorld);
@@ -322,6 +322,7 @@ describe('renderPlayScreen', () => {
     type(target, 'look');
     expect(onCommand).toHaveBeenCalledOnce();
     expect(append).toHaveBeenCalledTimes(commands.length + 1);
+    const executions = execute.mock.calls.length;
     const recorded = onCommand.mock.calls[0][0];
     const recordedModes = onCommand.mock.calls[0][1];
     expect(recordedModes).toEqual([...modes, 'content']);
@@ -329,6 +330,11 @@ describe('renderPlayScreen', () => {
       .toHaveLength(MAX_SAVE_FILE_LENGTH);
     expect(target.querySelector('#play-command')!.hasAttribute('aria-invalid')).toBe(false);
     expect(target.querySelector('#play-response')!.classList.contains('visually-hidden')).toBe(true);
+    type(target, 'look');
+    expect(onCommand).toHaveBeenCalledOnce();
+    expect(execute).toHaveBeenCalledTimes(executions);
+    expect(append).toHaveBeenCalledTimes(recorded.length);
+    expect(text(target, '#play-response')[0]).toContain('save file limit');
     type(target, 'undo');
     expect(onCommand).toHaveBeenCalledOnce();
     expect(text(target, '#play-response')[0]).toContain('save file limit');
