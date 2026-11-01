@@ -339,11 +339,13 @@ export interface SaveStore {
   /**
    * Records that the save with this ID was played at `now`, defaulting to the
    * clock. The time is kept under its own key, so the save, its snapshot and
-   * its export never change. An earlier time never replaces a later one, and
-   * nothing is written if the save has gone. Run it under the lock shared by
-   * every tab, or another tab could write between the check and the write.
+   * its export never change. An earlier time never replaces a later one.
+   * Returns `false` if the save has gone; nothing is written in that case.
+   * Storage failures throw `SaveError`.
+   * Run it under a lock shared by every tab, or another tab could delete the
+   * save between the existence check and metadata write.
    */
-  markPlayed(id: string, now?: Date): void;
+  markPlayed(id: string, now?: Date): boolean;
   /** Stores a new save and returns its new ID. */
   add(save: AdventureSave): string;
   /** Stores a save under this ID, replacing any earlier version. On failure the old version is kept. */
@@ -362,7 +364,9 @@ export interface SaveStore {
    * Deletes a save, optionally only if its stored text still matches the listed
    * snapshot. A mismatch throws `changed` and keeps it. Already deleted saves
    * are ignored. Its last-played time is removed too; a `metadata-cleanup`
-   * error means the save is gone but that metadata remains.
+   * error means the save is gone but that metadata remains. Run checked
+   * removals under a lock shared by every tab, or another tab could update
+   * the save between the snapshot check and removal.
    */
   remove(id: string, snapshot?: string): void;
   /** Returns export file text for the save with this ID. */
@@ -457,13 +461,15 @@ export function createSaveStore(
     return isIsoTime(text) ? text : undefined;
   }
 
-  function markPlayed(id: string, now: Date = new Date()): void {
+  function markPlayed(id: string, now: Date = new Date()): boolean {
     // Checked first, so a save deleted in another tab is not given a time.
-    if (read(keyFor(id)) === null) return;
+    if (read(keyFor(id)) === null) return false;
     const time = now.toISOString();
     const recorded = readPlayed(id);
-    if (!isIsoTime(time) || (recorded !== undefined && recorded >= time)) return;
-    write(playedKeyFor(id), time);
+    if (isIsoTime(time) && (recorded === undefined || recorded < time)) {
+      write(playedKeyFor(id), time);
+    }
+    return true;
   }
 
   function newId(): string {

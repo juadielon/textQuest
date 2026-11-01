@@ -545,7 +545,7 @@ describe('save store', () => {
 
     it('records nothing for a save deleted elsewhere and treats odd IDs as not found', () => {
       const { storage, store } = setUp();
-      store.markPlayed(idFor(9), played);
+      expect(store.markPlayed(idFor(9), played)).toBe(false);
       expect(storage.items.size).toBe(0);
       expect(problemOf(() => store.markPlayed('../other-key', played))).toBe('not-found');
       expect(storage.items.size).toBe(0);

@@ -789,6 +789,118 @@ it('refreshes the reopened saves list when a queued Resume time is recorded', ()
   expect(store.list()[0]).toMatchObject({ id: playedName === 'First' ? first : second, lastPlayedAt: expect.any(String) });
 });
 
+it.each(['start', 'saves', 'another play'])(
+  'reports a queued Last played failure on the current %s screen without replacing other statuses',
+  (destination) => {
+    const waiting: (() => void)[] = [];
+    Object.defineProperty(navigator, 'locks', {
+      configurable: true,
+      value: {
+        request: (_name: string, task: () => void) => new Promise<void>((resolve) => {
+          waiting.push(() => { task(); resolve(); });
+        }),
+      },
+    });
+    const store = createSaveStore(localStorage);
+    const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
+    const id = store.add(saved);
+    get<HTMLButtonElement>('#open-saves').click();
+    get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+    get<HTMLButtonElement>('header button').click();
+
+    if (destination === 'saves') {
+      get<HTMLButtonElement>('#open-saves').click();
+    } else if (destination === 'another play') {
+      openAdventure(adventureSettings.encodeShareWord(settings));
+      get<HTMLInputElement>('#play-command').value = 'look';
+      get<HTMLFormElement>('.play-command').requestSubmit();
+    } else {
+      get<HTMLInputElement>('#share-word').value = 'not-a-share-word';
+      get<HTMLFormElement>('#open-share-word').requestSubmit();
+    }
+
+    const otherStatus = destination === 'start'
+      ? get('#share-word-error')
+      : destination === 'saves'
+        ? get('#saves-status')
+        : get('.share-link [role="status"]');
+    if (destination !== 'start') otherStatus.textContent = 'An earlier screen message.';
+    const previousMessage = otherStatus.textContent;
+    const originalSetItem = localStorage.setItem.bind(localStorage);
+    const write = vi.spyOn(localStorage, 'setItem').mockImplementation((key, value) => {
+      if (key === PLAYED_KEY_PREFIX + id) throw new DOMException('blocked', 'SecurityError');
+      originalSetItem(key, value);
+    });
+    try {
+      waiting.shift()!();
+
+      expect(get('#play-tracking-status').textContent)
+        .toContain('Last played time could not be recorded');
+      expect(otherStatus.textContent).toBe(previousMessage);
+      expect(app.querySelector('h1')?.textContent).toBe(
+        destination === 'start' ? 'textQuest' : destination === 'saves' ? 'Your saves' : playScreenTitle,
+      );
+    } finally {
+      write.mockRestore();
+    }
+  },
+);
+
+it('reports a queued lock rejection after navigation without replacing other statuses', async () => {
+  let reject!: (error: DOMException) => void;
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: {
+      request: () => new Promise<void>((_resolve, fail) => { reject = fail; }),
+    },
+  });
+  const store = createSaveStore(localStorage);
+  const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
+  store.add(saved);
+  get<HTMLButtonElement>('#open-saves').click();
+  get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+  get<HTMLButtonElement>('header button').click();
+  get<HTMLInputElement>('#share-word').value = 'not-a-share-word';
+  get<HTMLFormElement>('#open-share-word').requestSubmit();
+  const shareError = get('#share-word-error').textContent;
+
+  reject(new DOMException('blocked', 'SecurityError'));
+  await vi.waitFor(() => expect(get('#play-tracking-status').textContent)
+    .toContain('Last played time could not be recorded'));
+
+  expect(get('#share-word-error').textContent).toBe(shareError);
+  expect(get('h1').textContent).toBe('textQuest');
+});
+
+it('reports when a save disappears before its queued Last played write runs', () => {
+  const waiting: (() => void)[] = [];
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: {
+      request: (_name: string, task: () => void) => new Promise<void>((resolve) => {
+        waiting.push(() => { task(); resolve(); });
+      }),
+    },
+  });
+  const store = createSaveStore(localStorage);
+  const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
+  const id = store.add(saved);
+  get<HTMLButtonElement>('#open-saves').click();
+  get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+  store.remove(id);
+
+  waiting.shift()!();
+
+  expect(get('#play-tracking-status').textContent)
+    .toContain('This save was deleted in another tab');
+  expect(get('#play-tracking-status').textContent).not.toContain('Your save is safe');
+  get<HTMLInputElement>('#play-command').value = 'look';
+  get<HTMLFormElement>('.play-command').requestSubmit();
+  waiting.shift()!();
+  expect(get('.play-log').children).toHaveLength(1);
+  expect(localStorage.getItem(PLAYED_KEY_PREFIX + id)).toBeNull();
+});
+
 it('keeps playing when the browser cannot record Last played', () => {
   Object.defineProperty(navigator, 'locks', {
     configurable: true,

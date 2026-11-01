@@ -24,9 +24,18 @@ const browserStorage: StorageLike = {
 if (app) {
   const store = createSaveStore(browserStorage);
   let refreshSaves: (() => void) | undefined;
+  const trackingStatus = document.createElement('p');
+  trackingStatus.id = 'play-tracking-status';
+  trackingStatus.className = 'hint';
+  trackingStatus.setAttribute('role', 'status');
+  const trackingWarnings = new Map<string, string>();
+  const showTrackingWarnings = (): void => {
+    trackingStatus.textContent = [...trackingWarnings.values()].join(' ');
+  };
 
   const showStart = (shareWord?: string): void => {
     renderStartScreen(app, { onStart: showPlay, onOpenSaves: showSaves, shareWord });
+    app.append(trackingStatus);
   };
 
   const backToStart = (): void => {
@@ -43,6 +52,7 @@ if (app) {
       onBack: backToStart,
       onResume: (saved) => showPlay(saved.save.settings, saved),
     });
+    app.append(trackingStatus);
   };
 
   const showPlay = (settings: AdventureSettings, resumed?: StoredSave): void => {
@@ -50,18 +60,26 @@ if (app) {
     let commands: readonly string[] = resumed?.save.commands ?? [];
     let playing = resumed?.id;
     let pendingPlayTime: Date | undefined;
-    const trackingStatus = document.createElement('p');
-    trackingStatus.className = 'hint';
-    trackingStatus.setAttribute('role', 'status');
     const record = (id: string, time: Date): void => {
       recordPlayed(store, id, {
         now: time,
         isCurrent: () => playing === id,
-        onResult: (recorded) => {
-          trackingStatus.textContent = recorded
-            ? ''
-            : 'Last played time could not be recorded. Your save is safe, and you can keep playing.';
-          if (recorded) refreshSaves?.();
+        onResult: (result) => {
+          if (result === 'recorded') {
+            trackingWarnings.delete(id);
+            showTrackingWarnings();
+            refreshSaves?.();
+          } else if (result === 'missing') {
+            trackingWarnings.set(
+              id,
+              'This save was deleted in another tab. Last played was not recorded; save this adventure again to keep your current progress.',
+            );
+            showTrackingWarnings();
+            refreshSaves?.();
+          } else {
+            trackingWarnings.set(id, 'Last played time could not be recorded. Your saved progress was not changed, and you can keep playing.');
+            showTrackingWarnings();
+          }
         },
       });
     };

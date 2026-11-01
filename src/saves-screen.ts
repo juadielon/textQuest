@@ -62,9 +62,12 @@ export interface RecordPlayedOptions {
   readonly locks?: SaveLocks;
   /** Checks that this play still belongs to the save when its lock is granted. */
   readonly isCurrent?: () => boolean;
-  /** Called after the time is recorded, or when tracking is unavailable. */
-  readonly onResult?: (recorded: boolean) => void;
+  /** Called after recording, or when the save is missing or tracking fails. */
+  readonly onResult?: (result: RecordPlayedResult) => void;
 }
+
+/** The result of trying to record a save's Last played time. */
+export type RecordPlayedResult = 'recorded' | 'missing' | 'failed';
 
 /**
  * Records that the save with this ID was just played, so the saves list can
@@ -81,24 +84,27 @@ export interface RecordPlayedOptions {
  * @param store - Where saves are kept.
  * @param id - The ID of the save being played.
  * @param options - The play time and locks to use.
- * @returns Nothing; `onResult` reports whether tracking succeeded.
+ * @returns Nothing; `onResult` reports whether it recorded, found the save
+ * missing or could not track the time.
  */
 export function recordPlayed(store: SaveStore, id: string, options: RecordPlayedOptions = {}): void {
   const time = options.now ?? new Date();
   const locks = 'locks' in options ? options.locks : browserLocks();
   if (!locks) {
-    options.onResult?.(false);
+    options.onResult?.('failed');
     return;
   }
   withSaveLock(locks, () => {
     if (options.isCurrent && !options.isCurrent()) return;
+    let exists: boolean;
     try {
-      store.markPlayed(id, time);
-      options.onResult?.(true);
+      exists = store.markPlayed(id, time);
     } catch {
-      options.onResult?.(false);
+      options.onResult?.('failed');
+      return;
     }
-  }, () => options.onResult?.(false));
+    options.onResult?.(exists ? 'recorded' : 'missing');
+  }, () => options.onResult?.('failed'));
 }
 
 /** A save the player is playing, and the ID it is stored under. */
@@ -290,18 +296,14 @@ export interface SavesScreenOptions {
  * Keep cancels deletion even while it is waiting for the lock.
  * Refresh preserves live confirmations and focus. Pending deletes keep Back and Resume
  * unavailable, so failures remain visible until completion or cancellation.
- * Saves that can't be read are listed
- * with the reason and kept; only the player can delete them. All text goes in
- * through `textContent`. Focus moves to the heading.
+ * Saves that can't be read are listed with the reason and kept; only the
+ * player can delete them. All text goes in through `textContent`. Focus moves
+ * to the heading. Export downloads JSON; import validates files and adds new
+ * saves without changing existing ones. Results use separate status regions.
  *
  * @param target - The element to render into.
  * @param options - The save store and navigation actions.
  * @returns A focus-preserving refresh function for later metadata updates.
- * Export downloads JSON; import validates a file and adds a new save without
- * changing existing ones. Results are announced without
- * taking focus from an interaction started while the file was being read.
- * Separate import, export and save-list status regions keep overlapping
- * results visible.
  */
 export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptions): () => void {
   const locks = 'locks' in options ? options.locks : browserLocks();
@@ -513,6 +515,7 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
             const message = error instanceof SaveError && error.problem === 'metadata-cleanup'
               ? `Deleted “${name}”, but its Last played time could not be removed. The leftover time is ignored.`
               : messageFor(error);
+            if (error instanceof SaveError && error.problem === 'metadata-cleanup') item.remove();
             reportDeletion(message);
           }
           refresh(focused);
