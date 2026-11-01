@@ -250,6 +250,92 @@ describe('playing world version 2 choices', () => {
     expect(choiceReads).toBeLessThan(25 * size);
   });
 
+  it('formats automatic arrival effects without rebuilding targets for each effect', () => {
+    const size = 40;
+    let choiceReads = 0;
+    const choices = Array.from({ length: size }, (_, index): PuzzleStep => ({
+      id: `option-${index}`, placeId: 'room', conditions: {}, effects: [],
+      get choiceId() {
+        choiceReads++;
+        return 'route';
+      },
+    }));
+    const automatic = Array.from({ length: size }, (_, index): PuzzleStep => ({
+      id: `automatic-${index}`, placeId: 'room', conditions: {},
+      effects: [
+        { kind: 'reveal-clue', clueId: `clue-${index}` },
+        { kind: 'give-item', itemId: `gift-${index}` },
+      ],
+    }));
+    const world: AdventureWorld = {
+      version: 2, startPlaceId: 'outside',
+      places: [{ id: 'outside' }, { id: 'room' }, { id: 'goal' }],
+      exits: [{ id: 'door', fromPlaceId: 'outside', toPlaceId: 'room', locked: false }],
+      items: Array.from({ length: size }, (_, index) => ({ id: `gift-${index}` })),
+      clues: Array.from({ length: size }, (_, index) => ({ id: `clue-${index}` })),
+      solution: { steps: [...choices, ...automatic], goal: { placeId: 'goal', conditions: {} } },
+    };
+    const start = startPlay(world);
+    choiceReads = 0;
+    const arrived = runAction(world, start, { kind: 'move', targetKind: 'exit', targetId: 'door' });
+    expect(arrived.state).toMatchObject({ placeId: 'room', turns: 1, previous: start });
+    expect(arrived.state.stepsDone).toEqual(automatic.map(({ id }) => id));
+    expect(arrived.state.cluesRevealed).toEqual(world.clues.map(({ id }) => id));
+    expect(arrived.state.itemsHeld).toEqual(world.items.map(({ id }) => id));
+    expect(arrived.message).toContain('You can choose choice 1');
+    expect(arrived.message).toContain(`choice ${size}.`);
+    for (let index = 0; index < size; index++) {
+      expect(arrived.message).toContain(
+        `Something changes here. You found the clue ${index} clue. You now have the gift ${index}.`,
+      );
+    }
+    expect(choiceReads).toBeLessThan(25 * size);
+    expect(playCommand(world, arrived.state, 'undo').state).toBe(start);
+  });
+
+  it('uses settled discovery names for automatic messages only in version 2', () => {
+    for (const version of [1, 2] as const) {
+      const world: PlayWorld = {
+        version, startPlaceId: 'outside',
+        places: [{ id: 'outside' }, { id: 'room' }, { id: 'garden' }, { id: 'secret-vault' }],
+        exits: [
+          { id: 'door', fromPlaceId: 'outside', toPlaceId: 'room', locked: false },
+          { id: 'local', fromPlaceId: 'room', toPlaceId: 'garden', locked: true },
+          { id: 'remote', fromPlaceId: 'garden', toPlaceId: 'secret-vault', locked: true },
+        ],
+        items: [], clues: [{ id: 'answer' }],
+        names: {
+          places: [], items: [], people: [], clues: [{ id: 'answer', name: 'way to the garden' }],
+        },
+        solution: {
+          steps: [
+            {
+              id: 'open', placeId: 'room', conditions: {},
+              effects: [{ kind: 'unlock-exit', exitId: 'local' }, { kind: 'unlock-exit', exitId: 'remote' }],
+            },
+            {
+              id: 'reveal', placeId: 'room', conditions: { stepsDone: ['open'] },
+              effects: [{ kind: 'reveal-clue', clueId: 'answer' }],
+            },
+          ],
+          goal: { placeId: 'garden', conditions: {} },
+        },
+      };
+      const arrived = runAction(world, startPlay(world), {
+        kind: 'move', targetKind: 'exit', targetId: 'door',
+      });
+      const targets = discoveredTargets(world, arrived.state);
+      const exit = targets.find(({ kind, id }) => kind === 'exit' && id === 'local')!;
+      expect(arrived.state.stepsDone).toEqual(['open', 'reveal']);
+      expect(arrived.message).not.toContain('secret vault');
+      expect(exit.name).not.toBe('way to the garden');
+      expect(arrived.message).toContain(version === 2
+        ? `The ${exit.name} is now open. A way is now open.`
+        : 'The way to the garden is now open. A way is now open.');
+      expect(arrived.message).toContain('Something changes here. You found the way to the garden clue.');
+    }
+  });
+
   it('offers open choices here without doing them by themselves', () => {
     const world = choiceWorld();
     const start = startPlay(world);
@@ -722,6 +808,46 @@ describe('playing world version 2 choices', () => {
     expect(prepared.stepsDone).toEqual(['prepare']);
     expect(prepared.goalReached).toBe(false);
     expect(playCommand(world, prepared, 'choose choice 1').state.goalReached).toBe(true);
+  });
+
+  it('uses displayed item and exit labels when another item ends in on', () => {
+    const world: PlayWorld = {
+      version: 2, startPlaceId: 'room', places: [{ id: 'room' }, { id: 'gate' }],
+      exits: [{ id: 'on-gate', fromPlaceId: 'room', toPlaceId: 'gate', locked: false }],
+      items: [{ id: 'coin', placeId: 'room' }, { id: 'coin-on', placeId: 'room' }, { id: 'badge' }],
+      clues: [],
+      solution: {
+        steps: [
+          {
+            id: 'finish', placeId: 'room', conditions: { itemsHeld: ['coin'] },
+            effects: [{ kind: 'give-item', itemId: 'badge' }],
+          },
+          {
+            id: 'prepare', placeId: 'room', conditions: { itemsHeld: ['coin'] },
+            effects: [{ kind: 'unlock-exit', exitId: 'on-gate' }],
+          },
+        ],
+        goal: { placeId: 'room', conditions: { itemsHeld: ['badge'] } },
+      },
+    };
+    expect(checkWinnability(world)).toMatchObject({ winnable: true, unreachableStepIds: [] });
+    const start = startPlay(world);
+    const before = discoveredTargets(world, start);
+    const coin = before.find(({ kind, id }) => kind === 'item' && id === 'coin')!;
+    const gate = before.find(({ kind, id }) => kind === 'exit' && id === 'on-gate')!;
+    expect(playCommand(world, start, 'look').message).toContain(coin.name);
+    const holding = playCommand(world, start, `take ${coin.name}`).state;
+    expect(holding.itemsHeld).toEqual(['coin']);
+    const prepared = playCommand(world, holding, `use ${coin.name} on ${gate.name}`).state;
+    expect(prepared.stepsDone).toEqual(['prepare']);
+    expect(prepared.goalReached).toBe(false);
+    const won = playCommand(world, prepared, `use ${coin.name}`).state;
+    expect(won.goalReached).toBe(true);
+    expect(replayCommands(world, [`take ${coin.name}`, `use ${coin.name} on ${gate.name}`, `use ${coin.name}`]))
+      .toEqual(won);
+    const legacy: AdventureWorld = { ...world, version: 1 };
+    expect(discoveredTargets(legacy, startPlay(legacy))
+      .find(({ kind, id }) => kind === 'item' && id === 'coin')?.name).toBe('coin');
   });
 
   it('checks a shared step that can be selected with a different held item', () => {

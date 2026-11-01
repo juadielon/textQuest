@@ -1,4 +1,4 @@
-import type { AdventureWorld, Conditions, Exit, PuzzleStep } from '../adventure-world';
+import type { AdventureWorld, Conditions, Effect, Exit, PuzzleStep } from '../adventure-world';
 import { useStepOptions } from '../use-rules';
 import { MAX_SEARCH_STATES, validateWorld } from '../winnability';
 import { commandHelp, normaliseName, parseCommand } from './commands';
@@ -196,7 +196,7 @@ function stableUseTargets(world: PlayWorld, targets: readonly CommandTarget[]): 
     const ambiguous = /[.!?]\s*$/.test(target.name)
       || words.some((word, index) => word === 'on'
         && itemNames.has(normaliseName(words.slice(0, index).join(' '))))
-      || itemLabels.some((label) => label.startsWith(`${name} on `));
+      || itemLabels.some((label) => label === `${name} on` || label.startsWith(`${name} on `));
     if (!ambiguous) return target;
     const number = numbers.get(target.id)!;
     let attempt = 0;
@@ -325,7 +325,7 @@ function stateTargets(world: PlayWorld, progress: Progress): CommandTarget[] {
 
 function stateNameOf(
   world: PlayWorld, progress: Progress, kind: Target['kind'], id: string,
-  targets = stateTargets(world, progress),
+  targets: readonly CommandTarget[] = stateTargets(world, progress),
 ): string {
   return targets.find((target) => target.kind === kind && target.id === id)?.name
     ?? nameOf(world, kind, id);
@@ -333,7 +333,7 @@ function stateNameOf(
 
 function stateThe(
   world: PlayWorld, progress: Progress, kind: Target['kind'], id: string,
-  targets = stateTargets(world, progress),
+  targets: readonly CommandTarget[] = stateTargets(world, progress),
 ): string {
   return withThe(stateNameOf(world, progress, kind, id, targets), Boolean(world.names));
 }
@@ -414,35 +414,45 @@ function arrive(world: PlayWorld, progress: Progress, placeId: string): string[]
   return found;
 }
 
+function describeEffect(
+  world: PlayWorld, progress: Progress, effect: Effect, targets?: readonly CommandTarget[],
+): string[] {
+  switch (effect.kind) {
+    case 'unlock-exit': {
+      const exit = world.exits.find(({ id }) => id === effect.exitId)!;
+      if (exit.fromPlaceId !== progress.placeId && (world.version === 2
+        || (world.names && !progress.placesVisited.has(exit.toPlaceId)))) {
+        return ['A way is now open.'];
+      }
+      return [`${capitalise(withThe(exitName(world, progress, exit, targets)))} is now open.`];
+    }
+    case 'give-item':
+      return [`You now have ${stateThe(world, progress, 'item', effect.itemId, targets)}.`];
+    case 'reveal-clue':
+      return [`You found ${stateThe(world, progress, 'clue', effect.clueId, targets)} clue.`];
+    case 'end-adventure':
+      return [];
+  }
+}
+
 function completeStep(world: PlayWorld, progress: Progress, step: PuzzleStep, includeMessages = true): string[] {
   progress.stepsDone.add(step.id);
   const messages: string[] = [];
   for (const effect of step.effects) {
     switch (effect.kind) {
-      case 'unlock-exit': {
+      case 'unlock-exit':
         progress.unlockedExits.add(effect.exitId);
-        if (includeMessages) {
-          const exit = world.exits.find(({ id }) => id === effect.exitId)!;
-          if (exit.fromPlaceId !== progress.placeId && (world.version === 2
-            || (world.names && !progress.placesVisited.has(exit.toPlaceId)))) {
-            messages.push('A way is now open.');
-          } else {
-            messages.push(`${capitalise(withThe(exitName(world, progress, exit)))} is now open.`);
-          }
-        }
         break;
-      }
       case 'give-item':
         progress.itemsHeld.add(effect.itemId);
-        if (includeMessages) messages.push(`You now have ${stateListNames(world, progress, 'item', [effect.itemId])}.`);
         break;
       case 'reveal-clue':
         progress.cluesRevealed.add(effect.clueId);
-        if (includeMessages) messages.push(`You found ${stateListNames(world, progress, 'clue', [effect.clueId])} clue.`);
         break;
       case 'end-adventure':
         break;
     }
+    if (includeMessages) messages.push(...describeEffect(world, progress, effect));
   }
   return messages;
 }
@@ -488,14 +498,25 @@ function choicesHere(world: PlayWorld, progress: Progress): { id: string; step: 
 // Steps that need items wait for the player to use one of those items.
 function settle(world: PlayWorld, progress: Progress, includeMessages = true): string[] {
   const messages: string[] = [];
+  const completed: PuzzleStep[] = [];
   const automatic = world.solution.steps.filter((step) => step.placeId === progress.placeId
     && !isDecision(step) && !needsItems(step));
   for (let step = automatic.find((entry) => !progress.stepsDone.has(entry.id)
     && meets(progress, entry.conditions)); step;
     step = automatic.find((entry) => !progress.stepsDone.has(entry.id)
       && meets(progress, entry.conditions))) {
-    const changes = completeStep(world, progress, step, includeMessages);
-    if (includeMessages) messages.push('Something changes here.', ...changes);
+    const changes = completeStep(world, progress, step, includeMessages && world.version === 1);
+    if (includeMessages) {
+      if (world.version === 1) messages.push('Something changes here.', ...changes);
+      else completed.push(step);
+    }
+  }
+  if (completed.length) {
+    const targets = stateTargets(world, progress);
+    for (const step of completed) {
+      messages.push('Something changes here.',
+        ...step.effects.flatMap((effect) => describeEffect(world, progress, effect, targets)));
+    }
   }
   return messages;
 }
@@ -855,6 +876,8 @@ function hint(world: PlayWorld, progress: Progress, canUndo: boolean): string {
  * their conditions hold at their place they are offered as choices, and
  * `choose` makes one. Making one step of a choice shuts out the others. A
  * winning ending finishes the adventure straight away.
+ * Automatic effect messages use the final discovered names after settling
+ * in version 2; version 1 keeps its original message order and names.
  *
  * Hints point at the next useful step without naming puzzle answers, and
  * suggest undo at a dead end only when a previous turn exists. Version 2

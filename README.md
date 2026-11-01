@@ -245,6 +245,9 @@ options use stable, neutral numbers. Version 2 hints stay general and never
 suggest a route, because the hint route search does not model choices yet.
 Play refuses worlds with a failure ending until checkpoint recovery
 ([issue #82](https://github.com/juadielon/textQuest/issues/82)) exists.
+Automatic changes keep their step and effect order. In world format version 2,
+their messages use the final discovered names after those changes settle;
+version 1 keeps its existing message names and order.
 
 [Issue #16](https://github.com/juadielon/textQuest/issues/16) limits the
 search to `MAX_SEARCH_STATES` (10,000) states. Version 2 terminal-option
