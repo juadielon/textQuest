@@ -66,7 +66,7 @@ New adventures now use separately versioned seeded placement
 ([issue #51](https://github.com/juadielon/textQuest/issues/51)).
 Version 2 share words end in `2` and recreate the same starting world;
 version 1 words and saves retain their original rules. Both versions have
-exhaustive share-word round-trip tests. Browser save/load remains planned.
+exhaustive share-word round-trip tests. Browser saving and resuming are implemented.
 
 ### 4. Stories, places and puzzles
 
