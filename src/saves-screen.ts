@@ -28,6 +28,25 @@ export function formatLastPlayed(isoTime: string): string {
     .format(new Date(isoTime));
 }
 
+/** The part of the browser's Web Locks API that saves use, so tabs take turns changing saves. */
+export type SaveLocks = Pick<LockManager, 'request'>;
+
+/** The Web Locks name shared by every tab that updates or deletes saves. */
+export const SAVE_LOCK_NAME = 'textquest:saves';
+
+// Without Web Locks the task runs straight away, and callers must not update in place.
+function withSaveLock(locks: SaveLocks | undefined, task: () => void): void {
+  if (locks) {
+    void locks.request(SAVE_LOCK_NAME, () => task());
+  } else {
+    task();
+  }
+}
+
+function browserLocks(): SaveLocks | undefined {
+  return globalThis.navigator?.locks ?? undefined;
+}
+
 /** A save the player is playing, and the ID it is stored under. */
 export interface StoredSave {
   readonly id: string;
@@ -48,6 +67,8 @@ export interface SaveFormOptions {
   readonly suggestedName: string;
   /** The current time. Defaults to the clock. */
   readonly now?: () => Date;
+  /** Locks shared between tabs. Defaults to the browser's Web Locks, if it has them. */
+  readonly locks?: SaveLocks;
 }
 
 /**
@@ -56,11 +77,17 @@ export interface SaveFormOptions {
  * and keep its created time.
  *
  * @remarks
+ * An update happens under a lock shared by every tab, and only if the stored
+ * save is still exactly the version this form last loaded or wrote. If
+ * another tab or window changed or deleted it, nothing is overwritten or
+ * brought back; the player is told and can save again as a new save.
+ * Browsers without Web Locks always save as a new save instead of updating.
  * Results and problems go to a polite status message as plain text.
  * A failed save leaves any stored version as it was.
  */
 export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
   const now = options.now ?? (() => new Date());
+  const locks = 'locks' in options ? options.locks : browserLocks();
   let current = options.resumed;
 
   const input = create('input', {
@@ -84,23 +111,43 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
       return;
     }
     input.removeAttribute('aria-invalid');
-    try {
-      const fresh = createSave(name, options.settings, options.commands(), now());
-      if (current) {
-        // A clock set backwards must not make the update look older than the save.
-        const createdAt = current.save.createdAt;
-        const save = { ...fresh, createdAt, updatedAt: fresh.updatedAt < createdAt ? createdAt : fresh.updatedAt };
-        options.store.put(current.id, save);
-        current = { id: current.id, save };
-      } else {
-        current = { id: options.store.add(fresh), save: fresh };
+    // Take the commands now, so a save matches the moment the player chose.
+    const commands = [...options.commands()];
+    const time = now();
+    withSaveLock(locks, () => {
+      try {
+        const fresh = createSave(name, options.settings, commands, time);
+        if (current && locks) {
+          // A clock set backwards must not make the update look older than the save.
+          const createdAt = current.save.createdAt;
+          const save = { ...fresh, createdAt, updatedAt: fresh.updatedAt < createdAt ? createdAt : fresh.updatedAt };
+          options.store.replace(current.id, current.save, save);
+          current = { id: current.id, save };
+          status.textContent = `Saved “${name}”.`;
+        } else {
+          const copied = current !== undefined;
+          current = { id: options.store.add(fresh), save: fresh };
+          status.textContent = copied ? `Saved “${name}” as a new save. ${noLocksMessage}` : `Saved “${name}”.`;
+        }
+      } catch (error) {
+        const conflict = conflictMessage(error);
+        if (conflict) current = undefined;
+        status.textContent = conflict ?? messageFor(error);
       }
-      status.textContent = `Saved “${name}”.`;
-    } catch (error) {
-      status.textContent = messageFor(error);
-    }
+    });
   });
   return form;
+}
+
+/** Shown when a browser without Web Locks saves a resumed adventure as a new save. */
+export const noLocksMessage = 'This browser can’t safely update a save that may be open in another tab.';
+
+function conflictMessage(error: unknown): string | undefined {
+  if (!(error instanceof SaveError) || (error.problem !== 'changed' && error.problem !== 'not-found')) {
+    return undefined;
+  }
+  const what = error.problem === 'changed' ? 'changed' : 'deleted';
+  return `This save was ${what} in another tab or window, so it was not overwritten. Choose Save adventure again to keep this progress as a new save.`;
 }
 
 /** Options for {@link renderSavesScreen}. */
@@ -111,6 +158,8 @@ export interface SavesScreenOptions {
   readonly onResume: (saved: StoredSave) => void;
   /** Returns to the start screen. */
   readonly onBack: () => void;
+  /** Locks shared between tabs. Defaults to the browser's Web Locks, if it has them. */
+  readonly locks?: SaveLocks;
 }
 
 /**
@@ -125,6 +174,7 @@ export interface SavesScreenOptions {
  * Focus moves to the heading.
  */
 export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptions): void {
+  const locks = 'locks' in options ? options.locks : browserLocks();
   const heading = create('h1', { tabIndex: -1 }, 'Your saves');
   const status = create('p', { className: 'saves-status', id: 'saves-status', tabIndex: -1 });
   status.setAttribute('role', 'status');
@@ -210,11 +260,15 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
         ['Last played', formatLastPlayed(entry.updatedAt)],
       ]));
       actions.append(button('Resume', name, () => {
+        let save: AdventureSave;
         try {
-          options.onResume({ id: entry.id, save: options.store.load(entry.id) });
+          save = options.store.load(entry.id);
         } catch (error) {
           status.textContent = messageFor(error);
+          return;
         }
+        // Problems starting play are not save problems, so they are not caught here.
+        options.onResume({ id: entry.id, save });
       }));
       actions.append(button('Export', name, () => {
         try {
@@ -234,7 +288,8 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
         confirmation.replaceWith(actions);
         remove.focus();
       });
-      const confirm = button('Yes, delete', name, () => {
+      // Delete waits for any save in progress in another tab, so that save can't bring it back.
+      const confirm = button('Yes, delete', name, () => withSaveLock(locks, () => {
         try {
           options.store.remove(entry.id);
           status.textContent = `Deleted “${name}”.`;
@@ -243,7 +298,7 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
         }
         refresh();
         status.focus();
-      });
+      }));
       const question = create('p', { id: `delete-question-${entry.id}` }, `Delete “${name}”? This can’t be undone.`);
       // Screen readers hear the question along with whichever button has focus.
       for (const choice of [confirm, keep]) choice.setAttribute('aria-describedby', question.id);

@@ -7,12 +7,17 @@ import type { AdventureWorld } from './adventure-world';
 import { commandHelp } from './engine/commands';
 import { replayCommands, startPlay } from './engine/play';
 import { generateAdventureWorld } from './generate-world';
-import { describePlay, renderPlayScreen, unplayableMessage } from './play-screen';
+import { describePlay, playScreenTitle, renderPlayScreen, unplayableMessage } from './play-screen';
 import { MAX_COMMAND_LENGTH } from './saves';
 
 vi.mock('./generate-world', async (original) => {
   const actual = await original<typeof import('./generate-world')>();
   return { generateAdventureWorld: vi.fn(actual.generateAdventureWorld) };
+});
+
+vi.mock('./engine/play', async (original) => {
+  const actual = await original<typeof import('./engine/play')>();
+  return { ...actual, startPlay: vi.fn(actual.startPlay) };
 });
 
 // A tiny world that is quick to win, so the ending can be checked.
@@ -88,7 +93,7 @@ describe('renderPlayScreen', () => {
     renderPlayScreen(target, settings);
 
     const view = describePlay(generateAdventureWorld(settings), startPlay(generateAdventureWorld(settings)));
-    expect(target.querySelector('h2')?.textContent).toBe(view.placeName);
+    expect(target.querySelector('.play-place-name')?.textContent).toBe(view.placeName);
     expect(target.querySelector('label')?.textContent).toBe('What do you do?');
     expect(target.querySelector<HTMLLabelElement>('label')?.htmlFor).toBe('play-command');
     expect(target.querySelector('.play-log')?.children).toHaveLength(0);
@@ -151,7 +156,7 @@ describe('renderPlayScreen', () => {
 
     expect(ending.hidden).toBe(false);
     expect(ending.textContent).toContain('You reached your goal in 3 turns.');
-    expect(target.querySelector('h2')?.textContent).toBe('old tower');
+    expect(target.querySelector('.play-place-name')?.textContent).toBe('old tower');
 
     type(target, 'undo');
     expect(ending.hidden).toBe(true);
@@ -204,7 +209,7 @@ describe('renderPlayScreen', () => {
     renderPlayScreen(target, settingsFor('light-fantasy'), { commands: saved, onCommand });
 
     const view = describePlay(tinyWorld, replayCommands(tinyWorld, saved));
-    expect(target.querySelector('h2')?.textContent).toBe(view.placeName);
+    expect(target.querySelector('.play-place-name')?.textContent).toBe(view.placeName);
     expect(text(target, '.play-sidebar ul')[0]).toBe(view.inventory[0]);
     expect(target.querySelector('.play-sidebar p')?.textContent).toBe(`Turns taken: ${view.turns}`);
     expect(text(target, '.play-typed')).toEqual(saved.map((command) => `> ${command}`));
@@ -215,17 +220,78 @@ describe('renderPlayScreen', () => {
     expect(onCommand).toHaveBeenLastCalledWith([...saved, 'go to old tower']);
     expect(target.querySelector<HTMLElement>('.play-ending')?.hidden).toBe(false);
   });
+  it('starts with one focusable h1 above h2 section headings', () => {
+    const target = renderTiny();
+
+    const title = target.firstElementChild as HTMLElement;
+    expect(title.tagName).toBe('H1');
+    expect(title.textContent).toBe(playScreenTitle);
+    expect(title.tabIndex).toBe(-1);
+    expect(target.querySelectorAll('h1')).toHaveLength(1);
+    expect(text(target, 'h2')).toEqual(['gate', 'The end', 'Inventory', 'Clues found']);
+  });
+
+  it.each<AdventureGenre>(['light-fantasy', 'cosy-mystery', 'science-fiction'])(
+    'shows a playable %s world', (genre) => {
+      const settings = settingsFor(genre);
+      const target = document.createElement('main');
+
+      renderPlayScreen(target, settings);
+
+      const world = generateAdventureWorld(settings);
+      expect(target.querySelector('.play-place-name')?.textContent)
+        .toBe(describePlay(world, startPlay(world)).placeName);
+      expect(target.querySelector('form')).not.toBeNull();
+    },
+  );
 
   it('shows a plain message when the world cannot be generated', () => {
     vi.mocked(generateAdventureWorld).mockImplementationOnce(() => {
-      throw new RangeError('World generation for cosy-mystery is not supported yet.');
+      throw new RangeError('The genre does not match this seed and version.');
     });
     const target = document.createElement('main');
 
-    expect(renderPlayScreen(target, settingsFor('cosy-mystery'))).toBe(false);
+    expect(renderPlayScreen(target, settingsFor('light-fantasy'))).toBe(false);
 
     expect(target.querySelector('[role="alert"]')?.textContent).toBe(unplayableMessage);
+    expect(target.querySelector('h1')?.textContent).toBe(playScreenTitle);
     expect(target.querySelector('form')).toBeNull();
   });
-});
 
+  it('shows the accessible message for invalid settings', () => {
+    const target = document.createElement('main');
+
+    renderPlayScreen(target, { ...settingsFor('light-fantasy'), seed: -1 });
+
+    expect(target.querySelector('[role="alert"]')?.textContent).toBe(unplayableMessage);
+    expect(target.querySelector<HTMLElement>('h1')?.tabIndex).toBe(-1);
+    expect(target.querySelector('form')).toBeNull();
+  });
+
+  it('shows the accessible message for an invalid world', () => {
+    vi.mocked(generateAdventureWorld).mockReturnValueOnce({
+      ...tinyWorld, startPlaceId: 'missing-place',
+    });
+    const target = document.createElement('main');
+
+    renderPlayScreen(target, settingsFor('light-fantasy'));
+
+    expect(target.querySelector('[role="alert"]')?.textContent).toBe(unplayableMessage);
+    expect(target.querySelector<HTMLElement>('h1')?.tabIndex).toBe(-1);
+    expect(target.querySelector('form')).toBeNull();
+  });
+
+  it.each([
+    ['world generation', generateAdventureWorld],
+    ['play setup', startPlay],
+  ] as const)('rethrows unexpected errors from %s without showing the unplayable message', (_, operation) => {
+    const error = new TypeError('Unexpected programming error.');
+    vi.mocked(operation).mockImplementationOnce(() => { throw error; });
+    const target = document.createElement('main');
+    target.textContent = 'Previous screen';
+
+    expect(() => renderPlayScreen(target, settingsFor('light-fantasy'))).toThrow(error);
+    expect(target.querySelector('[role="alert"]')).toBeNull();
+    expect(target.textContent).toBe('Previous screen');
+  });
+});

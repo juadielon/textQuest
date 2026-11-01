@@ -1,30 +1,58 @@
 import { createAdventureSettings, type AdventureGenre, type AdventureSettings } from './adventure-settings';
 import type { AdventureWorld } from './adventure-world';
 import type { ContentPack } from './content/v1/format';
+import { cosyMystery } from './content/v1/cosy-mystery';
 import { lightFantasy } from './content/v1/light-fantasy';
+import { scienceFiction } from './content/v1/science-fiction';
+import {
+  cosyMysteryV2, lightFantasyV2, scienceFictionV2, type VersionTwoContentPack,
+} from './content/v2/place-wording';
 import { createSeededRandom } from './seeded-random';
+import { prepareSeededPlacement } from './seeded-placement';
 
-const versionOnePacks: Readonly<Partial<Record<AdventureGenre, ContentPack>>> = {
+// A full record makes the compiler reject a version 1 genre without a pack.
+const versionOnePacks: Readonly<Record<AdventureGenre, ContentPack>> = {
   'light-fantasy': lightFantasy,
+  'cosy-mystery': cosyMystery,
+  'science-fiction': scienceFiction,
 };
 
+const versionTwoPacks: Readonly<Record<AdventureGenre, VersionTwoContentPack>> = {
+  'light-fantasy': lightFantasyV2,
+  'cosy-mystery': cosyMysteryV2,
+  'science-fiction': scienceFictionV2,
+};
+
+/** Returns the version 1 content pack used for a genre. */
+export function versionOnePack(genre: AdventureGenre): ContentPack {
+  return versionOnePacks[genre];
+}
+
 /**
- * Builds a detached world from version 1's authored light fantasy plans.
+ * Returns the matching released content for an adventure version and genre.
+ * @throws RangeError if the adventure version is unsupported.
+ */
+export function adventurePack(version: number, genre: AdventureGenre): ContentPack | VersionTwoContentPack {
+  if (version === 1) return versionOnePacks[genre];
+  if (version === 2) return versionTwoPacks[genre];
+  throw new RangeError(`Adventure version ${version} is not supported.`);
+}
+
+/**
+ * Builds a detached world from the matching adventure version's content.
  *
  * @param settings - Valid settings whose genre matches the seed and version.
  * @returns The same world for the same settings, without changing the content pack.
- * @throws RangeError for invalid settings or a genre without a content pack.
- * @remarks Changes to these selection rules require a new adventure version.
+ * @throws RangeError for invalid settings.
+ * @remarks Version 1 keeps authored placement. Version 2 draws item then clue
+ * positions after genre and plot. Changes to either version need a new version.
  */
 export function generateAdventureWorld(settings: AdventureSettings): AdventureWorld {
   const expected = createAdventureSettings(settings.seed, settings.length, settings.version);
   if (settings.genre !== expected.genre) {
     throw new RangeError('The genre does not match this seed and version.');
   }
-  const pack = versionOnePacks[settings.genre];
-  if (!pack) {
-    throw new RangeError(`World generation for ${settings.genre} is not supported yet.`);
-  }
+  const pack = adventurePack(settings.version, settings.genre);
 
   const random = createSeededRandom(settings.seed);
   // The first draw chose the genre; the next chooses the plot independently.
@@ -38,7 +66,7 @@ export function generateAdventureWorld(settings: AdventureSettings): AdventureWo
       .map(({ id }) => id),
   ];
 
-  return structuredClone({
+  const world = structuredClone({
     version: 1,
     startPlaceId: pack.startPlaceId,
     places: pack.places.filter(({ id }) => plan.placeIds.includes(id)).map(({ id }) => ({ id })),
@@ -65,4 +93,5 @@ export function generateAdventureWorld(settings: AdventureSettings): AdventureWo
       },
     },
   } satisfies AdventureWorld);
+  return settings.version === 2 ? prepareSeededPlacement(world, random) : world;
 }

@@ -58,6 +58,7 @@ export interface AdventureSave {
  * - `future-version`: a newer copy of textQuest made the file.
  * - `unsupported-adventure`: the adventure version isn't supported here.
  * - `not-found`: no save has that ID.
+ * - `changed`: the stored save no longer matches the version being updated.
  * - `storage-full`: the browser has no room left for saves.
  * - `storage-unavailable`: the browser refused to read or write saves.
  */
@@ -67,6 +68,7 @@ export type SaveProblem =
   | 'future-version'
   | 'unsupported-adventure'
   | 'not-found'
+  | 'changed'
   | 'storage-full'
   | 'storage-unavailable';
 
@@ -327,6 +329,14 @@ export interface SaveStore {
   add(save: AdventureSave): string;
   /** Stores a save under this ID, replacing any earlier version. On failure the old version is kept. */
   put(id: string, save: AdventureSave): void;
+  /**
+   * Stores a save under this ID only if the stored save still matches
+   * `expected` exactly, so newer progress is never overwritten. Throws a
+   * `not-found` error if the save was deleted, or `changed` if it differs,
+   * and then leaves storage as it was. Run it under a lock shared by every
+   * tab, or another tab could still write between the check and the write.
+   */
+  replace(id: string, expected: AdventureSave, save: AdventureSave): void;
   /** Loads the save with this ID. */
   load(id: string): AdventureSave;
   /** Deletes the save with this ID. Deleting a save that is already gone does nothing. */
@@ -429,6 +439,29 @@ export function createSaveStore(
     write(keyFor(id), exportSaveFile(save));
   }
 
+  function replace(id: string, expected: AdventureSave, save: AdventureSave): void {
+    const key = keyFor(id);
+    const text = exportSaveFile(save);
+    const stored = read(key);
+    if (stored === null) {
+      throw notFound();
+    }
+    let unchanged = false;
+    try {
+      // Compare whole saves, not times: two edits can share a timestamp.
+      unchanged = exportSaveFile(importSaveFile(stored)) === exportSaveFile(expected);
+    } catch {
+      // A stored save that can't be read is kept, never overwritten.
+    }
+    if (!unchanged) {
+      throw new SaveError(
+        'changed',
+        'This save was changed in another tab or window, so it was not overwritten.',
+      );
+    }
+    write(key, text);
+  }
+
   function add(save: AdventureSave): string {
     // Check the save before picking an ID, so a bad save writes nothing.
     const text = exportSaveFile(save);
@@ -484,6 +517,7 @@ export function createSaveStore(
     },
     add,
     put,
+    replace,
     load,
     remove(id) {
       const key = keyFor(id);

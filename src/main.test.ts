@@ -3,12 +3,13 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import * as adventureSettings from './adventure-settings';
 import { discoveredTargets, replayCommands, startPlay } from './engine/play';
 import { generateAdventureWorld } from './generate-world';
-import { describePlay, unplayableMessage } from './play-screen';
+import { describePlay, playScreenTitle, unplayableMessage } from './play-screen';
+import { SAVE_KEY_PREFIX } from './saves';
 import { summariseAdventure } from './start-screen-model';
 
 let app: HTMLElement;
 const settings = Array.from({ length: 100 }, (_, seed) =>
-  adventureSettings.createAdventureSettings(seed, 'long'))
+  adventureSettings.createAdventureSettings(seed, 'short'))
   .find((value) => value.genre === 'light-fantasy')!;
 
 beforeEach(async () => {
@@ -22,6 +23,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  Reflect.deleteProperty(navigator, 'locks');
   document.body.replaceChildren();
 });
 
@@ -42,7 +44,7 @@ function shownDetails(): Record<string, string> {
   return Object.fromEntries(terms.map((term, index) => [term.textContent, values[index].textContent]));
 }
 
-function expectPlay(): void {
+function expectPlay(settings: adventureSettings.AdventureSettings): void {
   const world = generateAdventureWorld(settings);
   const view = describePlay(world, startPlay(world));
   expect(get('.play-place-name').textContent).toBe(view.placeName);
@@ -50,9 +52,13 @@ function expectPlay(): void {
   expect(shownDetails()).toEqual({
     'Share word': adventureSettings.encodeShareWord(settings),
     Genre: summariseAdventure(settings).genreLabel,
-    Length: 'Long',
+    Length: 'Short',
   });
   expect(document.activeElement).toBe(get('h1'));
+  expect(app.querySelectorAll('h1')).toHaveLength(1);
+  expect(get('h1').textContent).toBe(playScreenTitle);
+  expect(app.firstElementChild).toBe(get('h1'));
+  expect(get('h1').nextElementSibling).toBe(get('header'));
   expect(get('h1').getAttribute('tabindex')).toBe('-1');
   expect(app.querySelector('#new-adventure')).toBeNull();
   expect(app.textContent).not.toContain('coming soon');
@@ -65,21 +71,38 @@ it('mounts the start screen and focuses its heading', () => {
   expect(document.activeElement).toBe(get('h1'));
 });
 
-it('opens a new adventure in play with the selected settings', async () => {
-  const module = await import('./adventure-settings');
-  const create = vi.spyOn(module, 'createNewAdventureSettings').mockReturnValue(settings);
-  get<HTMLInputElement>('#length-long').checked = true;
+it.each<adventureSettings.AdventureGenre>(['light-fantasy', 'cosy-mystery', 'science-fiction'])(
+  'starts a playable %s adventure from a fresh random seed', async (genre) => {
+    const newSettings = Array.from({ length: 100 }, (_, seed) =>
+      adventureSettings.createAdventureSettings(seed, 'short'))
+      .find((value) => value.genre === genre)!;
+    const random = vi.spyOn(globalThis.crypto, 'getRandomValues').mockImplementationOnce((array) => {
+      if (!(array instanceof Uint32Array)) throw new Error('Expected a seed buffer');
+      array[0] = newSettings.seed;
+      return array;
+    });
+    const module = await import('./adventure-settings');
+    const create = vi.spyOn(module, 'createNewAdventureSettings');
+    get<HTMLInputElement>('#length-short').checked = true;
 
-  get<HTMLFormElement>('#new-adventure').requestSubmit();
+    get<HTMLFormElement>('#new-adventure').requestSubmit();
 
-  expect(create).toHaveBeenCalledExactlyOnceWith('long', undefined);
-  expectPlay();
-});
+    expect(random).toHaveBeenCalledOnce();
+    expect(create).toHaveBeenCalledExactlyOnceWith('short', undefined);
+    expectPlay(newSettings);
+  },
+);
 
-it('opens a shared adventure directly in play, accepting capitals and hyphens', () => {
-  openAdventure(` ${adventureSettings.encodeShareWord(settings).toUpperCase()}- `);
+it.each([1, 2])('opens all version %i shared genres directly in play, accepting capitals and hyphens', (version) => {
+  for (const genre of adventureSettings.adventureGenres) {
+    const sharedSettings = Array.from({ length: 100 }, (_, seed) =>
+      adventureSettings.createAdventureSettings(seed, 'short', version))
+      .find((value) => value.genre === genre)!;
+    openAdventure(` ${adventureSettings.encodeShareWord(sharedSettings).toUpperCase()}- `);
 
-  expectPlay();
+    expectPlay(sharedSettings);
+    get<HTMLButtonElement>('header button').click();
+  }
 });
 
 it('keeps invalid share words on the start screen without creating markup', () => {
@@ -110,29 +133,38 @@ it('returns to start with heading focus and restarts the share word without prog
   expect(app.querySelector('.play-screen')).toBeNull();
   expect(app.querySelector('header')).toBeNull();
   openAdventure(word);
-  expectPlay();
+  expectPlay(settings);
   expect(get('.play-log').children).toHaveLength(0);
   expect(get('.play-sidebar p').textContent).toBe('Turns taken: 0');
 });
 
-it('shows an unsupported-world message and still lets the player return to start', () => {
-  const unsupported = Array.from({ length: 100 }, (_, seed) =>
-    adventureSettings.createAdventureSettings(seed, 'short'))
-    .find((value) => value.genre === 'cosy-mystery')!;
-  openAdventure(adventureSettings.encodeShareWord(unsupported));
+it('shows a generation error and still lets the player return to start', async () => {
+  const generator = await import('./generate-world');
+  vi.spyOn(generator, 'generateAdventureWorld').mockImplementationOnce(() => {
+    throw new RangeError('The genre does not match this seed and version.');
+  });
+  openAdventure(adventureSettings.encodeShareWord(settings));
 
   expect(get('[role="alert"]').textContent).toBe(unplayableMessage);
-  expect(shownDetails()['Share word']).toBe(adventureSettings.encodeShareWord(unsupported));
+  expect(shownDetails()['Share word']).toBe(adventureSettings.encodeShareWord(settings));
+  expect(app.querySelectorAll('h1')).toHaveLength(1);
+  expect(get('h1').textContent).toBe(playScreenTitle);
+  expect(app.firstElementChild).toBe(get('h1'));
+  expect(get('h1').nextElementSibling).toBe(get('header'));
   expect(document.activeElement).toBe(get('h1'));
   get<HTMLButtonElement>('header button').click();
   expect(get('#new-adventure')).not.toBeNull();
   expect(document.activeElement).toBe(get('h1'));
 });
 
-it('saves during play, lists the save and resumes the exact state and log', () => {
+it.each([1, 2])('saves, exports, imports and resumes version %i with the exact state and log', async (version) => {
+  // Like Web Locks shared by every tab: tasks run one at a time, later, in order.
+  let queue: Promise<unknown> = Promise.resolve();
+  const request = vi.fn((_name: string, task: () => unknown) => (queue = queue.then(task)));
+  Object.defineProperty(navigator, 'locks', { configurable: true, value: { request } });
   // A short world keeps this test quick, as it is generated several times.
   const short = Array.from({ length: 100 }, (_, seed) =>
-    adventureSettings.createAdventureSettings(seed, 'short'))
+    adventureSettings.createAdventureSettings(seed, 'short', version))
     .find((value) => value.genre === 'light-fantasy')!;
   openAdventure(adventureSettings.encodeShareWord(short));
   const world = generateAdventureWorld(short);
@@ -145,6 +177,7 @@ it('saves during play, lists the save and resumes the exact state and log', () =
   }
   get<HTMLInputElement>('#save-name').value = 'My trip';
   get<HTMLFormElement>('.save-form').requestSubmit();
+  await queue;
   expect(get('#save-status').textContent).toBe('Saved “My trip”.');
 
   get<HTMLButtonElement>('header button').click();
@@ -152,8 +185,33 @@ it('saves during play, lists the save and resumes the exact state and log', () =
   expect(get('h1').textContent).toBe('Your saves');
   expect(document.activeElement).toBe(get('h1'));
   expect(get('.save-item h2').textContent).toBe('My trip');
-  get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+  let exported: Blob | undefined;
+  vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
+    if (blob instanceof Blob) exported = blob;
+    return 'blob:save-file';
+  });
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  const before = new Map(Object.entries(localStorage));
+  get<HTMLButtonElement>('button[aria-label="Export: My trip"]').click();
+  expect(exported).toBeDefined();
+  const text = await exported!.text();
+  expect(JSON.parse(text).settings.version).toBe(version);
+  const input = get<HTMLInputElement>('#import-save');
+  Object.defineProperty(input, 'files', {
+    configurable: true, value: [new File([text], 'trip.json', { type: 'application/json' })],
+  });
+  get<HTMLFormElement>('.save-form').requestSubmit();
+  await vi.waitFor(() => expect(get('[role="status"]').textContent).toMatch(/Imported/));
+  for (const [key, value] of before) expect(localStorage.getItem(key)).toBe(value);
+  expect(app.querySelectorAll('.save-item')).toHaveLength(2);
+  expect(document.activeElement).toBe(get('[role="status"]'));
+  const importedKey = Object.keys(localStorage).find((key) => !before.has(key))!;
+  // Save IDs also settle timestamp ties, so find the imported entry by its heading.
+  get<HTMLHeadingElement>(`#save-${importedKey.slice(SAVE_KEY_PREFIX.length)}`)
+    .closest('.save-item')!.querySelector<HTMLButtonElement>('button')!.click();
 
+  expect(shownDetails()['Share word']).toBe(adventureSettings.encodeShareWord(short));
   const view = describePlay(world, replayCommands(world, commands));
   expect(get('.play-place-name').textContent).toBe(view.placeName);
   expect(get('.play-sidebar p').textContent).toBe(`Turns taken: ${view.turns}`);
@@ -165,16 +223,22 @@ it('saves during play, lists the save and resumes the exact state and log', () =
   get<HTMLInputElement>('#play-command').value = 'inventory';
   get<HTMLFormElement>('.play-command').requestSubmit();
   get<HTMLFormElement>('.save-form').requestSubmit();
+  await queue;
+  expect(get('#save-status').textContent).toBe('Saved “My trip”.');
   get<HTMLButtonElement>('header button').click();
   get<HTMLButtonElement>('#open-saves').click();
-  expect(app.querySelectorAll('.save-item')).toHaveLength(1);
+  expect(app.querySelectorAll('.save-item')).toHaveLength(2);
+  for (const [key, value] of before) expect(localStorage.getItem(key)).toBe(value);
+  expect(request).toHaveBeenCalledTimes(2);
 });
 
-it('offers no save form when the world cannot be played', () => {
-  const unsupported = Array.from({ length: 100 }, (_, seed) =>
-    adventureSettings.createAdventureSettings(seed, 'short'))
-    .find((value) => value.genre === 'cosy-mystery')!;
-  openAdventure(adventureSettings.encodeShareWord(unsupported));
+it('offers no save form when the world cannot be played', async () => {
+  const generator = await import('./generate-world');
+  vi.spyOn(generator, 'generateAdventureWorld').mockImplementationOnce(() => {
+    throw new RangeError('The world cannot be generated.');
+  });
+  openAdventure(adventureSettings.encodeShareWord(settings));
 
   expect(app.querySelector('.save-form')).toBeNull();
+  expect(get('[role="alert"]').textContent).toBe(unplayableMessage);
 });
