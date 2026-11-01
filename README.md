@@ -21,8 +21,8 @@ type a share word to open the same starting adventure as a friend.
 [Issue #54](https://github.com/juadielon/textQuest/issues/54) connects both
 forms to play. Invalid words show a clear message beside the field.
 The play screen shows the share word, genre and length and a **Back to start**
-button. Going back ends the current session; opening its share word starts
-again with no progress unless it was saved first.
+button. Going back ends the current session; opening its share word starts a
+fresh adventure. Use **Saves** → **Resume** to continue saved progress.
 Focus moves to the new screen's heading on navigation. Both screens work by
 keyboard and screen reader, on narrow and wide screens.
 
