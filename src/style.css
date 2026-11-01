@@ -217,6 +217,11 @@ dd {
   font-weight: 600;
 }
 
+input[type='file'] {
+  max-width: 100%;
+  font: inherit;
+}
+
 .saves-list {
   display: grid;
   gap: 1rem;

@@ -1,6 +1,7 @@
 import type { AdventureSettings } from './adventure-settings';
 import {
   createSave,
+  MAX_SAVE_FILE_LENGTH,
   MAX_SAVE_NAME_LENGTH,
   SaveError,
   type AdventureSave,
@@ -114,33 +115,85 @@ export interface SavesScreenOptions {
 
 /**
  * Replaces the contents of `target` with the list of saves. Each save shows
- * its name, genre, length and last played time, with Resume and Delete.
+ * its name, genre, length and last played time, with Resume, Export and Delete.
  *
  * @remarks
  * Delete asks for confirmation first. Saves that can't be read are listed
  * with the reason and kept; only the player can delete them. All text goes in
- * through `textContent`. Focus moves to the heading.
+ * through `textContent`. Export downloads JSON; import validates a file and
+ * adds a new save without changing existing ones. Results are announced.
+ * Focus moves to the heading.
  */
 export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptions): void {
   const heading = create('h1', { tabIndex: -1 }, 'Your saves');
-  const status = create('p', { className: 'saves-status', tabIndex: -1 });
+  const status = create('p', { className: 'saves-status', id: 'saves-status', tabIndex: -1 });
   status.setAttribute('role', 'status');
   const list = create('ul', { className: 'saves-list' });
   list.setAttribute('aria-label', 'Saved adventures');
   const back = create('button', { type: 'button' }, 'Back to start');
   back.addEventListener('click', options.onBack);
+  const fileInput = create('input', {
+    type: 'file', id: 'import-save', accept: '.json,application/json',
+  });
+  fileInput.setAttribute('aria-describedby', status.id);
+  const importButton = create('button', { type: 'submit' }, 'Import save');
+  const importForm = create('form', { className: 'save-form' },
+    create('label', { htmlFor: fileInput.id }, 'Save file'), fileInput, importButton);
+  let importing = false;
+  importForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (importing) return;
+    const file = fileInput.files?.[0];
+    if (!file) {
+      status.textContent = 'Choose a textQuest save file, then select Import save.';
+      fileInput.focus();
+      return;
+    }
+    importing = true;
+    fileInput.disabled = importButton.disabled = true;
+    status.textContent = 'Reading your save file…';
+    try {
+      // UTF-8 can use three bytes per UTF-16 character. Keep valid non-ASCII saves.
+      if (file.size > MAX_SAVE_FILE_LENGTH * 3) {
+        throw new SaveError('too-large', 'This save file is too large for textQuest. Choose a smaller save file.');
+      }
+      let text: string;
+      try {
+        text = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer());
+      } catch {
+        throw new SaveError(
+          'malformed',
+          'This save file could not be read, or its text is damaged. Choose a textQuest save file and try again.',
+        );
+      }
+      // Navigation while reading must not import into a screen the player left.
+      if (!target.contains(importForm)) return;
+      options.store.importSave(text);
+      fileInput.value = '';
+      status.textContent = refresh()
+        ? 'Imported the save as a new save.'
+        : `The save was imported, but the list could not be refreshed. ${status.textContent}`;
+    } catch (error) {
+      status.textContent = messageFor(error);
+    } finally {
+      importing = false;
+      fileInput.disabled = importButton.disabled = false;
+      if (target.contains(importForm)) status.focus();
+    }
+  });
 
-  const refresh = (): void => {
+  const refresh = (): boolean => {
     let entries: SaveListEntry[];
     try {
       entries = options.store.list();
     } catch (error) {
       list.replaceChildren();
       status.textContent = messageFor(error);
-      return;
+      return false;
     }
     list.replaceChildren(...entries.map((entry) => saveItem(entry)));
     if (!entries.length) list.append(create('li', {}, noSavesMessage));
+    return true;
   };
 
   const saveItem = (entry: SaveListEntry): HTMLLIElement => {
@@ -159,6 +212,14 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
       actions.append(button('Resume', name, () => {
         try {
           options.onResume({ id: entry.id, save: options.store.load(entry.id) });
+        } catch (error) {
+          status.textContent = messageFor(error);
+        }
+      }));
+      actions.append(button('Export', name, () => {
+        try {
+          downloadSave(options.store.exportSave(entry.id), name);
+          status.textContent = `Save file download started for “${name}”.`;
         } catch (error) {
           status.textContent = messageFor(error);
         }
@@ -196,8 +257,22 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
   };
 
   refresh();
-  target.replaceChildren(heading, status, list, back);
+  target.replaceChildren(heading, status, importForm, list, back);
   heading.focus();
+}
+
+function downloadSave(text: string, name: string): void {
+  const fileName = name.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '') || 'save';
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  const link = create('a', { href: url, download: `textquest-${fileName}.json` });
+  try {
+    document.body.append(link);
+    link.click();
+  } finally {
+    link.remove();
+    // Let the browser begin the download before releasing the file.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
 }
 
 function messageFor(error: unknown): string {
@@ -220,9 +295,13 @@ function button(label: string, saveName: string, onClick: () => void): HTMLButto
 function create<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   properties: Partial<HTMLElementTagNameMap[K]> = {},
-  ...children: (Node | string)[]
+  ...children: Node[] | [string]
 ): HTMLElementTagNameMap[K] {
   const element = Object.assign(document.createElement(tag), properties);
-  element.append(...children);
+  if (typeof children[0] === 'string') {
+    element.textContent = children[0];
+  } else {
+    element.append(...children);
+  }
   return element;
 }

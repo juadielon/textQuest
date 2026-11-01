@@ -269,8 +269,11 @@ history and response log match where the player left off. **Delete** asks for
 confirmation first. A save that can't be read is listed with the reason and
 kept; it is only removed if the player deletes it. Storage problems are shown
 as plain messages. The screen works by keyboard and screen reader, and all
-names are added as plain text. Exporting and importing save files from the
-browser is not implemented yet.
+names are added as plain text. **Export** downloads a readable save as a
+`.json` file. Choose a **Save file** and select **Import save** to add it as
+a new save, even if its name matches an existing one. Damaged, oversized
+and newer-version files show a clear message without changing existing
+saves. Imported progress is rebuilt when the player resumes it.
 
 ## Project documents
 

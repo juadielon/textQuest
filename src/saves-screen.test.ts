@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAdventureSettings, type RandomValueSource } from './adventure-settings';
 import {
-  createSave, createSaveStore, SAVE_KEY_PREFIX, type SaveStore, type StorageLike,
+  createSave, createSaveStore, MAX_SAVE_FILE_LENGTH, SAVE_KEY_PREFIX, SaveError, type SaveStore, type StorageLike,
 } from './saves';
 import {
   buildSaveForm, formatLastPlayed, noSavesMessage, renderSavesScreen, saveNameMessage,
@@ -43,6 +43,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
   document.body.replaceChildren();
 });
 
@@ -160,7 +162,7 @@ describe('renderSavesScreen', () => {
     expect(app.querySelector('h1')?.textContent).toBe('Your saves');
     expect(document.activeElement).toBe(app.querySelector('h1'));
     expect(texts('.saves-list li')).toEqual([noSavesMessage]);
-    app.querySelector<HTMLButtonElement>('button')!.click();
+    [...app.querySelectorAll('button')].find((node) => node.textContent === 'Back to start')!.click();
     expect(onBack).toHaveBeenCalledOnce();
   });
 
@@ -179,6 +181,17 @@ describe('renderSavesScreen', () => {
       'Last played', formatLastPlayed(earlier.toISOString()),
     ]);
     expect(first.getAttribute('aria-labelledby')).toBe(first.querySelector('h2')?.id);
+  });
+
+  it('sets save names and import labels through textContent', () => {
+    store.add(createSave('<b>Trip</b>', settings, [], earlier));
+    const setText = vi.spyOn(Element.prototype, 'textContent', 'set');
+
+    render();
+
+    expect(setText).toHaveBeenCalledWith('<b>Trip</b>');
+    expect(setText).toHaveBeenCalledWith('Save file');
+    expect(app.querySelector('b')).toBeNull();
   });
 
   it('resumes a loaded save', () => {
@@ -224,6 +237,7 @@ describe('renderSavesScreen', () => {
     expect(texts('.save-item h2')).toEqual(['Trip', 'Unreadable save']);
     expect(app.querySelector('.save-item .error')?.textContent).toMatch(/not valid JSON/);
     expect(buttonNamed('Resume: Unreadable save')).toBeNull();
+    expect(buttonNamed('Export: Unreadable save')).toBeNull();
     expect(storage.items.get(key)).toBe('{not json');
     buttonNamed('Delete: Unreadable save').click();
     buttonNamed('Yes, delete: Unreadable save').click();
@@ -249,5 +263,228 @@ describe('renderSavesScreen', () => {
 
     expect(app.querySelector('[role="status"]')?.textContent).toMatch(/would not let textQuest/);
     expect(app.querySelectorAll('.saves-list li')).toHaveLength(0);
+  });
+
+  it.each([
+    ['../Tower: <b>trip</b>?', 'textquest-Tower-b-trip-b.json'],
+    ['???', 'textquest-save.json'],
+  ])('downloads %j as JSON with a safe file name and releases the URL', async (name, fileName) => {
+    const id = store.add(createSave(name, settings, ['look', 'hint'], earlier));
+    const before = new Map(storage.items);
+    let blob: Blob | undefined;
+    vi.useFakeTimers();
+    const makeUrl = vi.spyOn(URL, 'createObjectURL').mockImplementation((value) => {
+      if (value instanceof Blob) blob = value;
+      return 'blob:save-file';
+    });
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      expect(this.isConnected).toBe(true);
+      expect(this.download).toBe(fileName);
+      expect(this.href).toBe('blob:save-file');
+    });
+    render();
+
+    buttonNamed(`Export: ${name}`).click();
+
+    expect(makeUrl).toHaveBeenCalledOnce();
+    expect(click).toHaveBeenCalledOnce();
+    expect(blob?.type).toBe('application/json');
+    expect(await blob?.text()).toBe(store.exportSave(id));
+    expect(app.querySelector('[role="status"]')?.textContent).toContain('download started');
+    expect(document.querySelector('a[download]')).toBeNull();
+    expect(revoke).not.toHaveBeenCalled();
+    vi.runAllTimers();
+    expect(revoke).toHaveBeenCalledExactlyOnceWith('blob:save-file');
+    expect(storage.items).toEqual(before);
+  });
+
+  it('reports export errors without changing saves', () => {
+    store.add(createSave('Trip', settings, [], earlier));
+    const before = new Map(storage.items);
+    vi.spyOn(URL, 'createObjectURL').mockImplementation(() => { throw new Error('blocked'); });
+    render();
+
+    buttonNamed('Export: Trip').click();
+
+    expect(app.querySelector('[role="status"]')?.textContent).toMatch(/Something went wrong/);
+    expect(storage.items).toEqual(before);
+  });
+
+  function chooseFile(text: string) {
+    const input = app.querySelector<HTMLInputElement>('#import-save')!;
+    const file = new File([text], 'trip.json', { type: 'application/json' });
+    const read = vi.spyOn(file, 'arrayBuffer');
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+    const form = input.closest('form')!;
+    return { input, file, read, form, submit: form.querySelector<HTMLButtonElement>('button')! };
+  }
+
+  it('adds a matching-name file as a new save, announces it and can resume its commands', async () => {
+    const save = createSave('<b>Trip</b>', settings, ['look', 'hint'], earlier);
+    const id = store.add(save);
+    const before = storage.items.get(`${SAVE_KEY_PREFIX}${id}`);
+    render();
+    const { input, form } = chooseFile(store.exportSave(id));
+    expect(app.querySelector<HTMLLabelElement>('label[for="import-save"]')?.textContent).toBe('Save file');
+    expect(input.accept).toBe('.json,application/json');
+    expect(input.getAttribute('aria-describedby')).toBe('saves-status');
+
+    form.requestSubmit();
+    await vi.waitFor(() => expect(store.list()).toHaveLength(2));
+
+    expect(storage.items.get(`${SAVE_KEY_PREFIX}${id}`)).toBe(before);
+    expect(texts('.save-item h2')).toEqual(['<b>Trip</b>', '<b>Trip</b>']);
+    expect(app.querySelector('b')).toBeNull();
+    expect(app.querySelector('[role="status"]')?.textContent).toBe('Imported the save as a new save.');
+    expect(document.activeElement).toBe(app.querySelector('[role="status"]'));
+    expect(input.value).toBe('');
+    buttonNamed('Resume: <b>Trip</b>').click();
+    expect(onResume.mock.calls[0][0].save).toEqual(save);
+  });
+
+  it('asks for a file and focuses the labelled input', () => {
+    render();
+    app.querySelector<HTMLFormElement>('form')!.requestSubmit();
+
+    expect(app.querySelector('[role="status"]')?.textContent).toMatch(/Choose a textQuest save file/);
+    expect(document.activeElement).toBe(app.querySelector('#import-save'));
+    expect(store.list()).toEqual([]);
+  });
+
+  it.each([
+    ['{broken', /not valid JSON/],
+    ['{}', /damaged/],
+    [JSON.stringify({ formatVersion: 2 }), /newer version/],
+    [' '.repeat(MAX_SAVE_FILE_LENGTH + 1), /too large/],
+  ])('rejects a bad file without changing any saves', async (text, message) => {
+    store.add(createSave('Trip', settings, [], earlier));
+    storage.items.set(`${SAVE_KEY_PREFIX}${'f'.repeat(32)}`, '{unreadable');
+    const before = new Map(storage.items);
+    render();
+    const { form, submit } = chooseFile(text);
+
+    form.requestSubmit();
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+
+    expect(app.querySelector('[role="status"]')?.textContent).toMatch(message);
+    expect(document.activeElement).toBe(app.querySelector('[role="status"]'));
+    expect(storage.items).toEqual(before);
+    expect(texts('.save-item h2')).toEqual(['Trip', 'Unreadable save']);
+  });
+
+  it('rejects invalid UTF-8 rather than changing the save text', async () => {
+    const id = store.add(createSave('Trip', settings, ['look'], earlier));
+    const before = new Map(storage.items);
+    const text = store.exportSave(id);
+    const bytes = new TextEncoder().encode(text);
+    bytes[text.indexOf('"Trip"') + 1] = 0xff;
+    render();
+    const { input, form, submit } = chooseFile('');
+    const file = new File([bytes], 'damaged.json', { type: 'application/json' });
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+
+    form.requestSubmit();
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+
+    expect(app.querySelector('[role="status"]')?.textContent).toMatch(/could not be read|damaged/);
+    expect(storage.items).toEqual(before);
+  });
+
+  it('accepts a valid non-ASCII save whose byte size exceeds the character limit', async () => {
+    const save = createSave('Trip', settings, Array(1700).fill('\u6f22'.repeat(200)), earlier);
+    const id = store.add(save);
+    render();
+    const { file, form, submit } = chooseFile(store.exportSave(id));
+    expect(file.size).toBeGreaterThan(MAX_SAVE_FILE_LENGTH);
+
+    form.requestSubmit();
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+
+    const imported = store.list().find((entry) => entry.id !== id);
+    expect(imported).toBeDefined();
+    expect(store.load(imported!.id)).toEqual(save);
+  });
+
+  it('reports a successful import even if an extra read would fail', async () => {
+    const id = store.add(createSave('Trip', settings, ['look'], earlier));
+    render();
+    const { form, submit } = chooseFile(store.exportSave(id));
+    vi.spyOn(store, 'load').mockImplementation(() => { throw new Error('blocked'); });
+
+    form.requestSubmit();
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+
+    expect(store.list()).toHaveLength(2);
+    expect(app.querySelector('[role="status"]')?.textContent).toMatch(/Imported/);
+  });
+
+  it('reports an import succeeded when its list cannot be refreshed', async () => {
+    const id = store.add(createSave('Trip', settings, ['look'], earlier));
+    render();
+    const { input, form, submit } = chooseFile(store.exportSave(id));
+    vi.spyOn(store, 'list').mockImplementationOnce(() => {
+      throw new SaveError('storage-unavailable', 'Storage is blocked.');
+    });
+
+    form.requestSubmit();
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+
+    expect(store.list()).toHaveLength(2);
+    expect(input.value).toBe('');
+    expect(app.querySelector('[role="status"]')?.textContent)
+      .toBe('The save was imported, but the list could not be refreshed. Storage is blocked.');
+  });
+
+  it('rejects an oversized file before reading it', async () => {
+    render();
+    const { file, read, form, submit } = chooseFile('');
+    Object.defineProperty(file, 'size', { value: MAX_SAVE_FILE_LENGTH * 3 + 1 });
+
+    form.requestSubmit();
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+
+    expect(read).not.toHaveBeenCalled();
+    expect(app.querySelector('[role="status"]')?.textContent).toMatch(/too large/);
+    expect(store.list()).toEqual([]);
+  });
+
+  it.each(['read', 'storage'])('reports a %s failure and leaves existing saves untouched', async (failure) => {
+    const id = store.add(createSave('Trip', settings, [], earlier));
+    render();
+    const { read, form, submit } = chooseFile(store.exportSave(id));
+    const before = new Map(storage.items);
+    if (failure === 'read') read.mockRejectedValue(new Error('unreadable'));
+    else storage.failWrites = true;
+
+    form.requestSubmit();
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+
+    expect(app.querySelector('[role="status"]')?.textContent).toMatch(
+      failure === 'read' ? /could not be read/ : /no room left for saves/,
+    );
+    expect(storage.items).toEqual(before);
+  });
+
+  it.each([false, true])('prevents duplicate imports and ignores a read after navigation: %s', async (leave) => {
+    const id = store.add(createSave('Trip', settings, [], earlier));
+    const text = store.exportSave(id);
+    render();
+    const { input, read, form, submit } = chooseFile(text);
+    let finish!: (bytes: ArrayBuffer) => void;
+    read.mockReturnValue(new Promise<ArrayBuffer>((resolve) => { finish = resolve; }));
+
+    form.requestSubmit();
+    form.requestSubmit();
+    expect(input.disabled).toBe(true);
+    expect(submit.disabled).toBe(true);
+    expect(read).toHaveBeenCalledOnce();
+    expect(app.querySelector('[role="status"]')?.textContent).toBe('Reading your save file…');
+    if (leave) app.replaceChildren();
+    finish(new TextEncoder().encode(text).buffer);
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+
+    expect(store.list()).toHaveLength(leave ? 1 : 2);
+    if (leave) expect(app.childNodes).toHaveLength(0);
   });
 });
