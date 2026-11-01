@@ -1,7 +1,7 @@
 import './style.css';
 import { renderStartScreen } from './start-screen';
 import { renderPlayScreen } from './play-screen';
-import { buildSaveForm, renderSavesScreen, type StoredSave } from './saves-screen';
+import { buildSaveForm, renderSavesScreen, type SaveForm, type StoredSave } from './saves-screen';
 import { createSaveStore, type StorageLike } from './saves';
 import { summariseAdventure } from './start-screen-model';
 import type { AdventureSettings } from './adventure-settings';
@@ -43,10 +43,12 @@ if (app) {
 
   const showPlay = (settings: AdventureSettings, resumed?: StoredSave): void => {
     let commands: readonly string[] = resumed?.save.commands ?? [];
+    let saveForm: SaveForm | undefined;
     const playable = renderPlayScreen(app, settings, {
       commands,
       onCommand: (latest) => {
         commands = latest;
+        saveForm?.autosave();
       },
     });
 
@@ -122,10 +124,11 @@ if (app) {
       : 'Going back ends this play session. Keep the share word to start again.';
     header.append(details, back, notice, sharing);
     if (playable) {
-      header.append(buildSaveForm({
+      saveForm = buildSaveForm({
         store, settings, resumed, suggestedName: summary.shareWord, commands: () => commands,
         onPendingChange: (pending) => { back.disabled = pending; },
-      }));
+      });
+      header.append(saveForm.form);
     }
     heading.after(header);
     heading.focus();

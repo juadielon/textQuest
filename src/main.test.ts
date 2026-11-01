@@ -221,7 +221,8 @@ it.each([1, 2])('saves and resumes version %i from a share link without sharing 
   get<HTMLButtonElement>('header button').click();
   get<HTMLButtonElement>('#open-saves').click();
   expect(app.querySelectorAll('.save-item')).toHaveLength(1);
-  expect(request).toHaveBeenCalledTimes(2);
+  // The first save, the autosave after inventory, and the second save.
+  expect(request).toHaveBeenCalledTimes(3);
   const key = localStorage.key(0)!;
   const saved = localStorage.getItem(key);
 
@@ -249,11 +250,12 @@ it('offers no save form when the world cannot be played', async () => {
 });
 
 it.each(['changed', 'deleted', 'rejected'])('keeps pending-save %s failures visible after choosing Back', async (failure) => {
-  let run!: () => void;
-  let reject!: (error: Error) => void;
+  // Typing autosaves before Save is pressed, so each step settles every waiting request.
+  const waiting: { run: () => void; reject: (error: Error) => void }[] = [];
+  const run = (): void => { for (const next of waiting.splice(0)) next.run(); };
+  const reject = (error: Error): void => { for (const next of waiting.splice(0)) next.reject(error); };
   const request = vi.fn((_name: string, task: () => void) => new Promise<void>((resolve, fail) => {
-    run = () => { task(); resolve(); };
-    reject = fail;
+    waiting.push({ run: () => { task(); resolve(); }, reject: fail });
   }));
   Object.defineProperty(navigator, 'locks', { configurable: true, value: { request } });
   const saved = createSave('My trip', settings, ['look'], new Date('2026-10-01T09:00:00.000Z'));
@@ -551,6 +553,49 @@ it('reports an older conflict after name correction and skips the pre-warning qu
   form.requestSubmit();
   waiting.shift()!();
   expect(get('#save-status').textContent).toBe('Saved “Corrected trip”.');
+  expect(store.list()).toHaveLength(2);
+});
+
+it('autosaves two adventures separately and resumes each with its progress and undo history', async () => {
+  let queue: Promise<unknown> = Promise.resolve();
+  const request = vi.fn((_name: string, task: () => unknown) => (queue = queue.then(task)));
+  Object.defineProperty(navigator, 'locks', { configurable: true, value: { request } });
+  const other = Array.from({ length: 100 }, (_, seed) => adventureSettings.createAdventureSettings(seed, 'short'))
+    .find((value) => value.genre !== settings.genre)!;
+  const trips = [
+    { name: 'First trip', settings, typed: ['look', 'inventory', 'undo'] },
+    { name: 'Second trip', settings: other, typed: ['hint', 'look'] },
+  ];
+  const typeCommand = (command: string): void => {
+    get<HTMLInputElement>('#play-command').value = command;
+    get<HTMLFormElement>('.play-command').requestSubmit();
+  };
+
+  for (const trip of trips) {
+    openAdventure(adventureSettings.encodeShareWord(trip.settings));
+    get<HTMLInputElement>('#save-name').value = trip.name;
+    get<HTMLFormElement>('.save-form').requestSubmit();
+    await queue;
+    trip.typed.forEach(typeCommand);
+    await queue;
+    expect(get('#save-status').textContent).toBe(`Saved “${trip.name}” automatically.`);
+    get<HTMLButtonElement>('header button').click();
+  }
+
+  const store = createSaveStore(localStorage);
+  expect(store.list()).toHaveLength(2);
+  for (const trip of trips) {
+    get<HTMLButtonElement>('#open-saves').click();
+    get<HTMLButtonElement>(`button[aria-label="Resume: ${trip.name}"]`).click();
+    const world = generateAdventureWorld(trip.settings);
+    const view = describePlay(world, replayCommands(world, trip.typed));
+    expect(shownDetails()['Share word']).toBe(adventureSettings.encodeShareWord(trip.settings));
+    expect(get('.play-place-name').textContent).toBe(view.placeName);
+    expect(get('.play-sidebar p').textContent).toBe(`Turns taken: ${view.turns}`);
+    expect([...app.querySelectorAll('.play-typed')].map((node) => node.textContent))
+      .toEqual(trip.typed.map((command) => `> ${command}`));
+    get<HTMLButtonElement>('header button').click();
+  }
   expect(store.list()).toHaveLength(2);
 });
 

@@ -78,6 +78,14 @@ export interface SaveFormOptions {
   readonly onPendingChange?: (pending: boolean) => void;
 }
 
+/** The save form from {@link buildSaveForm} and its autosave hook. */
+export interface SaveForm {
+  /** The form to show during play. */
+  readonly form: HTMLFormElement;
+  /** Saves the latest commands to this adventure's save, if it has one. Call it after each command. */
+  readonly autosave: () => void;
+}
+
 /**
  * Builds the form that saves the current adventure. The first save adds a
  * new save; later saves, or saves of a resumed adventure, update that one
@@ -96,17 +104,30 @@ export interface SaveFormOptions {
  * Success is announced only when no other save is waiting; errors remain visible.
  * Name errors and unacknowledged save failures remain visible together until
  * corrected and explicitly retried after the queue finishes.
+ *
+ * Autosave: once the adventure has a save, {@link SaveForm.autosave} updates
+ * that save after each command, under the same lock and conflict checks. It
+ * never adds a save, so it can't make copies or replace another save. It
+ * stops after a conflict until the player saves again, and is off in
+ * browsers without Web Locks. Autosave failures stay visible until a later
+ * save works, and play carries on.
+ *
+ * @returns The form, and the autosave hook to call after each command.
  */
-export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
+export function buildSaveForm(options: SaveFormOptions): SaveForm {
   const now = options.now ?? (() => new Date());
   const locks = 'locks' in options ? options.locks : browserLocks();
   let current = options.resumed;
   let conflictCount = 0;
   let pending = 0;
+  let manualPending = 0;
   let validationCount = 0;
   let nameProblem = '';
   let failures: string[] = [];
+  let autosaveProblem = '';
   let savedMessage = '';
+  // The autosave still waiting for the lock. Later commands join it, so a slow lock can't build a queue.
+  let queuedAutosave: { commands: readonly string[]; time: Date } | undefined;
 
   const input = create('input', {
     type: 'text', id: 'save-name', maxLength: MAX_SAVE_NAME_LENGTH, autocomplete: 'off',
@@ -114,18 +135,93 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
   });
   const status = create('p', { className: 'save-status', id: 'save-status' });
   status.setAttribute('role', 'status');
-  input.setAttribute('aria-describedby', status.id);
+  const hint = create('p', { className: 'hint', id: 'save-hint' }, locks ? autosaveHint : noAutosaveHint);
+  input.setAttribute('aria-describedby', `${hint.id} ${status.id}`);
   const form = create('form', { className: 'save-form', noValidate: true },
     create('label', { htmlFor: input.id }, 'Save name'), input,
-    create('button', { type: 'submit' }, 'Save adventure'), status);
+    create('button', { type: 'submit' }, 'Save adventure'), hint, status);
   const showStatus = (): void => {
-    const problems = [nameProblem, ...failures].filter(Boolean);
-    status.textContent = problems.length ? problems.join(' ')
-      : pending > 0 ? 'Saving the commands from when Save was pressed. Stay here until saving finishes.'
+    const problems = [nameProblem, ...failures, autosaveProblem].filter(Boolean);
+    const text = problems.length ? problems.join(' ')
+      : manualPending > 0 ? 'Saving the commands from when Save was pressed. Stay here until saving finishes.'
         : savedMessage;
+    // Unchanged text is left alone, so screen readers don't repeat it after every command.
+    if (status.textContent !== text) status.textContent = text;
   };
   const reportFailure = (message: string): void => {
     if (!failures.includes(message)) failures.push(message);
+  };
+  const begin = (manual: boolean): (() => void) => {
+    pending += 1;
+    if (manual) manualPending += 1;
+    options.onPendingChange?.(true);
+    showStatus();
+    let finished = false;
+    return () => {
+      if (finished) return;
+      finished = true;
+      pending -= 1;
+      if (manual) manualPending -= 1;
+      options.onPendingChange?.(pending > 0);
+      showStatus();
+    };
+  };
+  // Run under the shared lock with a current save; throws if it changed elsewhere.
+  const updateCurrent = (stored: StoredSave, name: string, commands: readonly string[], time: Date): void => {
+    const fresh = createSave(name, options.settings, commands, time);
+    // A clock set backwards must not make the update look older than the save.
+    const { createdAt, updatedAt } = stored.save;
+    const save = { ...fresh, createdAt, updatedAt: fresh.updatedAt < updatedAt ? updatedAt : fresh.updatedAt };
+    options.store.replace(stored.id, stored.save, save);
+    current = { id: stored.id, save };
+  };
+  const reportConflict = (error: unknown): boolean => {
+    const conflict = conflictMessage(error);
+    if (!conflict) return false;
+    current = undefined;
+    conflictCount += 1;
+    reportFailure(conflict);
+    return true;
+  };
+
+  const autosave = (): void => {
+    if (!locks || !current) return;
+    const commands = [...options.commands()];
+    const time = now();
+    if (queuedAutosave) {
+      queuedAutosave.commands = commands;
+      queuedAutosave.time = time;
+      return;
+    }
+    const job = { commands, time };
+    queuedAutosave = job;
+    const conflictsAtQueue = conflictCount;
+    const finish = begin(false);
+    const release = (): void => {
+      if (queuedAutosave === job) queuedAutosave = undefined;
+    };
+    withSaveLock(locks, () => {
+      release();
+      try {
+        const stored = current;
+        if (conflictsAtQueue !== conflictCount || !stored) return;
+        const saved = stored.save.commands;
+        if (saved.length === job.commands.length && saved.every((command, index) => command === job.commands[index])) {
+          return;
+        }
+        updateCurrent(stored, stored.save.name, job.commands, job.time);
+        autosaveProblem = '';
+        if (pending === 1) savedMessage = `Saved “${stored.save.name}” automatically.`;
+      } catch (error) {
+        if (!reportConflict(error)) autosaveProblem = `${autosaveFailedMessage} ${messageFor(error)}`;
+      } finally {
+        finish();
+      }
+    }, () => {
+      release();
+      if (conflictsAtQueue === conflictCount) autosaveProblem = `${autosaveFailedMessage} ${lockFailureMessage}`;
+      finish();
+    });
   };
 
   form.addEventListener('submit', (event) => {
@@ -141,50 +237,34 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
     }
     input.removeAttribute('aria-invalid');
     nameProblem = '';
-    if (pending === 0) failures = [];
+    if (manualPending === 0) failures = [];
     savedMessage = '';
     // Take the commands now, so a save matches the moment the player chose.
     const commands = [...options.commands()];
     const time = now();
     const conflictsAtSubmit = conflictCount;
     const validationAtSubmit = validationCount;
-    pending += 1;
-    options.onPendingChange?.(true);
-    showStatus();
-    let finished = false;
-    const finish = (): void => {
-      if (finished) return;
-      finished = true;
-      pending -= 1;
-      options.onPendingChange?.(pending > 0);
-      showStatus();
-    };
+    // Later commands autosave after this save, so older progress never lands last.
+    queuedAutosave = undefined;
+    const finish = begin(true);
     withSaveLock(locks, () => {
       try {
         if (conflictsAtSubmit !== conflictCount) return;
-        const fresh = createSave(name, options.settings, commands, time);
         if (current && locks) {
-          // A clock set backwards must not make the update look older than the save.
-          const createdAt = current.save.createdAt;
-          const updatedAt = current.save.updatedAt;
-          const save = { ...fresh, createdAt, updatedAt: fresh.updatedAt < updatedAt ? updatedAt : fresh.updatedAt };
-          options.store.replace(current.id, current.save, save);
-          current = { id: current.id, save };
-          if (pending === 1 && validationAtSubmit === validationCount) savedMessage = `Saved “${name}”.`;
+          updateCurrent(current, name, commands, time);
         } else {
+          const fresh = createSave(name, options.settings, commands, time);
           const copied = current !== undefined;
           current = { id: options.store.add(fresh), save: fresh };
-          if (pending === 1 && validationAtSubmit === validationCount) {
-            savedMessage = copied ? `Saved “${name}” as a new save. ${noLocksMessage}` : `Saved “${name}”.`;
+          if (pending === 1 && validationAtSubmit === validationCount && copied) {
+            savedMessage = `Saved “${name}” as a new save. ${noLocksMessage}`;
+            return;
           }
         }
+        autosaveProblem = '';
+        if (pending === 1 && validationAtSubmit === validationCount) savedMessage = `Saved “${name}”.`;
       } catch (error) {
-        const conflict = conflictMessage(error);
-        if (conflict) {
-          current = undefined;
-          conflictCount += 1;
-        }
-        reportFailure(conflict ?? messageFor(error));
+        if (!reportConflict(error)) reportFailure(messageFor(error));
       } finally {
         finish();
       }
@@ -195,8 +275,17 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
       finish();
     });
   });
-  return form;
+  return { form, autosave };
 }
+
+/** Starts every message about an autosave that didn't work. */
+export const autosaveFailedMessage = 'Your latest progress was not saved automatically.';
+
+/** Shown under the save form when progress can be saved automatically. */
+export const autosaveHint = 'Once this adventure is saved, each command you type is saved to it automatically.';
+
+/** Shown under the save form when the browser can't save automatically. */
+export const noAutosaveHint = 'This browser can’t save automatically. Choose Save adventure to keep your progress.';
 
 /** Shown when a browser without Web Locks saves a resumed adventure as a new save. */
 export const noLocksMessage = 'This browser can’t safely update a save that may be open in another tab.';

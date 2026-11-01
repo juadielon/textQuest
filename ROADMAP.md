@@ -156,7 +156,9 @@ implemented.
 **Status:** In progress — save format and storage wrapper implemented
 ([issue #34](https://github.com/juadielon/textQuest/issues/34)); saving,
 listing, resuming and deleting in the browser implemented
-([issue #43](https://github.com/juadielon/textQuest/issues/43)).
+([issue #43](https://github.com/juadielon/textQuest/issues/43)); autosave of
+saved adventures in progress
+([issue #77](https://github.com/juadielon/textQuest/issues/77)).
 
 **Outcome:** Players can save several adventures in their browser and export
 or import save files. Invalid files and storage errors are reported clearly.
@@ -167,7 +169,10 @@ A save stores the settings and typed commands. The save format stays version
 1, with the adventure version kept in its settings. Replaying commands into
 regenerated version 1 and version 2 worlds is covered by unit tests, including
 successful and failed commands and undo. Players save during play, see their
-saves listed and resume one by replaying its commands. Delete asks first, and
+saves listed and resume one by replaying its commands. Once an adventure has
+a save, each command updates it automatically under the shared lock and
+version check, never adding or replacing another save; recovery checkpoints
+are not saved yet. Delete asks first, and
 unreadable saves are listed and kept. Exporting and importing save files in
 the browser is not implemented. The list shows Last saved; actual last-played
 tracking remains unfinished under issue #43 and requires safe separate metadata

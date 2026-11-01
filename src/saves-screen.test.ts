@@ -5,8 +5,8 @@ import {
   createSave, createSaveStore, SAVE_KEY_PREFIX, type SaveStore, type StorageLike,
 } from './saves';
 import {
-  buildSaveForm, formatLastSaved, noLocksMessage, noSavesMessage, renderSavesScreen, SAVE_LOCK_NAME,
-  saveNameMessage, type SaveLocks,
+  autosaveFailedMessage, autosaveHint, buildSaveForm, formatLastSaved, noAutosaveHint, noLocksMessage,
+  noSavesMessage, renderSavesScreen, SAVE_LOCK_NAME, saveNameMessage, type SaveLocks,
 } from './saves-screen';
 import { genreLabels, lengthLabels } from './start-screen-model';
 
@@ -75,13 +75,14 @@ describe('formatLastSaved', () => {
 describe('buildSaveForm', () => {
   function mountForm(commands: string[], options: Partial<Parameters<typeof buildSaveForm>[0]> = {}) {
     const times = [earlier, later];
-    const form = buildSaveForm({
+    const { form, autosave } = buildSaveForm({
       store, settings, suggestedName: 'silverlantern', commands: () => commands,
       now: () => times.shift() ?? later, locks: lock.locks, ...options,
     });
     app.append(form);
     return {
       form,
+      autosave,
       name: form.querySelector<HTMLInputElement>('#save-name')!,
       status: form.querySelector('[role="status"]')!,
     };
@@ -329,6 +330,174 @@ describe('buildSaveForm', () => {
     expect(store.list()).toHaveLength(1);
     expect(store.load(id)).toEqual(save);
   });
+
+  it('autosaves only once the adventure has a save, then updates that save after each command', async () => {
+    const commands = ['look'];
+    const { form, autosave, status } = mountForm(commands);
+    commands.push('hint');
+    autosave();
+    expect(lock.request).not.toHaveBeenCalled();
+    expect(storage.items.size).toBe(0);
+
+    form.requestSubmit();
+    await lock.settled();
+    commands.push('undo');
+    autosave();
+    await lock.settled();
+
+    const [entry] = store.list();
+    expect(store.list()).toHaveLength(1);
+    expect(store.load(entry.id)).toEqual({
+      ...createSave('silverlantern', settings, ['look', 'hint', 'undo'], later),
+      createdAt: earlier.toISOString(),
+    });
+    expect(status.textContent).toBe('Saved “silverlantern” automatically.');
+
+    // The same message is left in place, so it isn't announced after every command.
+    const shown = status.firstChild;
+    commands.push('look');
+    autosave();
+    await lock.settled();
+    expect(status.firstChild).toBe(shown);
+    expect(store.load(entry.id).commands).toEqual(['look', 'hint', 'undo', 'look']);
+  });
+
+  it.each([1, 2])('autosaves a resumed version %i save and keeps its adventure version', async (version) => {
+    const resumedSettings = createAdventureSettings(7, 'short', version);
+    const save = createSave('Old trip', resumedSettings, ['look'], earlier);
+    const id = store.add(save);
+    const commands = ['look'];
+    const { autosave } = mountForm(commands, {
+      resumed: { id, save }, settings: resumedSettings, now: () => later,
+    });
+
+    commands.push('hint');
+    autosave();
+    await lock.settled();
+
+    expect(store.list()).toHaveLength(1);
+    expect(store.load(id)).toEqual({
+      ...createSave('Old trip', resumedSettings, ['look', 'hint'], later), createdAt: earlier.toISOString(),
+    });
+  });
+
+  it('does not rewrite a resumed save that already holds the latest commands', async () => {
+    const save = createSave('Trip', settings, ['look'], earlier);
+    const id = store.add(save);
+    const { autosave } = mountForm(['look'], { resumed: { id, save }, now: () => later });
+    const stored = storage.items.get(SAVE_KEY_PREFIX + id);
+
+    autosave();
+    await lock.settled();
+
+    expect(storage.items.get(SAVE_KEY_PREFIX + id)).toBe(stored);
+  });
+
+  it('joins commands typed while an autosave waits, and keeps a manual save in order', async () => {
+    const save = createSave('Trip', settings, ['look'], earlier);
+    const id = store.add(save);
+    const commands = ['look'];
+    const { form, autosave, status } = mountForm(commands, { resumed: { id, save }, now: () => later });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    void lock.request(SAVE_LOCK_NAME, () => held);
+
+    commands.push('north');
+    autosave();
+    commands.push('hint');
+    autosave();
+    form.requestSubmit();
+    commands.push('undo');
+    autosave();
+    // The held lock, one joined autosave, the manual save and the autosave after it.
+    expect(lock.request).toHaveBeenCalledTimes(4);
+    release();
+    await lock.settled();
+
+    expect(store.list()).toHaveLength(1);
+    expect(store.load(id).commands).toEqual(['look', 'north', 'hint', 'undo']);
+    expect(status.textContent).toBe('Saved “Trip” automatically.');
+  });
+
+  it.each(['changed', 'deleted'])('stops autosaving a save %s elsewhere without overwriting it', async (change) => {
+    const save = createSave('Trip', settings, ['look'], earlier);
+    const id = store.add(save);
+    const commands = ['look'];
+    const { form, autosave, status } = mountForm(commands, { resumed: { id, save }, now: () => later });
+    const elsewhere = { ...save, commands: ['look', 'south'] };
+    if (change === 'changed') store.put(id, elsewhere);
+    else store.remove(id);
+    const before = new Map(storage.items);
+
+    commands.push('north');
+    autosave();
+    await lock.settled();
+    const warning = status.textContent;
+    expect(warning).toMatch(new RegExp(`^This save was ${change} in another tab or window, so it was not overwritten\\.`));
+    commands.push('hint');
+    autosave();
+    await lock.settled();
+
+    expect(lock.request).toHaveBeenCalledTimes(1);
+    expect(status.textContent).toBe(warning);
+    expect(storage.items).toEqual(before);
+
+    form.requestSubmit();
+    await lock.settled();
+    commands.push('undo');
+    autosave();
+    await lock.settled();
+
+    const copy = store.list().find((entry) => entry.id !== id)!;
+    expect(store.load(copy.id).commands).toEqual(['look', 'north', 'hint', 'undo']);
+    expect(store.list()).toHaveLength(change === 'changed' ? 2 : 1);
+    if (change === 'changed') expect(store.load(id)).toEqual(elsewhere);
+  });
+
+  it.each(['storage', 'lock'])('shows an autosave %s failure, keeps the save and saves again later', async (failure) => {
+    const save = createSave('Trip', settings, ['look'], earlier);
+    const id = store.add(save);
+    const commands = ['look'];
+    const onPendingChange = vi.fn();
+    const { autosave, status } = mountForm(commands, { resumed: { id, save }, now: () => later, onPendingChange });
+    if (failure === 'storage') storage.failWrites = true;
+    else lock.request.mockImplementationOnce(() => Promise.reject(new DOMException('blocked', 'SecurityError')));
+
+    commands.push('north');
+    autosave();
+    await lock.settled();
+
+    expect(status.textContent?.startsWith(`${autosaveFailedMessage} `)).toBe(true);
+    expect(status.textContent).toContain(failure === 'storage' ? 'freeing browser storage' : 'could not lock');
+    expect(store.load(id)).toEqual(save);
+    expect(onPendingChange.mock.calls).toEqual([[true], [false]]);
+
+    storage.failWrites = false;
+    commands.push('hint');
+    autosave();
+    await lock.settled();
+
+    expect(status.textContent).toBe('Saved “Trip” automatically.');
+    expect(store.load(id).commands).toEqual(['look', 'north', 'hint']);
+  });
+
+  it('explains autosave, and leaves saves alone in browsers without Web Locks', () => {
+    const withLocks = mountForm([]);
+    expect(withLocks.form.querySelector('#save-hint')?.textContent).toBe(autosaveHint);
+    expect(withLocks.name.getAttribute('aria-describedby')).toBe('save-hint save-status');
+    withLocks.form.remove();
+    const save = createSave('Trip', settings, ['look'], earlier);
+    const id = store.add(save);
+    const commands = ['look'];
+    const { form, autosave } = mountForm(commands, { resumed: { id, save }, locks: undefined });
+    expect(form.querySelector('#save-hint')?.textContent).toBe(noAutosaveHint);
+
+    commands.push('north');
+    autosave();
+
+    expect(store.list()).toHaveLength(1);
+    expect(store.load(id)).toEqual(save);
+  });
 });
 
 describe('renderSavesScreen', () => {
@@ -403,7 +572,7 @@ describe('renderSavesScreen', () => {
     const save = createSave('Trip', settings, ['look'], earlier);
     const id = store.add(save);
     renderSavesScreen(app, { store, onResume, onBack, locks: lock.locks });
-    const tab = buildSaveForm({
+    const { form: tab } = buildSaveForm({
       store, settings, suggestedName: 'Trip', commands: () => ['look', 'hint'],
       resumed: { id, save }, now: () => later, locks: lock.locks,
     });

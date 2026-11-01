@@ -387,6 +387,24 @@ Correcting a name while older saves wait does not acknowledge their later
 failures. After a conflict, already-queued submissions are skipped; press Save
 again after the queue finishes to retry explicitly.
 
+Once an adventure has a save, each command is saved to it automatically
+([issue #77](https://github.com/juadielon/textQuest/issues/77)), so several
+adventures each keep their own progress without pressing Save after every
+action. Autosave only updates that adventure's existing save, under the same
+lock and version check as **Save adventure**. It never adds a save, so it
+cannot make copies or replace another save. Commands typed while an autosave
+waits for the lock join it, and a manual save keeps its place in the order.
+If the save was changed or deleted elsewhere, autosave reports it and stops
+until the player saves again as a new save. Storage and lock failures say the
+latest progress was not saved automatically; they stay visible until a later
+save works, and play carries on. While an autosave is waiting, Back to start is
+unavailable, as it is for manual saves. A new adventure is not saved until
+Save is first pressed, and commands typed while that first save is waiting are
+saved by the next command or save. Browsers without Web Locks don't autosave
+and say so under the form. Recovery checkpoints
+([issue #82](https://github.com/juadielon/textQuest/issues/82)) are not saved
+yet; undo history comes from replaying the saved commands.
+
 Play rejects commands before execution or recording if they would exceed
 10,000 saved commands or the 1,000,000-character JSON file limit, including
 escaped characters and room for any allowed save name. The same guard applies
@@ -418,7 +436,7 @@ when its unchanged row is replaced; results receive focus only if the old
 focused control has gone and has no suitable replacement.
 Overlapping deletion results are kept together, so a later success cannot
 hide an earlier conflict or lock failure.
-Last saved changes only when Save is pressed successfully, not on Resume
+Last saved changes only when a save or autosave succeeds, not on Resume
 or unsaved play. Tracking when a save was last played remains unfinished
 under issue #43 and needs a separate safe follow-up.
 
@@ -509,7 +527,8 @@ It needs no game server, database, API key or LLM, so any static web host
 can serve it. The current build connects the start and play screens for
 light fantasy, cosy mystery and science fiction. All three genres are
 playable, but authored prose and authored command names remain unfinished.
-Save before going back to start or reloading to keep progress. A share word
+Save an adventure once to keep its progress; after that each command is saved
+automatically in browsers with Web Locks. A share word
 recreates the starting adventure, not a saved session. Browser save-file
 export and import remain unfinished.
 
