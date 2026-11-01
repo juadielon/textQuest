@@ -1019,6 +1019,58 @@ it('keeps playing without Web Locks and announces that Last played is unavailabl
   expect(get('.hint[role="status"]').textContent).toContain('Last played time could not be recorded');
 });
 
+it.each(['unavailable', 'throws'] as const)(
+  'announces a synchronous Resume tracking failure while its live region is mounted (%s)',
+  (lockMode) => {
+    const store = createSaveStore(localStorage);
+    store.add(createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z')));
+    if (lockMode === 'throws') {
+      Object.defineProperty(navigator, 'locks', {
+        configurable: true,
+        value: { request: () => { throw new DOMException('blocked', 'SecurityError'); } },
+      });
+    }
+    get<HTMLButtonElement>('#open-saves').click();
+    const setText = vi.spyOn(Element.prototype, 'textContent', 'set');
+
+    get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+
+    const trackingStatus = get('#play-tracking-status');
+    expect(trackingStatus.textContent).toContain('Last played time could not be recorded');
+    const statusWrites = setText.mock.contexts.filter(
+      (context): context is Element => context instanceof Element && context.id === trackingStatus.id,
+    );
+    expect(statusWrites.length).toBeGreaterThan(0);
+    expect(statusWrites.every((element) => element.isConnected)).toBe(true);
+  },
+);
+
+it('deduplicates displayed tracking warnings while retaining them per save', () => {
+  const store = createSaveStore(localStorage);
+  const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
+  store.add(saved);
+  store.add({ ...saved, name: 'Other trip' });
+  get<HTMLButtonElement>('#open-saves').click();
+  get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+  get<HTMLButtonElement>('button').click();
+  get<HTMLButtonElement>('#open-saves').click();
+  get<HTMLButtonElement>('button[aria-label="Resume: Other trip"]').click();
+
+  const status = get('#play-tracking-status').textContent ?? '';
+  expect(status.match(/Last played time could not be recorded/g)).toHaveLength(1);
+
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: async (_name: string, task: () => void) => { task(); } },
+  });
+  get<HTMLButtonElement>('button').click();
+  get<HTMLButtonElement>('#open-saves').click();
+  get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+
+  const remainingWarning = get('#play-tracking-status').textContent ?? '';
+  expect(remainingWarning.match(/Last played time could not be recorded/g)).toHaveLength(1);
+});
+
 it('announces a rejected play-time lock without stopping play', async () => {
   Object.defineProperty(navigator, 'locks', {
     configurable: true,

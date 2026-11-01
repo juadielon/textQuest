@@ -31,7 +31,7 @@ if (app) {
   const trackingWarnings = new Map<string, string>();
   const deletedSaveWarning = 'This save was deleted in another tab. Last played was not recorded; save this adventure again to keep your current progress.';
   const showTrackingWarnings = (): void => {
-    trackingStatus.textContent = [...trackingWarnings.values()].join(' ');
+    trackingStatus.textContent = [...new Set(trackingWarnings.values())].join(' ');
   };
 
   const showStart = (shareWord?: string): void => {
@@ -96,8 +96,6 @@ if (app) {
         markPlayed();
       },
     });
-    if (playable) markPlayed();
-
     const header = document.createElement('header');
     const heading = app.querySelector('h1')!;
     const details = document.createElement('dl');
@@ -192,6 +190,7 @@ if (app) {
       }));
     }
     heading.after(header);
+    if (playable) markPlayed();
     heading.focus();
   };
 
