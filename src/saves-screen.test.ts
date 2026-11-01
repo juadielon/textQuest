@@ -5,7 +5,8 @@ import {
   createSave, createSaveStore, SAVE_KEY_PREFIX, type SaveStore, type StorageLike,
 } from './saves';
 import {
-  buildSaveForm, formatLastPlayed, noSavesMessage, renderSavesScreen, saveNameMessage,
+  buildSaveForm, formatLastPlayed, noLocksMessage, noSavesMessage, renderSavesScreen, SAVE_LOCK_NAME,
+  saveNameMessage, type SaveLocks,
 } from './saves-screen';
 import { genreLabels, lengthLabels } from './start-screen-model';
 
@@ -28,16 +29,29 @@ function countingSource(): RandomValueSource {
   return { getRandomValues(array) { next += 1; array.fill(next); return array; } };
 }
 
+// Like Web Locks shared by every tab: tasks run one at a time, later, in order.
+function fakeLocks() {
+  let queue: Promise<unknown> = Promise.resolve();
+  const request = vi.fn((name: string, task: () => unknown) => {
+    const run = queue.then(task);
+    queue = run.catch(() => undefined);
+    return run;
+  });
+  return { locks: { request } as unknown as SaveLocks, request, settled: () => queue };
+}
+
 const settings = createAdventureSettings(7, 'long');
 const earlier = new Date('2026-10-01T09:00:00.000Z');
 const later = new Date('2026-10-02T10:30:00.000Z');
 let storage: MemoryStorage;
 let store: SaveStore;
 let app: HTMLElement;
+let lock: ReturnType<typeof fakeLocks>;
 
 beforeEach(() => {
   storage = new MemoryStorage();
   store = createSaveStore(storage, countingSource());
+  lock = fakeLocks();
   app = document.createElement('main');
   document.body.append(app);
 });
@@ -63,7 +77,7 @@ describe('buildSaveForm', () => {
     const times = [earlier, later];
     const form = buildSaveForm({
       store, settings, suggestedName: 'silverlantern', commands: () => commands,
-      now: () => times.shift() ?? later, ...options,
+      now: () => times.shift() ?? later, locks: lock.locks, ...options,
     });
     app.append(form);
     return {
@@ -73,7 +87,7 @@ describe('buildSaveForm', () => {
     };
   }
 
-  it('adds a save, then updates the same one and keeps its created time', () => {
+  it('adds a save, then updates the same one under the shared lock and keeps its created time', async () => {
     const commands = ['look'];
     const { form, name, status } = mountForm(commands);
     expect(name.value).toBe('silverlantern');
@@ -83,6 +97,8 @@ describe('buildSaveForm', () => {
     commands.push('hint');
     name.value = '  Tower trip ';
     form.requestSubmit();
+    commands.push('inventory');
+    await lock.settled();
 
     const [entry] = store.list();
     expect(store.list()).toHaveLength(1);
@@ -91,32 +107,105 @@ describe('buildSaveForm', () => {
       createdAt: earlier.toISOString(),
     });
     expect(status.textContent).toBe('Saved “Tower trip”.');
+    expect(lock.request.mock.calls.map(([lockName]) => lockName)).toEqual([SAVE_LOCK_NAME, SAVE_LOCK_NAME]);
   });
 
-  it('updates the save an adventure was resumed from', () => {
-    const save = createSave('Old trip', settings, ['look'], earlier);
+  it.each([1, 2])('updates a resumed version %i save and keeps its adventure version', async (version) => {
+    const resumedSettings = createAdventureSettings(7, 'short', version);
+    const save = createSave('Old trip', resumedSettings, ['look'], earlier);
     const id = store.add(save);
-    const { form, name } = mountForm(['look', 'hint'], { resumed: { id, save }, now: () => later });
+    const { form, name } = mountForm(['look', 'hint'], {
+      resumed: { id, save }, settings: resumedSettings, now: () => later,
+    });
     expect(name.value).toBe('Old trip');
 
     form.requestSubmit();
+    await lock.settled();
 
     expect(store.list()).toHaveLength(1);
-    expect(store.load(id).commands).toEqual(['look', 'hint']);
-    expect(store.load(id).createdAt).toBe(earlier.toISOString());
+    expect(store.load(id)).toMatchObject({
+      settings: resumedSettings, commands: ['look', 'hint'], createdAt: earlier.toISOString(),
+    });
   });
 
-  it('still updates when the clock has gone backwards since the save was made', () => {
+  it('still updates when the clock has gone backwards since the save was made', async () => {
     const save = createSave('Old trip', settings, ['look'], later);
     const id = store.add(save);
     const { form, status } = mountForm(['look', 'hint'], { resumed: { id, save }, now: () => earlier });
 
     form.requestSubmit();
+    await lock.settled();
 
     expect(status.textContent).toBe('Saved “Old trip”.');
     expect(store.load(id)).toMatchObject({
       commands: ['look', 'hint'], createdAt: later.toISOString(), updatedAt: later.toISOString(),
     });
+  });
+
+  it('keeps newer progress saved elsewhere, then saves this progress as a new save', async () => {
+    const save = createSave('Trip', settings, ['look'], earlier);
+    const id = store.add(save);
+    const elsewhere = { ...createSave('Trip', settings, ['look', 'north'], later), createdAt: save.createdAt };
+    store.put(id, elsewhere);
+    const { form, status } = mountForm(['look', 'hint'], { resumed: { id, save }, now: () => later });
+
+    form.requestSubmit();
+    await lock.settled();
+
+    expect(status.textContent).toBe(
+      'This save was changed in another tab or window, so it was not overwritten. '
+      + 'Choose Save adventure again to keep this progress as a new save.',
+    );
+    expect(store.load(id)).toEqual(elsewhere);
+
+    form.requestSubmit();
+    await lock.settled();
+
+    expect(status.textContent).toBe('Saved “Trip”.');
+    expect(store.load(id)).toEqual(elsewhere);
+    expect(store.list().map((entry) => entry.id)).toHaveLength(2);
+  });
+
+  it('does not bring back a save deleted elsewhere', async () => {
+    const save = createSave('Trip', settings, ['look'], earlier);
+    const id = store.add(save);
+    const { form, status } = mountForm(['look', 'hint'], { resumed: { id, save } });
+    store.remove(id);
+
+    form.requestSubmit();
+    await lock.settled();
+
+    expect(status.textContent).toMatch(/^This save was deleted in another tab or window, so it was not overwritten\./);
+    expect(storage.items.size).toBe(0);
+  });
+
+  it('lets only the first of two tabs saving the same moment update the save', async () => {
+    const save = createSave('Trip', settings, ['look'], earlier);
+    const id = store.add(save);
+    // Same save, same clock: only the commands differ.
+    const first = mountForm(['look', 'north'], { resumed: { id, save }, now: () => later });
+    const second = mountForm(['look', 'south'], { resumed: { id, save }, now: () => later });
+
+    first.form.requestSubmit();
+    second.form.requestSubmit();
+    await lock.settled();
+
+    expect(first.status.textContent).toBe('Saved “Trip”.');
+    expect(second.status.textContent).toMatch(/^This save was changed in another tab or window/);
+    expect(store.load(id).commands).toEqual(['look', 'north']);
+    expect(store.list()).toHaveLength(1);
+  });
+
+  it('saves a resumed adventure as a new save when the browser has no Web Locks', () => {
+    const save = createSave('Trip', settings, ['look'], earlier);
+    const id = store.add(save);
+    const { form, status } = mountForm(['look', 'hint'], { resumed: { id, save }, locks: undefined });
+
+    form.requestSubmit();
+
+    expect(status.textContent).toBe(`Saved “Trip” as a new save. ${noLocksMessage}`);
+    expect(store.load(id)).toEqual(save);
+    expect(store.list()).toHaveLength(2);
   });
 
   it.each(['   ', 'tab\there'])('asks for a usable name instead of saving %j', (value) => {
@@ -131,13 +220,14 @@ describe('buildSaveForm', () => {
     expect(storage.items.size).toBe(0);
   });
 
-  it('reports a full storage and leaves the stored save as it was', () => {
+  it('reports a full storage and leaves the stored save as it was', async () => {
     const save = createSave('Old trip', settings, ['look'], earlier);
     const id = store.add(save);
     const { form, status } = mountForm(['look', 'hint'], { resumed: { id, save } });
     storage.failWrites = true;
 
     form.requestSubmit();
+    await lock.settled();
 
     expect(status.textContent).toMatch(/no room left for saves/);
     expect(store.load(id)).toEqual(save);
@@ -189,6 +279,48 @@ describe('renderSavesScreen', () => {
     buttonNamed('Resume: Trip').click();
 
     expect(onResume).toHaveBeenCalledExactlyOnceWith({ id, save });
+  });
+
+  it('lets an unexpected problem starting play surface instead of calling it a save problem', () => {
+    store.add(createSave('Trip', settings, ['look'], earlier));
+    render();
+    const failure = new TypeError('play broke');
+    onResume.mockImplementationOnce(() => { throw failure; });
+    const reported: unknown[] = [];
+    const onError = (event: ErrorEvent) => { reported.push(event.error); event.preventDefault(); };
+    window.addEventListener('error', onError);
+
+    try {
+      buttonNamed('Resume: Trip').click();
+    } catch (error) {
+      reported.push(error);
+    } finally {
+      window.removeEventListener('error', onError);
+    }
+
+    expect(reported).toEqual([failure]);
+    expect(app.querySelector('[role="status"]')?.textContent).toBe('');
+  });
+
+  it('waits for the shared lock before deleting, so a queued save cannot bring it back', async () => {
+    const save = createSave('Trip', settings, ['look'], earlier);
+    const id = store.add(save);
+    renderSavesScreen(app, { store, onResume, onBack, locks: lock.locks });
+    const tab = buildSaveForm({
+      store, settings, suggestedName: 'Trip', commands: () => ['look', 'hint'],
+      resumed: { id, save }, now: () => later, locks: lock.locks,
+    });
+    document.body.append(tab);
+
+    buttonNamed('Delete: Trip').click();
+    buttonNamed('Yes, delete: Trip').click();
+    expect(store.list()).toHaveLength(1);
+    tab.requestSubmit();
+    await lock.settled();
+
+    expect(storage.items.size).toBe(0);
+    expect(app.querySelector('[role="status"]')?.textContent).toBe('Deleted “Trip”.');
+    expect(tab.querySelector('[role="status"]')?.textContent).toMatch(/^This save was deleted in another tab/);
   });
 
   it('only deletes after confirmation, and Keep cancels', () => {

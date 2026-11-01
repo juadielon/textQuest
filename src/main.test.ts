@@ -22,6 +22,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  Reflect.deleteProperty(navigator, 'locks');
   document.body.replaceChildren();
 });
 
@@ -155,10 +156,14 @@ it('shows a generation error and still lets the player return to start', async (
   expect(document.activeElement).toBe(get('h1'));
 });
 
-it('saves during play, lists the save and resumes the exact state and log', () => {
+it.each([1, 2])('saves version %i during play, lists the save and resumes the exact state and log', async (version) => {
+  // Like Web Locks shared by every tab: tasks run one at a time, later, in order.
+  let queue: Promise<unknown> = Promise.resolve();
+  const request = vi.fn((_name: string, task: () => unknown) => (queue = queue.then(task)));
+  Object.defineProperty(navigator, 'locks', { configurable: true, value: { request } });
   // A short world keeps this test quick, as it is generated several times.
   const short = Array.from({ length: 100 }, (_, seed) =>
-    adventureSettings.createAdventureSettings(seed, 'short'))
+    adventureSettings.createAdventureSettings(seed, 'short', version))
     .find((value) => value.genre === 'light-fantasy')!;
   openAdventure(adventureSettings.encodeShareWord(short));
   const world = generateAdventureWorld(short);
@@ -171,6 +176,7 @@ it('saves during play, lists the save and resumes the exact state and log', () =
   }
   get<HTMLInputElement>('#save-name').value = 'My trip';
   get<HTMLFormElement>('.save-form').requestSubmit();
+  await queue;
   expect(get('#save-status').textContent).toBe('Saved “My trip”.');
 
   get<HTMLButtonElement>('header button').click();
@@ -180,6 +186,7 @@ it('saves during play, lists the save and resumes the exact state and log', () =
   expect(get('.save-item h2').textContent).toBe('My trip');
   get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
 
+  expect(shownDetails()['Share word']).toBe(adventureSettings.encodeShareWord(short));
   const view = describePlay(world, replayCommands(world, commands));
   expect(get('.play-place-name').textContent).toBe(view.placeName);
   expect(get('.play-sidebar p').textContent).toBe(`Turns taken: ${view.turns}`);
@@ -191,9 +198,12 @@ it('saves during play, lists the save and resumes the exact state and log', () =
   get<HTMLInputElement>('#play-command').value = 'inventory';
   get<HTMLFormElement>('.play-command').requestSubmit();
   get<HTMLFormElement>('.save-form').requestSubmit();
+  await queue;
+  expect(get('#save-status').textContent).toBe('Saved “My trip”.');
   get<HTMLButtonElement>('header button').click();
   get<HTMLButtonElement>('#open-saves').click();
   expect(app.querySelectorAll('.save-item')).toHaveLength(1);
+  expect(request).toHaveBeenCalledTimes(2);
 });
 
 it('offers no save form when the world cannot be played', async () => {

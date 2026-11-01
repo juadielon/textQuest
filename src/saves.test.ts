@@ -322,6 +322,31 @@ describe('save store', () => {
     expect(store.list()).toHaveLength(1);
   });
 
+  it('replaces a save only while it still matches the expected version', () => {
+    const { storage, store } = setUp();
+    const original = sampleSave();
+    const id = store.add(original);
+    const mine = { ...original, commands: ['look', 'go north'] };
+    store.replace(id, original, mine);
+    expect(store.load(id)).toEqual(mine);
+
+    // Another tab saved different commands with the very same timestamp.
+    const theirs = { ...mine, commands: ['look', 'go south'] };
+    store.put(id, theirs);
+    const key = SAVE_KEY_PREFIX + id;
+    const before = storage.items.get(key);
+    expect(problemOf(() => store.replace(id, mine, { ...mine, commands: ['look'] }))).toBe('changed');
+    expect(storage.items.get(key)).toBe(before);
+
+    storage.items.set(key, '{not json');
+    expect(problemOf(() => store.replace(id, theirs, mine))).toBe('changed');
+    expect(storage.items.get(key)).toBe('{not json');
+
+    store.remove(id);
+    expect(problemOf(() => store.replace(id, theirs, mine))).toBe('not-found');
+    expect(storage.items.has(key)).toBe(false);
+  });
+
   it('skips IDs that are already taken', () => {
     const { storage, store } = setUp();
     storage.setItem(SAVE_KEY_PREFIX + idFor(1), exportSaveFile(sampleSave('Old')));
