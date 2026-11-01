@@ -404,7 +404,7 @@ it('opens saves and returns to start after an invalid adventure link', async () 
   const saved = createSave('Existing trip', settings, ['look'], new Date('2026-10-01T09:00:00.000Z'));
   const store = createSaveStore(localStorage);
   const id = store.add(saved);
-  await openLink('silverlantern3');
+  await openLink('silverlantern3', '/textQuest/index.html?theme=dark&lang=en#saves');
   expect(get('#share-word-error').textContent).toContain('version 3');
   expect(document.activeElement).toBe(get('#share-word'));
 
@@ -418,13 +418,18 @@ it('opens saves and returns to start after an invalid adventure link', async () 
   expect(get('#share-word-error').textContent).toBe('');
   expect(store.load(id)).toEqual(saved);
   expect(new URL(window.location.href).searchParams.has('adventure')).toBe(false);
-  expect(window.location.pathname).toBe('/textQuest/');
+  expect(window.location.pathname).toBe('/textQuest/index.html');
+  expect(window.location.search).toBe('?theme=dark&lang=en');
+  expect(window.location.hash).toBe('#saves');
   vi.resetModules();
   await import('./main');
   expect(get('h1').textContent).toBe('textQuest');
   expect(document.activeElement).toBe(get('h1'));
   expect(get('#share-word-error').textContent).toBe('');
   expect(store.load(id)).toEqual(saved);
+  expect(window.location.pathname).toBe('/textQuest/index.html');
+  expect(window.location.search).toBe('?theme=dark&lang=en');
+  expect(window.location.hash).toBe('#saves');
 });
 
 it.each(['\t', '\u0085', '\u2028'])('rejects a pasted %j before recording commands, then saves normally', (character) => {
