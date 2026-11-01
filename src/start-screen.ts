@@ -22,6 +22,8 @@ export interface StartScreenOptions {
   readonly shareWord?: string;
   /** Where new seeds get random numbers. Defaults to browser cryptographic randomness. */
   readonly randomSource?: RandomValueSource;
+  /** Opens the saves screen. When missing, no saves button is shown. */
+  readonly onOpenSaves?: () => void;
 }
 
 function create<K extends keyof HTMLElementTagNameMap>(
@@ -90,6 +92,7 @@ function buildShareWordForm(): HTMLFormElement {
  * Focus moves to the heading. Invalid share words stay on this screen with
  * a plain-text error; typed text is never inserted as HTML. An incoming
  * `shareWord` opens play immediately if valid, or focuses the field with its error.
+ * When `onOpenSaves` is provided, a button opens the saves screen.
  *
  * @param target - The element to render into, usually `#app`.
  * @param options - The navigation callback and optional fixed random source.
@@ -138,6 +141,11 @@ export function renderStartScreen(target: HTMLElement, options: StartScreenOptio
     create('p', { className: 'intro' }, 'Start a new text adventure, or type a share word to open one a friend made.'),
     create('div', { className: 'panels' }, newForm, shareForm),
   );
+  if (options.onOpenSaves) {
+    const saves = create('button', { type: 'button', id: 'open-saves' }, 'Your saves');
+    saves.addEventListener('click', options.onOpenSaves);
+    target.append(create('p', { className: 'saves-link' }, saves));
+  }
   heading.focus();
   if (options.shareWord !== undefined) {
     shareInput.value = options.shareWord;

@@ -110,7 +110,8 @@ describe('version 1 light fantasy content', () => {
       for (const effect of step.effects) {
         if (effect.kind === 'unlock-exit') expect(pack.exits.map(({ id }) => id)).toContain(effect.exitId);
         else if (effect.kind === 'give-item') expect(ids.item).toContain(effect.itemId);
-        else expect(ids.clue).toContain(effect.clueId);
+        else if (effect.kind === 'reveal-clue') expect(ids.clue).toContain(effect.clueId);
+        else expect.unreachable(`Version 1 packs cannot use ${effect.kind}.`);
       }
     }
     for (const ending of pack.endings) checkConditions(ending.conditions);

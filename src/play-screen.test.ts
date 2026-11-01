@@ -5,9 +5,14 @@ import {
 } from './adventure-settings';
 import type { AdventureWorld } from './adventure-world';
 import { commandHelp } from './engine/commands';
-import { startPlay } from './engine/play';
+import { replayCommands, startPlay } from './engine/play';
+import * as play from './engine/play';
 import { generateAdventureWorld } from './generate-world';
 import { describePlay, playScreenTitle, renderPlayScreen, unplayableMessage } from './play-screen';
+import {
+  createSave, exportSaveFile, MAX_COMMAND_LENGTH, MAX_SAVE_COMMANDS,
+  MAX_SAVE_FILE_LENGTH, MAX_SAVE_NAME_LENGTH,
+} from './saves';
 
 vi.mock('./generate-world', async (original) => {
   const actual = await original<typeof import('./generate-world')>();
@@ -64,6 +69,7 @@ const text = (target: HTMLElement, selector: string) =>
   [...target.querySelectorAll(selector)].map((node) => node.textContent);
 
 afterEach(() => {
+  vi.restoreAllMocks();
   document.body.replaceChildren();
 });
 
@@ -85,6 +91,105 @@ describe('describePlay', () => {
 });
 
 describe('renderPlayScreen', () => {
+  it('shows rejected control characters visibly and clears the error on valid play', () => {
+    const target = renderTiny();
+    type(target, 'look\taround');
+    const response = target.querySelector<HTMLElement>('#play-response')!;
+    expect(response.textContent).toContain('plain text');
+    expect(response.classList.contains('visually-hidden')).toBe(false);
+    expect(response.getAttribute('aria-live')).toBe('polite');
+    expect(target.querySelector('.play-command')!.nextElementSibling).toBe(response);
+    expect(response.nextElementSibling).toBe(target.querySelector('.play-sidebar'));
+    expect(target.querySelectorAll('[aria-live]')).toHaveLength(1);
+    expect(target.querySelectorAll('.play-entry')).toHaveLength(0);
+    type(target, 'look');
+    expect(response.classList.contains('visually-hidden')).toBe(true);
+    expect(response.textContent).not.toContain('plain text');
+    expect(target.querySelectorAll('.play-entry')).toHaveLength(1);
+    expect(target.querySelector('#play-command')!.hasAttribute('aria-invalid')).toBe(false);
+  });
+
+  it.each([MAX_SAVE_COMMANDS - 1, MAX_SAVE_COMMANDS])('replays %i commands and blocks input beyond the save count limit', (count) => {
+    // Check the real history/guard without attaching ten thousand log entries.
+    const append = vi.spyOn(HTMLOListElement.prototype, 'append').mockImplementation(() => undefined);
+    const execute = vi.spyOn(play, 'playCommand');
+    // The boundary needs all commands, but not a puzzle or a large target list.
+    vi.mocked(generateAdventureWorld).mockReturnValueOnce({
+      ...tinyWorld, places: [{ id: 'gate' }], exits: [], items: [], clues: [],
+      solution: { steps: [], goal: { placeId: 'gate', conditions: {} } },
+    });
+    const target = document.createElement('main');
+    document.body.append(target);
+    const commands = Array<string>(count).fill('');
+    const onCommand = vi.fn<(commands: readonly string[]) => void>();
+    const settings = settingsFor('light-fantasy');
+    renderPlayScreen(target, settings, { commands, onCommand });
+    if (count < MAX_SAVE_COMMANDS) type(target, 'look');
+    const recorded = count < MAX_SAVE_COMMANDS ? onCommand.mock.calls[0][0] : commands;
+    expect(recorded).toHaveLength(MAX_SAVE_COMMANDS);
+    expect(() => exportSaveFile(createSave('My trip', settings, recorded))).not.toThrow();
+    const executions = execute.mock.calls.length;
+    expect(append).toHaveBeenCalledTimes(MAX_SAVE_COMMANDS);
+    for (const command of ['look', 'undo']) {
+      type(target, command);
+      expect(execute).toHaveBeenCalledTimes(executions);
+      expect(append).toHaveBeenCalledTimes(MAX_SAVE_COMMANDS);
+      expect(onCommand).toHaveBeenCalledTimes(MAX_SAVE_COMMANDS - count);
+      expect(text(target, '#play-response')[0]).toContain('save command limit');
+      expect(target.querySelector('#play-response')!.classList.contains('visually-hidden')).toBe(false);
+      expect(document.activeElement).toBe(target.querySelector('#play-command'));
+      expect(target.querySelector('#play-command')!.getAttribute('aria-invalid')).toBe('true');
+    }
+  });
+
+  it('counts escaped JSON at the file boundary and keeps rejected input out of history', () => {
+    const settings = settingsFor('light-fantasy');
+    const name = '\ud800'.repeat(MAX_SAVE_NAME_LENGTH);
+    const commands = Array<string>(2400).fill('\\'.repeat(MAX_COMMAND_LENGTH));
+    const size = (values: readonly string[]) => JSON.stringify(createSave(name, settings, values), null, 2).length;
+    while (MAX_SAVE_FILE_LENGTH - size(commands) > 208) commands.push('a'.repeat(MAX_COMMAND_LENGTH));
+    const emptyOverhead = size([...commands, '']) - size(commands);
+    commands.push('a'.repeat(MAX_SAVE_FILE_LENGTH - size(commands) - emptyOverhead));
+    expect(exportSaveFile(createSave(name, settings, commands))).toHaveLength(MAX_SAVE_FILE_LENGTH);
+    const last = commands.pop()!;
+    expect(last.length).toBeGreaterThan(0);
+    vi.mocked(generateAdventureWorld).mockReturnValueOnce(tinyWorld);
+    const target = document.createElement('main');
+    document.body.append(target);
+    const onCommand = vi.fn<(commands: readonly string[]) => void>();
+    renderPlayScreen(target, settings, { commands, onCommand });
+    type(target, last + '\\');
+    expect(onCommand).not.toHaveBeenCalled();
+    expect(text(target, '#play-response')[0]).toContain('save file limit');
+    expect(target.querySelector('#play-response')!.classList.contains('visually-hidden')).toBe(false);
+    expect(target.querySelectorAll('.play-entry')).toHaveLength(commands.length);
+    type(target, last);
+    expect(onCommand).toHaveBeenCalledOnce();
+    const recorded = onCommand.mock.calls[0][0];
+    expect(exportSaveFile(createSave(name, settings, recorded))).toHaveLength(MAX_SAVE_FILE_LENGTH);
+    expect(target.querySelector('#play-command')!.hasAttribute('aria-invalid')).toBe(false);
+    expect(target.querySelector('#play-response')!.classList.contains('visually-hidden')).toBe(true);
+    type(target, 'undo');
+    expect(onCommand).toHaveBeenCalledOnce();
+    expect(text(target, '#play-response')[0]).toContain('save file limit');
+    expect(target.querySelectorAll('.play-entry')).toHaveLength(recorded.length);
+    const shortNameSave = createSave('A', settings, recorded);
+    expect(exportSaveFile(shortNameSave)).toHaveLength(MAX_SAVE_FILE_LENGTH - 359);
+    // A released near-limit save can still replay even without the reserved name space.
+    const shortHistory = [...recorded, 'look'];
+    expect(() => exportSaveFile(createSave('A', settings, shortHistory))).not.toThrow();
+    vi.mocked(generateAdventureWorld).mockReturnValueOnce(tinyWorld);
+    const resumed = document.createElement('main');
+    document.body.append(resumed);
+    const resumedCommand = vi.fn();
+    renderPlayScreen(resumed, settings, { commands: shortHistory, onCommand: resumedCommand });
+    expect(resumed.querySelectorAll('.play-entry')).toHaveLength(shortHistory.length);
+    type(resumed, 'look');
+    expect(resumedCommand).not.toHaveBeenCalled();
+    expect(text(resumed, '#play-response')[0]).toContain('save file limit');
+    expect(() => exportSaveFile(createSave('A', settings, shortHistory))).not.toThrow();
+  });
+
   it('shows a generated world with a labelled command box and empty log', () => {
     const settings = settingsFor('light-fantasy');
     const target = document.createElement('main');
@@ -186,6 +291,39 @@ describe('renderPlayScreen', () => {
     expect(text(target, '.play-typed')).toEqual(['> <img src=x onerror=alert(1)>']);
   });
 
+  it('reports every command run so far after each typed command', () => {
+    vi.mocked(generateAdventureWorld).mockReturnValueOnce(tinyWorld);
+    const target = document.createElement('main');
+    const onCommand = vi.fn();
+    expect(renderPlayScreen(target, settingsFor('light-fantasy'), { onCommand })).toBe(true);
+
+    type(target, ' take brass key ');
+    type(target, 'undo');
+
+    expect(onCommand.mock.calls).toEqual([[['take brass key']], [['take brass key', 'undo']]]);
+    expect(target.querySelector<HTMLInputElement>('#play-command')?.maxLength).toBe(MAX_COMMAND_LENGTH);
+  });
+
+  it('replays saved commands into the same state and log, without announcing them', () => {
+    vi.mocked(generateAdventureWorld).mockReturnValueOnce(tinyWorld);
+    const target = document.createElement('main');
+    const onCommand = vi.fn();
+    const saved = ['take brass key', 'use brass key', 'hint'];
+
+    renderPlayScreen(target, settingsFor('light-fantasy'), { commands: saved, onCommand });
+
+    const view = describePlay(tinyWorld, replayCommands(tinyWorld, saved));
+    expect(target.querySelector('.play-place-name')?.textContent).toBe(view.placeName);
+    expect(text(target, '.play-sidebar ul')[0]).toBe(view.inventory[0]);
+    expect(target.querySelector('.play-sidebar p')?.textContent).toBe(`Turns taken: ${view.turns}`);
+    expect(text(target, '.play-typed')).toEqual(saved.map((command) => `> ${command}`));
+    expect(target.querySelector('[aria-live="polite"]')?.textContent).toBe('');
+    expect(onCommand).not.toHaveBeenCalled();
+
+    type(target, 'go to old tower');
+    expect(onCommand).toHaveBeenLastCalledWith([...saved, 'go to old tower']);
+    expect(target.querySelector<HTMLElement>('.play-ending')?.hidden).toBe(false);
+  });
   it('starts with one focusable h1 above h2 section headings', () => {
     const target = renderTiny();
 
@@ -217,7 +355,7 @@ describe('renderPlayScreen', () => {
     });
     const target = document.createElement('main');
 
-    renderPlayScreen(target, settingsFor('light-fantasy'));
+    expect(renderPlayScreen(target, settingsFor('light-fantasy'))).toBe(false);
 
     expect(target.querySelector('[role="alert"]')?.textContent).toBe(unplayableMessage);
     expect(target.querySelector('h1')?.textContent).toBe(playScreenTitle);

@@ -3,6 +3,17 @@ import type { AdventureWorld } from './adventure-world';
 import type { CommandTarget } from './engine/commands';
 import { discoveredTargets, playCommand, startPlay, type PlayState } from './engine/play';
 import { generateAdventureWorld } from './generate-world';
+import {
+  createSave, exportSaveFile, MAX_COMMAND_LENGTH, MAX_SAVE_COMMANDS, MAX_SAVE_NAME_LENGTH, SaveError,
+} from './saves';
+
+/** Options for {@link renderPlayScreen}. */
+export interface PlayScreenOptions {
+  /** Commands to replay first, such as a save's. They fill the log without being announced. */
+  readonly commands?: readonly string[];
+  /** Called after each typed command with every command run so far, oldest first. */
+  readonly onCommand?: (commands: readonly string[]) => void;
+}
 
 /** What the play screen shows for one moment of play, without any DOM. */
 export interface PlayView {
@@ -60,8 +71,17 @@ export function describePlay(world: AdventureWorld, state: PlayState): PlayView 
  * responses are announced through a polite live region. If the world can't
  * be generated or started because of a validation `RangeError`, a plain
  * message is shown instead of the game. Unexpected errors are rethrown.
+ * Control characters are rejected before play so recorded commands remain saveable.
+ * Rejected input shows a visible, live-announced error without entering the log.
+ * New commands, including undo, cannot exceed save count or file-size limits.
+ * File-size checks reserve room for any allowed save name.
+ *
+ * @param options - Saved commands to replay and a hook that hears each new command.
+ * @returns False when the world can't be played, so there is nothing to save.
  */
-export function renderPlayScreen(target: HTMLElement, settings: AdventureSettings): void {
+export function renderPlayScreen(
+  target: HTMLElement, settings: AdventureSettings, options: PlayScreenOptions = {},
+): boolean {
   const title = element('h1', 'play-title', playScreenTitle);
   title.tabIndex = -1;
   let world: AdventureWorld;
@@ -74,7 +94,7 @@ export function renderPlayScreen(target: HTMLElement, settings: AdventureSetting
     const problem = element('p', 'status', unplayableMessage);
     problem.setAttribute('role', 'alert');
     target.replaceChildren(title, problem);
-    return;
+    return false;
   }
 
   const placeName = element('h2', 'play-place-name');
@@ -88,6 +108,7 @@ export function renderPlayScreen(target: HTMLElement, settings: AdventureSetting
   log.setAttribute('aria-label', 'What has happened so far');
 
   const announcer = element('p', 'visually-hidden');
+  announcer.id = 'play-response';
   announcer.setAttribute('aria-live', 'polite');
 
   const input = element('input');
@@ -95,6 +116,8 @@ export function renderPlayScreen(target: HTMLElement, settings: AdventureSetting
   input.type = 'text';
   input.autocomplete = 'off';
   input.spellcheck = false;
+  input.maxLength = MAX_COMMAND_LENGTH;
+  input.setAttribute('aria-describedby', announcer.id);
   const label = element('label', undefined, 'What do you do?');
   label.htmlFor = input.id;
   const form = element('form', 'play-command', label, input, element('button', undefined, 'Go'));
@@ -123,25 +146,67 @@ export function renderPlayScreen(target: HTMLElement, settings: AdventureSetting
       + `${view.turns === 1 ? 'turn' : 'turns'}. Type undo to go back a turn.`;
   };
 
-  form.addEventListener('submit', (event) => {
-    event.preventDefault();
-    const command = input.value.trim();
-    if (!command) return;
+  const commands: string[] = [];
+  const run = (command: string): string => {
     const turn = playCommand(world, state, command);
     state = turn.state;
+    commands.push(command);
     log.append(element('li', 'play-entry',
       element('p', 'play-typed', `> ${command}`), element('p', undefined, turn.message)));
+    return turn.message;
+  };
+  options.commands?.forEach((command) => run(command));
+
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    // Save files only accept plain, single-line command text.
+    if (/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(input.value)) {
+      announcer.className = 'error';
+      announcer.replaceChildren(element('span', undefined,
+        'Use plain text without tabs, line breaks or control characters.'));
+      input.setAttribute('aria-invalid', 'true');
+      input.focus();
+      return;
+    }
+    input.removeAttribute('aria-invalid');
+    const command = input.value.trim();
+    if (!command) return;
+    let limitMessage: string | undefined;
+    if (commands.length >= MAX_SAVE_COMMANDS) {
+      limitMessage = 'This adventure has reached the save command limit. Your existing progress can still be saved, but no more commands can be added.';
+    } else {
+      try {
+        // Unpaired surrogates use six JSON characters each: the largest valid name.
+        exportSaveFile(createSave('\ud800'.repeat(MAX_SAVE_NAME_LENGTH), settings, [...commands, command]));
+      } catch (error) {
+        if (!(error instanceof SaveError)) throw error;
+        limitMessage = error.problem === 'too-large'
+          ? 'This command would exceed the save file limit. Try a shorter command. Your existing progress can still be saved.'
+          : error.message;
+      }
+    }
+    if (limitMessage) {
+      announcer.className = 'error';
+      announcer.replaceChildren(element('span', undefined, limitMessage));
+      input.setAttribute('aria-invalid', 'true');
+      input.focus();
+      return;
+    }
+    const message = run(command);
+    announcer.className = 'visually-hidden';
     log.scrollTop = log.scrollHeight;
     // A fresh node is announced even when the text repeats the last response.
-    announcer.replaceChildren(element('span', undefined, turn.message));
+    announcer.replaceChildren(element('span', undefined, message));
     input.value = '';
     input.focus();
     update();
+    options.onCommand?.([...commands]);
   });
 
   update();
-  const screen = element('div', 'play-screen', place, ending, log, form, sidebar, announcer);
+  const screen = element('div', 'play-screen', place, ending, log, form, announcer, sidebar);
   target.replaceChildren(title, screen);
+  return true;
 }
 
 function fillList(list: HTMLElement, names: readonly string[], empty: string): void {
