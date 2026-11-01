@@ -347,7 +347,14 @@ file as a new save. A full or blocked storage is reported clearly.
 [Issue #43](https://github.com/juadielon/textQuest/issues/43) adds saving to
 the browser. During play, a **Save adventure** form stores the adventure in
 `localStorage` under a name the player chooses. Saving again, or saving a
-resumed adventure, updates that save. **Your saves** on the start screen
+resumed adventure, updates that save. While saves are waiting or being written,
+**Back to start** is unavailable. Play stays open after success or failure;
+errors remain visible so the player can retry, and returning to start always
+requires another choice after saving finishes. Closing or reloading the tab
+can still interrupt saving and lose unsaved progress; wait for the Saved message
+before leaving the page.
+
+**Your saves** on the start screen
 lists every save with its name, genre, length and last played time, newest
 first.
 

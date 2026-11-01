@@ -75,6 +75,8 @@ export interface SaveFormOptions {
   readonly now?: () => Date;
   /** Locks shared between tabs. Defaults to the browser's Web Locks, if it has them. */
   readonly locks?: SaveLocks;
+  /** Keeps navigation in play while any submitted save is waiting or being written. */
+  readonly onPendingChange?: (pending: boolean) => void;
 }
 
 /**
@@ -91,12 +93,14 @@ export interface SaveFormOptions {
  * Browsers without Web Locks always save as a new save instead of updating.
  * Results and problems go to a polite status message as plain text.
  * A failed save leaves any stored version as it was.
+ * Pending changes let the caller keep this form visible until all requests finish.
  */
 export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
   const now = options.now ?? (() => new Date());
   const locks = 'locks' in options ? options.locks : browserLocks();
   let current = options.resumed;
   let conflictCount = 0;
+  let pending = 0;
 
   const input = create('input', {
     type: 'text', id: 'save-name', maxLength: MAX_SAVE_NAME_LENGTH, autocomplete: 'off',
@@ -123,9 +127,19 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
     const commands = [...options.commands()];
     const time = now();
     const conflictsAtSubmit = conflictCount;
+    pending += 1;
+    options.onPendingChange?.(true);
+    status.textContent = 'Saving adventure. Stay here until saving finishes.';
+    let finished = false;
+    const finish = (): void => {
+      if (finished) return;
+      finished = true;
+      pending -= 1;
+      options.onPendingChange?.(pending > 0);
+    };
     withSaveLock(locks, () => {
-      if (conflictsAtSubmit !== conflictCount) return;
       try {
+        if (conflictsAtSubmit !== conflictCount) return;
         const fresh = createSave(name, options.settings, commands, time);
         if (current && locks) {
           // A clock set backwards must not make the update look older than the save.
@@ -147,9 +161,12 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
           conflictCount += 1;
         }
         status.textContent = conflict ?? messageFor(error);
+      } finally {
+        finish();
       }
     }, () => {
       if (conflictsAtSubmit === conflictCount) status.textContent = lockFailureMessage;
+      finish();
     });
   });
   return form;

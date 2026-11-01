@@ -274,6 +274,114 @@ it('offers no save form when the world cannot be played', async () => {
   expect(get('[role="alert"]').textContent).toBe(unplayableMessage);
 });
 
+it.each(['changed', 'deleted', 'rejected'])('keeps pending-save %s failures visible after choosing Back', async (failure) => {
+  let run!: () => void;
+  let reject!: (error: Error) => void;
+  const request = vi.fn((_name: string, task: () => void) => new Promise<void>((resolve, fail) => {
+    run = () => { task(); resolve(); };
+    reject = fail;
+  }));
+  Object.defineProperty(navigator, 'locks', { configurable: true, value: { request } });
+  const saved = createSave('My trip', settings, ['look'], new Date('2026-10-01T09:00:00.000Z'));
+  const store = createSaveStore(localStorage);
+  const id = store.add(saved);
+  get<HTMLButtonElement>('#open-saves').click();
+  get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+  get<HTMLInputElement>('#play-command').value = 'inventory';
+  get<HTMLFormElement>('.play-command').requestSubmit();
+  const form = get<HTMLFormElement>('.save-form');
+  form.requestSubmit();
+  const back = get<HTMLButtonElement>('header button');
+  back.click();
+  expect(form.isConnected).toBe(true);
+  expect(back.disabled).toBe(true);
+  expect(get('#save-status').textContent).toContain('Saving');
+
+  if (failure === 'changed') store.put(id, { ...saved, name: 'Other tab' });
+  if (failure === 'deleted') store.remove(id);
+  if (failure === 'rejected') reject(new DOMException('Lock unavailable', 'SecurityError'));
+  else run();
+  await vi.waitFor(() => expect(back.disabled).toBe(false));
+
+  expect(get('h1').textContent).toBe(playScreenTitle);
+  expect(form.isConnected).toBe(true);
+  expect(get('#save-status').textContent).toContain(failure === 'rejected' ? 'could not lock' : failure);
+  expect([...app.querySelectorAll('.play-typed')].map((node) => node.textContent))
+    .toEqual(['> look', '> inventory']);
+  expect(store.list()).toHaveLength(failure === 'deleted' ? 0 : 1);
+  if (failure !== 'deleted') expect(store.load(id).commands).toEqual(['look']);
+
+  form.requestSubmit();
+  run();
+  await vi.waitFor(() => expect(back.disabled).toBe(false));
+  expect(get('#save-status').textContent).toContain('Saved');
+  expect(store.list().filter((entry) => entry.status === 'ready' && entry.commandCount === 2))
+    .toHaveLength(1);
+  expect(form.isConnected).toBe(true);
+  back.click();
+  expect(get('h1').textContent).toBe('textQuest');
+});
+
+it('keeps Back blocked until every queued successful save finishes without navigating automatically', async () => {
+  const waiting: (() => void)[] = [];
+  const request = vi.fn((_name: string, task: () => void) => new Promise<void>((resolve) => {
+    waiting.push(() => { task(); resolve(); });
+  }));
+  Object.defineProperty(navigator, 'locks', { configurable: true, value: { request } });
+  openAdventure(adventureSettings.encodeShareWord(settings));
+  const form = get<HTMLFormElement>('.save-form');
+  form.requestSubmit();
+  get<HTMLInputElement>('#play-command').value = 'look';
+  get<HTMLFormElement>('.play-command').requestSubmit();
+  form.requestSubmit();
+  const back = get<HTMLButtonElement>('header button');
+  back.click();
+  expect(form.isConnected).toBe(true);
+  waiting.shift()!();
+  expect(back.disabled).toBe(true);
+  back.click();
+  expect(form.isConnected).toBe(true);
+  waiting.shift()!();
+  await vi.waitFor(() => expect(back.disabled).toBe(false));
+  expect(form.isConnected).toBe(true);
+  const saves = createSaveStore(localStorage).list();
+  expect(saves).toHaveLength(1);
+  expect(createSaveStore(localStorage).load(saves[0].id).commands).toEqual(['look']);
+  back.click();
+  expect(get('h1').textContent).toBe('textQuest');
+});
+
+it('retains the conflict and play session until both queued saves have finished', () => {
+  const waiting: (() => void)[] = [];
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: (_name: string, task: () => void) => new Promise<void>((resolve) => {
+      waiting.push(() => { task(); resolve(); });
+    }) },
+  });
+  const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
+  const store = createSaveStore(localStorage);
+  const id = store.add(saved);
+  get<HTMLButtonElement>('#open-saves').click();
+  get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+  const form = get<HTMLFormElement>('.save-form');
+  form.requestSubmit();
+  form.requestSubmit();
+  store.put(id, { ...saved, name: 'Other tab' });
+  waiting.shift()!();
+  const warning = get('#save-status').textContent;
+  const back = get<HTMLButtonElement>('header button');
+  expect(warning).toContain('changed');
+  expect(back.disabled).toBe(true);
+  back.click();
+  waiting.shift()!();
+  expect(back.disabled).toBe(false);
+  expect(form.isConnected).toBe(true);
+  expect(get('#save-status').textContent).toBe(warning);
+  expect(store.list()).toHaveLength(1);
+  expect(store.load(id).name).toBe('Other tab');
+});
+
 async function openLink(word: string, path = '/textQuest/'): Promise<void> {
   const url = new URL(path, window.location.href);
   url.searchParams.set('adventure', word);
