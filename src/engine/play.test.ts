@@ -126,6 +126,13 @@ describe('startPlay', () => {
   it('rejects invalid worlds like the checker does', () => {
     expect(() => startPlay({ ...sampleWorld(), startPlaceId: 'nowhere' })).toThrow(RangeError);
   });
+
+  it('refuses world version 2 until play supports choices and checkpoints', () => {
+    const world: AdventureWorld = { ...sampleWorld(), version: 2 };
+    expect(() => startPlay(world)).toThrow('World version 2 cannot be played yet.');
+    expect(() => runAction(world, startPlay(sampleWorld()), { kind: 'look' }))
+      .toThrow('cannot be played yet');
+  });
 });
 
 describe('playing with typed commands', () => {

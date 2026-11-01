@@ -126,8 +126,10 @@ share words, content and ID-based saved-command replay. New play accepts
 authored names and aliases in both versions; each saved command records
 whether it used ID or content names. Old histories, including failed
 commands, stay in ID mode.
-The current rules only add progress; mutually exclusive
-choices will need later rules and their own checks.
+The current engine rules only add progress. World format version 2 rules and
+checks for mutually exclusive choices and early win or failure endings are
+prepared ([issue #79](https://github.com/juadielon/textQuest/issues/79)), but
+no adventure generates them and play does not accept them yet.
 
 ### 5. Commands and recovery
 
