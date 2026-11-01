@@ -67,6 +67,9 @@ export interface PlayWorld extends AdventureWorld {
   readonly names?: WorldNames;
 }
 
+/** How a saved command is matched when its history is replayed. */
+export type CommandReplayMode = 'id' | 'content';
+
 /** The new state after an action, and what to tell the player. */
 export interface PlayTurn {
   /** The new state. It is the same object as the input when nothing changed. */
@@ -777,9 +780,22 @@ export function playCommand(world: PlayWorld, state: PlayState, input: string): 
 }
 
 /**
- * Starts a world and plays a list of typed commands in order. The same world
- * and commands always give the same state, so a save can store the command list.
+ * Starts a world and plays typed commands in order, preserving the naming
+ * rules that applied to each command. Legacy histories use ID names.
+ *
+ * @throws RangeError when `modes` does not match the number of commands.
  */
-export function replayCommands(world: PlayWorld, inputs: readonly string[]): PlayState {
-  return inputs.reduce((state, input) => playCommand(world, state, input).state, startPlay(world));
+export function replayCommands(
+  world: PlayWorld,
+  inputs: readonly string[],
+  modes: readonly CommandReplayMode[] = inputs.map(() => world.names ? 'content' : 'id'),
+): PlayState {
+  if (inputs.length !== modes.length) {
+    throw new RangeError('There must be one replay mode for each command.');
+  }
+  const idWorld = world.names ? { ...world, names: undefined } : world;
+  return inputs.reduce((state, input, index) => {
+    const commandWorld = modes[index] === 'id' ? idWorld : world;
+    return playCommand(commandWorld, state, input).state;
+  }, startPlay(world));
 }

@@ -10,9 +10,8 @@ genres, a command parser and a save format. A pure play module that runs parsed 
 a world is also implemented, with a browser play screen built on it.
 New adventures use version 2's seeded item and clue placement; version 1
 share words and saves keep their original worlds. All three genres can be
-played from the start screen. Names still
-come from IDs; authored story text and the saves screen remain
-planned.
+played from the start screen. Play uses each version's authored names and
+story text. The save/load screens remain planned.
 
 ## Start screen
 
@@ -132,10 +131,10 @@ both ordered share-word lists and representative complete worlds.
 Changing these released rules or content needs another adventure version.
 
 Saved-command replay tests cover both versions, all genres and lengths,
-including failed commands and undo. Names still come from IDs in both
-versions. Authored names and their command compatibility belong to
-[issue #56](https://github.com/juadielon/textQuest/issues/56), not this release.
-The save format remains version 1; a browser save/load screen is still planned.
+including failed commands and undo. Version 1 ID-based command histories
+remain unchanged; new histories record whether each command used ID or
+content names, including failed commands. Version 1 saves migrate to save
+format 2 with ID replay modes. A browser save/load screen is still planned.
 
 ## Adventure settings and share words
 
@@ -200,8 +199,9 @@ always gives the same result, whatever the time, locale or browser. Tests show
 long worlds with 28 places and 14 required steps finish within the limit. The
 limit is a cautious first value. Generator tests also check the authored
 light fantasy worlds, including every long plot, within this limit.
-Authored story text is not rendered yet. Commands run against generated
-worlds in the browser through the play module described below.
+The browser play screen shows the matching pack's names and story text.
+References to places, items, clues and people stay generic until the player
+has discovered them.
 
 ## Typed command parser
 
@@ -245,8 +245,10 @@ response. Neither the world nor the input state is changed.
 The state tracks the place, inventory, found clues, completed steps, opened
 exits, turn count, whether the goal is reached and the previous state for
 undo. Moves, takes and successful uses count as turns; look, examine,
-inventory, talk, hint and help are free. `replayCommands(world, inputs)` always
-gives the same state, so saves can store a command list.
+inventory, talk, hint and help are free. `replayCommands(world, inputs, modes)`
+gives the same state for the same commands and their ID or content-name
+replay modes. Old saves default to ID mode; mixed histories keep each
+command's original matching rules.
 
 Play follows the winnability checker's rules. Entering a place reveals its
 clues. Items must be taken. A step that needs items happens when the player
@@ -259,11 +261,11 @@ Discovered targets never include puzzle steps, the goal, unfound clues, items
 elsewhere or places out of sight. Targets use world IDs with their kind, so a
 place and an item may share an ID. Without content-pack names, names come
 from IDs. `worldNamesFrom(pack, world)` in `src/content/v1/world-names.ts`
-looks up pack names for any genre's world; pass them as the world's `names`
-to show and accept them. Shorter aliases are made from each name, so
-`Mara the miller` also answers to `mara` and `miller`; aliases that clash
-with a name, or read as a direction, are dropped. People appear only at
-their place, and you can examine and talk to them. A locked way is called
+looks up version 1 or 2 pack names for any genre's world; pass them as the
+world's `names` to show and accept them. Shorter aliases come from each name,
+so `Mara the miller` also answers to `mara` and `miller`; aliases that clash
+with a name, or read as a direction, are dropped. People appear only at their
+place, and you can examine and talk to them. A locked way is called
 `the locked way` until the player knows where it leads, so unknown places
 stay hidden. Names that collide after parser normalisation get stable
 numbered suffixes, such as `red key (item 4)`. Look, inventory and hints use
@@ -303,15 +305,19 @@ to the start screen rather than substituting a different adventure.
 Invalid settings or worlds still show that message; unexpected errors while
 opening play are rethrown rather than hidden as an unplayable adventure
 ([issue #74](https://github.com/juadielon/textQuest/issues/74)).
-Names still come from IDs. The screen doesn't use the save format yet; the
-saves screen is planned in
+The screen shows authored place and plot text, people at the current place,
+items where found, discovered clue text, puzzle prompts and the ending.
+References resolve to names only after their entities are discovered. All
+player-facing text is inserted as plain text. The screen doesn't use the
+save format yet; the saves screen is planned in
 [issue #43](https://github.com/juadielon/textQuest/issues/43).
 
 ## Save format and storage
 
 [Issue #34](https://github.com/juadielon/textQuest/issues/34) adds a
 versioned save format in `src/saves.ts`. A save holds an adventure name, the
-starting settings, every command the player typed and two timestamps.
+starting settings, every command the player typed, its replay mode and two
+timestamps. Save format 2 reads format 1 files as ID-based command histories.
 Progress will be rebuilt by replaying the commands, which is a later step.
 Saves never contain puzzle solutions.
 

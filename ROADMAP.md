@@ -97,15 +97,17 @@ checker. Deterministic light fantasy world generation is implemented for
 its fixed 8/16/24-place and 4/8/12-required-step plan. Tests cover all nine
 plot/length combinations, optional routes, winnability and repeatability.
 The world contains engine rules, not rendered story text or player progress.
-These engine worlds can be played in the browser, but authored names and
-story text are not rendered yet.
+These engine worlds can be played in the browser with the matching pack's
+names and story text; the browser resolves prose references only after an
+entity is discovered.
 The science fiction pack ([issue #33](https://github.com/juadielon/textQuest/issues/33))
 and the cosy mystery pack
 ([issue #32](https://github.com/juadielon/textQuest/issues/32)) follow the same
 format and checks. The generator builds worlds from both
 ([issue #40](https://github.com/juadielon/textQuest/issues/40)), with the same
-tests and pinned worlds for each genre. Commands run through the play module;
-authored names and story text remain planned.
+tests and pinned worlds for each genre. Commands run through the play module.
+The browser screen shows matching pack names and story text, resolving
+references only after the player discovers the entity.
 Seeded item and clue placement
 ([issue #51](https://github.com/juadielon/textQuest/issues/51)) is now playable
 in adventure version 2, using the final matching wording prepared in
@@ -114,11 +116,11 @@ Its complete content, word lists and representative worlds are pinned
 separately. Tests sweep seeds 0 to 999 at every length, with at least 80%
 distinct worlds in each genre/plot/length group and winnability with and
 without optional steps. Places, routes and prose are still authored, not
-unique for every seed. Version 1 is released and
-keeps its original 27 worlds, share words, content and saved-command replay.
-Authored command names remain disabled in both versions; their save
-compatibility is separate work in
-[issue #56](https://github.com/juadielon/textQuest/issues/56).
+unique for every seed. Version 1 is released and keeps its original 27 worlds,
+share words, content and ID-based saved-command replay. New play accepts
+authored names and aliases in both versions; each saved command records
+whether it used ID or content names. Old histories, including failed
+commands, stay in ID mode.
 The current rules only add progress; mutually exclusive
 choices will need later rules and their own checks.
 
@@ -154,19 +156,18 @@ or import save files. Invalid files and storage errors are reported clearly.
 
 **Depends on:** Milestones 3 and 5.
 
-The first step stores settings and typed commands, with unit tests. Replaying
-commands into regenerated version 1 and version 2 worlds is covered by unit
-tests, including successful and failed commands and undo. The browser does
-not yet connect saves to play; save screens remain planned. The save format
-stays version 1, with the adventure version kept in its settings.
+The first step stores settings, typed commands and a replay mode for each
+command. Save format 2 migrates format 1 files to ID mode, preserving old
+histories and failed commands. Unit tests cover mixed ID/content histories
+and re-saving imported files. The browser does not yet connect saves to play;
+save screens remain planned.
 
 ### 7. Browser game
 
 **Status:** In progress — start and play screens are connected
-([issue #54](https://github.com/juadielon/textQuest/issues/54)).
-The play interface in [issue #44](https://github.com/juadielon/textQuest/issues/44)
-still needs content-pack names and prose
-([issue #56](https://github.com/juadielon/textQuest/issues/56)).
+([issue #54](https://github.com/juadielon/textQuest/issues/54)); authored
+names and prose are implemented for
+[issue #56](https://github.com/juadielon/textQuest/issues/56).
 A start screen for new adventures and share words
 ([issue #41](https://github.com/juadielon/textQuest/issues/41)) is implemented
 in [pull request #46](https://github.com/juadielon/textQuest/pull/46).
@@ -188,7 +189,8 @@ Returning to start ends the session, and reopening a word starts fresh.
 Invalid settings or worlds show the accessible unplayable message; unexpected
 errors while opening play are rethrown
 ([issue #74](https://github.com/juadielon/textQuest/issues/74)).
-Content-pack names and prose, and saves remain planned.
+The play screen shows the matching pack's names and prose, with hidden
+references withheld until discovered. Saves remain planned.
 
 ### 8. Release checks and hosting guide
 

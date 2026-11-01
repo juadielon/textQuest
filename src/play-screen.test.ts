@@ -4,14 +4,20 @@ import {
   createAdventureSettings, type AdventureGenre, type AdventureSettings,
 } from './adventure-settings';
 import type { AdventureWorld } from './adventure-world';
+import type { ContentPack } from './content/v1/format';
 import { commandHelp } from './engine/commands';
 import { startPlay } from './engine/play';
-import { generateAdventureWorld } from './generate-world';
+import { adventurePack, generateAdventureWorld } from './generate-world';
+import { worldNamesFrom } from './content/v1/world-names';
 import { describePlay, playScreenTitle, renderPlayScreen, unplayableMessage } from './play-screen';
 
 vi.mock('./generate-world', async (original) => {
   const actual = await original<typeof import('./generate-world')>();
-  return { generateAdventureWorld: vi.fn(actual.generateAdventureWorld) };
+  return {
+    ...actual,
+    generateAdventureWorld: vi.fn(actual.generateAdventureWorld),
+    adventurePack: vi.fn(actual.adventurePack),
+  };
 });
 
 vi.mock('./engine/play', async (original) => {
@@ -28,8 +34,8 @@ const tinyWorld: AdventureWorld = {
     { id: 'path', fromPlaceId: 'gate', toPlaceId: 'old-tower', locked: true },
     { id: 'steps', fromPlaceId: 'old-tower', toPlaceId: 'gate', locked: false },
   ],
-  items: [{ id: 'brass-key', placeId: 'gate' }],
-  clues: [{ id: 'carved-note', placeId: 'gate' }],
+  items: [{ id: 'brass-key', placeId: 'gate' }, { id: 'hidden-gem', placeId: 'old-tower' }],
+  clues: [{ id: 'carved-note', placeId: 'gate' }, { id: 'hidden-note', placeId: 'old-tower' }],
   solution: {
     steps: [{
       id: 'open-path', placeId: 'gate', conditions: { itemsHeld: ['brass-key'] },
@@ -39,18 +45,65 @@ const tinyWorld: AdventureWorld = {
   },
 };
 
-function settingsFor(genre: AdventureGenre): AdventureSettings {
+const tinyPack: ContentPack = {
+  version: 1,
+  genre: 'light-fantasy',
+  startPlaceId: 'gate',
+  places: [
+    { id: 'gate', name: 'gate', description: [] },
+    { id: 'old-tower', name: 'old tower', description: [] },
+  ],
+  exits: [],
+  characters: [{
+    id: 'keeper', name: 'The old keeper', placeId: 'gate',
+    description: ['The keeper holds a lamp.'],
+    motive: ['She wants ', { kind: 'item', id: 'hidden-gem' }, ' kept safe.'],
+  }],
+  items: [
+    { id: 'brass-key', placeId: 'gate', name: 'brass key', description: [] },
+    { id: 'hidden-gem', placeId: 'old-tower', name: 'quiet gem', description: ['It glimmers softly.'] },
+  ],
+  clues: [
+    { id: 'carved-note', placeId: 'gate', name: 'carved note', text: [] },
+    { id: 'hidden-note', placeId: 'old-tower', name: 'hidden note', text: ['It names the unseen garden.'] },
+  ],
+  puzzles: [{
+    id: 'open-path', placeId: 'gate', family: 'use-item',
+    prompt: ['Try ', { kind: 'item', id: 'brass-key' }, '.'],
+    completion: ['The way is open.'],
+  }],
+  optionalDiscoveries: [],
+  plots: [{
+    id: 'tiny', name: 'Tiny adventure',
+    introduction: ['Find ', { kind: 'item', id: 'hidden-gem' }, ' and ', { kind: 'clue', id: 'hidden-note' }, '.'],
+    lengths: {
+      short: { placeIds: ['gate', 'old-tower'], requiredStepIds: [] },
+      medium: { placeIds: ['gate', 'old-tower'], requiredStepIds: [] },
+      long: { placeIds: ['gate', 'old-tower'], requiredStepIds: [] },
+    },
+    dependencies: {}, endingIds: ['plain-ending', 'key-ending', 'unmatched-ending'],
+  }],
+  endings: [
+    { id: 'plain-ending', conditions: {}, text: ['A plain ending.'] },
+    { id: 'key-ending', conditions: { itemsHeld: ['brass-key'] }, text: ['A good ending.'] },
+    { id: 'unmatched-ending', conditions: { placesVisited: ['missing-place'] }, text: ['Never shown.'] },
+  ],
+  solution: { steps: [], goal: { placeId: 'old-tower', conditions: {} } },
+};
+
+function settingsFor(genre: AdventureGenre, version = 2): AdventureSettings {
   for (let seed = 0; ; seed += 1) {
-    const settings = createAdventureSettings(seed, 'short');
+    const settings = createAdventureSettings(seed, 'short', version);
     if (settings.genre === genre) return settings;
   }
 }
 
-function renderTiny(): HTMLElement {
+function renderTiny(version = 2): HTMLElement {
   vi.mocked(generateAdventureWorld).mockReturnValueOnce(tinyWorld);
+  vi.mocked(adventurePack).mockReturnValueOnce(tinyPack);
   const target = document.createElement('main');
   document.body.append(target);
-  renderPlayScreen(target, settingsFor('light-fantasy'));
+  renderPlayScreen(target, settingsFor('light-fantasy', version));
   return target;
 }
 
@@ -91,7 +144,9 @@ describe('renderPlayScreen', () => {
 
     renderPlayScreen(target, settings);
 
-    const view = describePlay(generateAdventureWorld(settings), startPlay(generateAdventureWorld(settings)));
+    const generated = generateAdventureWorld(settings);
+    const named = { ...generated, names: worldNamesFrom(adventurePack(settings.version, settings.genre), generated) };
+    const view = describePlay(named, startPlay(named));
     expect(target.querySelector('.play-place-name')?.textContent).toBe(view.placeName);
     expect(target.querySelector('label')?.textContent).toBe('What do you do?');
     expect(target.querySelector<HTMLLabelElement>('label')?.htmlFor).toBe('play-command');
@@ -102,13 +157,15 @@ describe('renderPlayScreen', () => {
   it('runs typed commands, logs them and announces each response', () => {
     const target = renderTiny();
 
+    expect(target.querySelector('.play-story')?.textContent).toBe('Try brass key.');
     type(target, '  take brass key ');
 
     expect(text(target, '.play-typed')).toEqual(['> take brass key']);
     expect(target.querySelector('[aria-live="polite"]')?.textContent)
       .toMatch(/brass key/);
     expect(text(target, '.play-sidebar ul')[0]).toBe('brass key');
-    expect(target.querySelector('.play-sidebar p')?.textContent).toBe('Turns taken: 1');
+    expect(target.querySelector('.play-story')?.textContent).toBe('Try brass key.');
+    expect(target.querySelector('.play-sidebar > p')?.textContent).toBe('Turns taken: 1');
     expect(target.querySelector<HTMLInputElement>('#play-command')?.value).toBe('');
   });
 
@@ -151,10 +208,13 @@ describe('renderPlayScreen', () => {
 
     type(target, 'take brass key');
     type(target, 'use brass key');
+    expect(target.querySelector('.play-story')?.textContent).toBe('The way is open.');
     type(target, 'go to old tower');
 
     expect(ending.hidden).toBe(false);
     expect(ending.textContent).toContain('You reached your goal in 3 turns.');
+    expect(ending.textContent).toContain('A good ending.');
+    expect(ending.textContent).not.toContain('Never shown.');
     expect(target.querySelector('.play-place-name')?.textContent).toBe('old tower');
 
     type(target, 'undo');
@@ -167,6 +227,7 @@ describe('renderPlayScreen', () => {
       exits: [{ ...tinyWorld.exits[0], locked: false }],
       solution: { steps: [], goal: { placeId: 'old-tower', conditions: {} } },
     });
+    vi.mocked(adventurePack).mockReturnValueOnce(tinyPack);
     const target = document.createElement('main');
     document.body.append(target);
     renderPlayScreen(target, settingsFor('light-fantasy'));
@@ -205,11 +266,55 @@ describe('renderPlayScreen', () => {
       renderPlayScreen(target, settings);
 
       const world = generateAdventureWorld(settings);
+      const pack = adventurePack(settings.version, settings.genre);
+      const named = { ...world, names: worldNamesFrom(pack, world) };
       expect(target.querySelector('.play-place-name')?.textContent)
-        .toBe(describePlay(world, startPlay(world)).placeName);
+        .toBe(describePlay(named, startPlay(named)).placeName);
       expect(target.querySelector('form')).not.toBeNull();
     },
   );
+
+  it.each([1, 2])('shows authored names and safe prose for adventure version %i', (version) => {
+    const settings = settingsFor('light-fantasy', version);
+    const world = generateAdventureWorld(settings);
+    const pack = adventurePack(version, settings.genre);
+    const target = document.createElement('main');
+
+    renderPlayScreen(target, settings);
+
+    expect(target.querySelector('.play-place-name')?.textContent)
+      .toBe(pack.places.find(({ id }) => id === world.startPlaceId)?.name);
+    expect(target.querySelector('.play-description')?.textContent)
+      .toBe(pack.places.find(({ id }) => id === world.startPlaceId)?.description.join(''));
+    expect(target.querySelector('.play-introduction')?.textContent).not.toBe('');
+    expect(target.textContent).not.toContain('river-token');
+    expect(target.querySelector('form')).not.toBeNull();
+  });
+
+  it.each([1, 2])('shows item and clue text only after discovery in version %i', (version) => {
+    const target = renderTiny(version);
+
+    expect(target.querySelector('.play-introduction')?.textContent).toBe('Find something and a clue.');
+    expect(target.textContent).not.toContain('quiet gem');
+    expect(target.textContent).not.toContain('hidden note');
+    type(target, 'take brass key');
+    type(target, 'use brass key');
+    type(target, 'go old tower');
+    expect(target.querySelector('.play-items-here')?.textContent).toContain('It glimmers softly.');
+    expect(text(target, '.play-sidebar ul').join('')).toContain('It names the unseen garden.');
+    expect(target.querySelector('.play-introduction')?.textContent)
+      .toBe('Find quiet gem and hidden note.');
+  });
+
+  it('shows a person’s motive only after the player talks to them', () => {
+    const target = renderTiny();
+
+    expect(target.querySelector('.play-people')?.textContent).toContain('The keeper holds a lamp.');
+    expect(target.textContent).not.toContain('She wants');
+    type(target, 'talk to old keeper');
+    expect(target.querySelector('.play-log')?.textContent).toContain('She wants something kept safe.');
+    expect(target.querySelector('.play-people')?.textContent).not.toContain('She wants');
+  });
 
   it('shows a plain message when the world cannot be generated', () => {
     vi.mocked(generateAdventureWorld).mockImplementationOnce(() => {

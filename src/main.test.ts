@@ -2,7 +2,8 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import * as adventureSettings from './adventure-settings';
 import { discoveredTargets, startPlay } from './engine/play';
-import { generateAdventureWorld } from './generate-world';
+import { adventurePack, generateAdventureWorld } from './generate-world';
+import { worldNamesFrom } from './content/v1/world-names';
 import { describePlay, playScreenTitle, unplayableMessage } from './play-screen';
 import { summariseAdventure } from './start-screen-model';
 
@@ -43,9 +44,10 @@ function shownDetails(): Record<string, string> {
 
 function expectPlay(settings: adventureSettings.AdventureSettings): void {
   const world = generateAdventureWorld(settings);
-  const view = describePlay(world, startPlay(world));
+  const named = { ...world, names: worldNamesFrom(adventurePack(settings.version, settings.genre), world) };
+  const view = describePlay(named, startPlay(named));
   expect(get('.play-place-name').textContent).toBe(view.placeName);
-  expect(get('.play-place p').textContent).toBe(view.placeText);
+  expect(get('.play-place p:nth-of-type(4)').textContent).toBe(view.placeText);
   expect(shownDetails()).toEqual({
     'Share word': adventureSettings.encodeShareWord(settings),
     Genre: summariseAdventure(settings).genreLabel,
@@ -114,14 +116,18 @@ it('keeps invalid share words on the start screen without creating markup', () =
 it('returns to start with heading focus and restarts the share word without progress', () => {
   const word = adventureSettings.encodeShareWord(settings);
   openAdventure(word);
-  const world = generateAdventureWorld(settings);
+  const generated = generateAdventureWorld(settings);
+  const world = {
+    ...generated,
+    names: worldNamesFrom(adventurePack(settings.version, settings.genre), generated),
+  };
   const state = startPlay(world);
   const exit = world.exits.find((value) => value.fromPlaceId === state.placeId && !value.locked)!;
   const target = discoveredTargets(world, state).find((value) => value.kind === 'exit' && value.id === exit.id)!;
   get<HTMLInputElement>('#play-command').value = `go to ${target.name}`;
   get<HTMLFormElement>('.play-command').requestSubmit();
   expect(get('.play-log').children).toHaveLength(1);
-  expect(get('.play-sidebar p').textContent).toBe('Turns taken: 1');
+  expect(get('.play-sidebar > p:last-child').textContent).toBe('Turns taken: 1');
 
   get<HTMLButtonElement>('header button').click();
 
@@ -132,7 +138,7 @@ it('returns to start with heading focus and restarts the share word without prog
   openAdventure(word);
   expectPlay(settings);
   expect(get('.play-log').children).toHaveLength(0);
-  expect(get('.play-sidebar p').textContent).toBe('Turns taken: 0');
+  expect(get('.play-sidebar > p:last-child').textContent).toBe('Turns taken: 0');
 });
 
 it('shows a generation error and still lets the player return to start', async () => {
