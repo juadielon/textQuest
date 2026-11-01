@@ -207,3 +207,18 @@ dd {
   margin: 0;
   overflow-wrap: anywhere;
 }
+
+.share-link {
+  margin: 1rem 0;
+}
+
+.share-link label {
+  display: block;
+  font-weight: 600;
+}
+
+.share-link a {
+  display: inline-block;
+  margin: 0.5rem 0 0.5rem 1rem;
+  color: var(--accent);
+}

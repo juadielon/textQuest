@@ -27,6 +27,28 @@ again with no progress. There is no save or load interface yet.
 Focus moves to the new screen's heading on navigation. Both screens work by
 keyboard and screen reader, on narrow and wide screens.
 
+## Shareable adventure links
+
+[Issue #80](https://github.com/juadielon/textQuest/issues/80) adds an
+**Adventure link** field and **Copy link** button below the play screen's
+share word. A link such as `https://example.com/textQuest/?adventure=sunlitsaucer2`
+opens that exact starting adventure, with its original version, genre and
+length. It never includes commands, save data or player progress.
+Version 1 and version 2 words still use their existing rules.
+
+The link stays at the app's current path, including a hosting sub-path or
+`index.html`. Other query values and fragments are left out. Invalid, blank
+or unsupported words open the start screen with a clear error and focus on
+the share-word field, where the player can correct the word. **Back to start**
+removes the incoming word from the address, so a reload stays on start.
+
+Copying announces success or failure to screen readers. If clipboard access
+is missing or refused, the link is selected for manual copying. The labelled,
+read-only field is always available by keyboard; **Open starting adventure
+(new tab)** also provides a normal link without ending the current session.
+Use a public hosted address when sharing with other people; a localhost link
+only reaches the recipient's own computer.
+
 ## Version 1 authored content
 
 [Issue #26](https://github.com/juadielon/textQuest/issues/26) adds a typed
@@ -356,6 +378,12 @@ docker compose run --rm app npm test
 docker compose run --rm app npm run lint
 docker compose run --rm app npm run build
 ```
+
+Production builds use relative asset URLs, so the contents of `dist/` can
+be served at the site root or a sub-path such as `/textQuest/`. Serve the
+app's `index.html` at that path and keep its `assets/` directory beside it.
+Shared links use a query parameter, not a separate route, so no route rewrite
+is needed. The server must still serve the app when a query is present.
 
 ESLint checks all TypeScript in `src/`, including tests, with
 typescript-eslint's recommended rules. These are syntax-based checks, not
