@@ -69,6 +69,7 @@ export function describePlay(world: AdventureWorld, state: PlayState): PlayView 
  * responses are announced through a polite live region. If the world can't
  * be generated or started because of a validation `RangeError`, a plain
  * message is shown instead of the game. Unexpected errors are rethrown.
+ * Control characters are rejected before play so recorded commands remain saveable.
  *
  * @param options - Saved commands to replay and a hook that hears each new command.
  * @returns False when the world can't be played, so there is nothing to save.
@@ -102,6 +103,7 @@ export function renderPlayScreen(
   log.setAttribute('aria-label', 'What has happened so far');
 
   const announcer = element('p', 'visually-hidden');
+  announcer.id = 'play-response';
   announcer.setAttribute('aria-live', 'polite');
 
   const input = element('input');
@@ -110,6 +112,7 @@ export function renderPlayScreen(
   input.autocomplete = 'off';
   input.spellcheck = false;
   input.maxLength = MAX_COMMAND_LENGTH;
+  input.setAttribute('aria-describedby', announcer.id);
   const label = element('label', undefined, 'What do you do?');
   label.htmlFor = input.id;
   const form = element('form', 'play-command', label, input, element('button', undefined, 'Go'));
@@ -151,6 +154,15 @@ export function renderPlayScreen(
 
   form.addEventListener('submit', (event) => {
     event.preventDefault();
+    // Save files only accept plain, single-line command text.
+    if (/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(input.value)) {
+      announcer.replaceChildren(element('span', undefined,
+        'Use plain text without tabs, line breaks or control characters.'));
+      input.setAttribute('aria-invalid', 'true');
+      input.focus();
+      return;
+    }
+    input.removeAttribute('aria-invalid');
     const command = input.value.trim();
     if (!command) return;
     const message = run(command);

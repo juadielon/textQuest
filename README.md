@@ -368,7 +368,10 @@ Lock failures are reported without changing storage.
 **Resume** regenerates the world from the save's settings and replays its
 commands through the play module, so the place, inventory, clues, turns, undo
 history and response log match where the player left off. **Delete** asks for
-confirmation first. A save that can't be read is listed with the reason and
+confirmation first; **Keep** also cancels a deletion waiting for the shared
+lock. Pasted control characters are rejected before a command is played or
+recorded, so they cannot make later saves fail.
+A save that can't be read is listed with the reason and
 kept; it is only removed if the player deletes it. Storage problems are shown
 as plain messages. Keyboard navigation, focus and screen-reader attributes
 are covered by unit tests; a real screen reader has not been checked.

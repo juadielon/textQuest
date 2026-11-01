@@ -28,9 +28,16 @@ if (app) {
     renderStartScreen(app, { onStart: showPlay, onOpenSaves: showSaves, shareWord });
   };
 
+  const backToStart = (): void => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('adventure');
+    window.history.replaceState(null, '', url);
+    showStart();
+  };
+
   const showSaves = (): void => {
     renderSavesScreen(app, {
-      store, onBack: () => showStart(), onResume: (saved) => showPlay(saved.save.settings, saved),
+      store, onBack: backToStart, onResume: (saved) => showPlay(saved.save.settings, saved),
     });
   };
 
@@ -61,12 +68,7 @@ if (app) {
     const back = document.createElement('button');
     back.type = 'button';
     back.textContent = 'Back to start';
-    back.addEventListener('click', () => {
-      const url = new URL(window.location.href);
-      url.searchParams.delete('adventure');
-      window.history.replaceState(null, '', url);
-      showStart();
-    });
+    back.addEventListener('click', backToStart);
     const link = document.createElement('input');
     link.id = 'adventure-link';
     link.type = 'text';
