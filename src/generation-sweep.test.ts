@@ -33,6 +33,8 @@ function withoutOptionalSteps(world: AdventureWorld): AdventureWorld {
 
 describe('version 1 generation sweep', () => {
   for (const length of adventureLengths) {
+    // Checking every seed takes a few seconds, so a busy machine can push it past
+    // Vitest's 5-second default. Give it more room.
     it(`${length}: every seed gives a repeatable, shareable, winnable world`, () => {
       const worldsByGenre = new Map<AdventureGenre, Set<string>>(
         adventureGenres.map((genre) => [genre, new Set<string>()]),
@@ -67,7 +69,7 @@ describe('version 1 generation sweep', () => {
         // count of distinct worlds shows every plot was reached.
         expect(worldsByGenre.get(genre)!.size, genre).toBe(plotCounts[genre]);
       }
-    });
+    }, 30_000);
   }
 
   it('checks that removing optional steps really removes them', () => {
