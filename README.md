@@ -228,11 +228,12 @@ Commands, including help, hint and undo, run through the play module. When
 the goal is reached, an ending says how many turns it took; undo still works.
 
 Everything can be done with the keyboard: type a command and press Enter.
+The screen starts with a "Your adventure" heading that a caller can focus.
 Each new response is announced through a polite live region. The layout is
 one column on narrow screens, with a progress column on wide ones. Typed and
-world text is always added as plain text, never as markup. If a world can't
-be generated, such as a cosy mystery or science fiction world for now, a
-plain message is shown instead.
+world text is always added as plain text, never as markup. Light fantasy,
+cosy mystery and science fiction worlds can all be played. If a world can't
+be generated from the settings, a plain message is shown instead.
 
 The screen is not yet reachable from the page: the start screen
 ([issue #41](https://github.com/juadielon/textQuest/issues/41)) will open it.
