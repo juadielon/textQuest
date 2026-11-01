@@ -215,10 +215,10 @@ it.each([1, 2])('saves, exports, imports and resumes version %i from a share lin
     configurable: true, value: [new File([text], 'trip.json', { type: 'application/json' })],
   });
   get<HTMLFormElement>('.save-form').requestSubmit();
-  await vi.waitFor(() => expect(get('[role="status"]').textContent).toMatch(/Imported/));
+  await vi.waitFor(() => expect(get('#import-status').textContent).toMatch(/Imported/));
   for (const [key, value] of before) expect(localStorage.getItem(key)).toBe(value);
   expect(app.querySelectorAll('.save-item')).toHaveLength(2);
-  expect(document.activeElement).toBe(get('[role="status"]'));
+  expect(document.activeElement).toBe(get('#import-status'));
   const importedKey = Object.keys(localStorage).find((key) => !before.has(key))!;
   // Save IDs also settle timestamp ties, so find the imported entry by its heading.
   get<HTMLHeadingElement>(`#save-${importedKey.slice(SAVE_KEY_PREFIX.length)}`)

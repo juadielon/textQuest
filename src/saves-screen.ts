@@ -1,6 +1,7 @@
 import type { AdventureSettings } from './adventure-settings';
 import {
   createSave,
+  exportSaveFile,
   MAX_SAVE_FILE_LENGTH,
   MAX_SAVE_NAME_LENGTH,
   SaveError,
@@ -235,7 +236,9 @@ export interface SavesScreenOptions {
  * Saves that can't be read are listed
  * with the reason and kept; only the player can delete them. All text goes in
  * through `textContent`. Export downloads JSON; import validates a file and
- * adds a new save without changing existing ones. Results are announced.
+ * adds a new save without changing existing ones. Results are announced without
+ * taking focus from an interaction started while the file was being read.
+ * Separate import and save-list status regions keep overlapping results visible.
  * Focus moves to the heading.
  */
 export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptions): void {
@@ -250,23 +253,28 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
   const fileInput = create('input', {
     type: 'file', id: 'import-save', accept: '.json,application/json',
   });
-  fileInput.setAttribute('aria-describedby', status.id);
+  const importStatus = create('p', { className: 'saves-status', id: 'import-status', tabIndex: -1 });
+  importStatus.setAttribute('role', 'status');
+  fileInput.setAttribute('aria-describedby', importStatus.id);
   const importButton = create('button', { type: 'submit' }, 'Import save');
   const importForm = create('form', { className: 'save-form' },
-    create('label', { htmlFor: fileInput.id }, 'Save file'), fileInput, importButton);
+    create('label', { htmlFor: fileInput.id }, 'Save file'), fileInput, importButton, importStatus);
   let importing = false;
   importForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (importing) return;
     const file = fileInput.files?.[0];
     if (!file) {
-      status.textContent = 'Choose a textQuest save file, then select Import save.';
+      importStatus.textContent = 'Choose a textQuest save file, then select Import save.';
       fileInput.focus();
       return;
     }
     importing = true;
     fileInput.disabled = importButton.disabled = true;
-    status.textContent = 'Reading your save file…';
+    let focusMoved = false;
+    const trackFocus = () => { focusMoved = true; };
+    target.ownerDocument.addEventListener('focusin', trackFocus);
+    importStatus.textContent = 'Reading your save file…';
     try {
       // UTF-8 can use three bytes per UTF-16 character. Keep valid non-ASCII saves.
       if (file.size > MAX_SAVE_FILE_LENGTH * 3) {
@@ -285,15 +293,16 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
       if (!target.contains(importForm)) return;
       options.store.importSave(text);
       fileInput.value = '';
-      status.textContent = refresh()
+      importStatus.textContent = refresh(document.activeElement, importStatus)
         ? 'Imported the save as a new save.'
-        : `The save was imported, but the list could not be refreshed. ${status.textContent}`;
+        : `The save was imported, but the list could not be refreshed. ${importStatus.textContent}`;
     } catch (error) {
-      status.textContent = messageFor(error);
+      importStatus.textContent = messageFor(error);
     } finally {
+      target.ownerDocument.removeEventListener('focusin', trackFocus);
       importing = false;
       fileInput.disabled = importButton.disabled = false;
-      if (target.contains(importForm)) status.focus();
+      if (target.contains(importForm) && !focusMoved) importStatus.focus();
     }
   });
 
@@ -311,7 +320,9 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
     }
   };
 
-  const refresh = (focused: Element | null = document.activeElement): boolean => {
+  const refresh = (
+    focused: Element | null = document.activeElement, errorStatus = status,
+  ): boolean => {
     const focusId = focused instanceof HTMLElement ? focused.closest('.save-item')?.getAttribute('aria-labelledby') : null;
     const focusLabel = focused?.getAttribute('aria-label');
     const focusText = focused?.textContent;
@@ -319,7 +330,8 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
     try {
       entries = options.store.list();
     } catch (error) {
-      reportDeletion(messageFor(error));
+      if (errorStatus === status) reportDeletion(messageFor(error));
+      else errorStatus.textContent = messageFor(error);
       if (focused instanceof HTMLElement && !focused.isConnected) status.focus();
       return false;
     }
@@ -377,8 +389,9 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
       }));
       actions.append(button('Export', name, () => {
         try {
-          downloadSave(options.store.exportSave(entry.id), name);
-          status.textContent = `Save file download started for “${name}”.`;
+          const save = options.store.load(entry.id);
+          downloadSave(exportSaveFile(save), save.name);
+          status.textContent = `Save file download started for “${save.name}”.`;
         } catch (error) {
           status.textContent = messageFor(error);
         }

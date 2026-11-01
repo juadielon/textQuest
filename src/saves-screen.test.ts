@@ -855,6 +855,31 @@ describe('renderSavesScreen', () => {
     expect(storage.items).toEqual(before);
   });
 
+  it('exports a renamed save with content, file name and message from the same snapshot', async () => {
+    const save = createSave('Old trip', settings, ['look'], earlier);
+    const id = store.add(save);
+    render();
+    store.put(id, { ...save, name: 'New trip', commands: ['look', 'hint'] });
+    const before = new Map(storage.items);
+    let blob: Blob | undefined;
+    vi.useFakeTimers();
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((value) => {
+      if (value instanceof Blob) blob = value;
+      return 'blob:save-file';
+    });
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      expect(this.download).toBe('textquest-New-trip.json');
+    });
+
+    buttonNamed('Export: Old trip').click();
+
+    expect(await blob?.text()).toBe(store.exportSave(id));
+    expect(app.querySelector('#saves-status')?.textContent).toBe('Save file download started for “New trip”.');
+    expect(storage.items).toEqual(before);
+    vi.runAllTimers();
+  });
+
   it('reports export errors without changing saves', () => {
     store.add(createSave('Trip', settings, [], earlier));
     const before = new Map(storage.items);
@@ -876,6 +901,140 @@ describe('renderSavesScreen', () => {
     return { input, file, read, form, submit: form.querySelector<HTMLButtonElement>('button')! };
   }
 
+  it('keeps a save when import refreshes a queued deletion and the player chooses Keep', async () => {
+    const save = createSave('Trip', settings, ['look'], earlier);
+    const id = store.add(save);
+    const original = storage.items.get(SAVE_KEY_PREFIX + id);
+    const text = JSON.stringify({ ...save, name: 'Imported trip' });
+    render();
+    const { read, form, submit } = chooseFile(text);
+    let finish!: (bytes: ArrayBuffer) => void;
+    read.mockReturnValue(new Promise<ArrayBuffer>((resolve) => { finish = resolve; }));
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    void lock.request(SAVE_LOCK_NAME, () => held);
+
+    form.requestSubmit();
+    expect(read).toHaveBeenCalledOnce();
+    buttonNamed('Delete: Trip').click();
+    buttonNamed('Yes, delete: Trip').click();
+    expect(storage.items.get(SAVE_KEY_PREFIX + id)).toBe(original);
+
+    finish(new TextEncoder().encode(text).buffer);
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+    expect(store.list()).toHaveLength(2);
+    expect(app.querySelector('#import-status')?.textContent).toBe('Imported the save as a new save.');
+    const afterImport = new Map(storage.items);
+
+    if (buttonNamed('Keep: Trip')) expect(document.activeElement).toBe(buttonNamed('Keep: Trip'));
+    else buttonNamed('Delete: Trip').click();
+    buttonNamed('Keep: Trip').click();
+    release();
+    await lock.settled();
+
+    expect(storage.items).toEqual(afterImport);
+    expect(storage.items.get(SAVE_KEY_PREFIX + id)).toBe(original);
+    expect(document.activeElement).toBe(buttonNamed('Delete: Trip'));
+    expect(app.querySelector('[role="status"]')?.textContent).not.toContain('Deleted');
+  });
+
+  it.each(['success', 'read failure'])('announces import %s without taking focus from a newer interaction', async (result) => {
+    const id = store.add(createSave('Trip', settings, ['look'], earlier));
+    const text = store.exportSave(id);
+    const before = new Map(storage.items);
+    render();
+    const { read, form, submit } = chooseFile(text);
+    let finish!: (bytes: ArrayBuffer) => void;
+    let fail!: (error: Error) => void;
+    read.mockReturnValue(new Promise<ArrayBuffer>((resolve, reject) => { finish = resolve; fail = reject; }));
+
+    form.requestSubmit();
+    let newerControl: HTMLButtonElement;
+    if (result === 'success') {
+      newerControl = [...app.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent === 'Back to start')!;
+      newerControl.focus();
+      finish(new TextEncoder().encode(text).buffer);
+    } else {
+      buttonNamed('Delete: Trip').click();
+      newerControl = buttonNamed('Keep: Trip');
+      expect(document.activeElement).toBe(newerControl);
+      fail(new Error('unreadable'));
+    }
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+
+    expect(document.activeElement).toBe(newerControl);
+    expect(app.querySelector('#import-status')?.textContent).toMatch(
+      result === 'success' ? /Imported the save as a new save/ : /could not be read/,
+    );
+    if (result === 'success') {
+      expect(store.list()).toHaveLength(2);
+      expect(storage.items.get(SAVE_KEY_PREFIX + id)).toBe(before.get(SAVE_KEY_PREFIX + id));
+    } else {
+      expect(storage.items).toEqual(before);
+    }
+  });
+
+  it.each([
+    ['lock failure', 'success', 'delete first'],
+    ['lock failure', 'success', 'import first'],
+    ['lock failure', 'read failure', 'delete first'],
+    ['lock failure', 'read failure', 'import first'],
+    ['conflict', 'success', 'delete first'],
+    ['conflict', 'success', 'import first'],
+    ['conflict', 'read failure', 'delete first'],
+    ['conflict', 'read failure', 'import first'],
+    ['success', 'read failure', 'import first'],
+  ])('keeps both results for delete %s, import %s, %s', async (failure, result, order) => {
+    const save = createSave('Trip', settings, ['look'], earlier);
+    const id = store.add(save);
+    const text = store.exportSave(id);
+    render();
+    const { read, form, submit } = chooseFile(text);
+    let finish!: (bytes: ArrayBuffer) => void;
+    let fail!: (error: Error) => void;
+    read.mockReturnValue(new Promise<ArrayBuffer>((resolve, reject) => { finish = resolve; fail = reject; }));
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    void lock.request(SAVE_LOCK_NAME, () => held);
+    if (failure === 'lock failure') {
+      lock.request.mockImplementationOnce(() => held.then(() => {
+        throw new DOMException('blocked', 'SecurityError');
+      }));
+    }
+
+    form.requestSubmit();
+    buttonNamed('Delete: Trip').click();
+    buttonNamed('Yes, delete: Trip').click();
+    if (failure === 'conflict') store.put(id, { ...save, commands: ['look', 'hint'] });
+    const beforeImport = new Map(storage.items);
+    const deleteMessage = failure === 'lock failure' ? /could not lock save storage/
+      : failure === 'conflict' ? /not deleted/ : /Deleted/;
+    if (order === 'delete first') {
+      release();
+      await vi.waitFor(() => expect(app.querySelector('#saves-status')?.textContent).toMatch(deleteMessage));
+    }
+
+    if (result === 'success') finish(new TextEncoder().encode(text).buffer);
+    else fail(new Error('unreadable'));
+    await vi.waitFor(() => expect(submit.disabled).toBe(false));
+    if (order === 'import first') {
+      release();
+      await vi.waitFor(() => expect(app.querySelector('#saves-status')?.textContent).toMatch(deleteMessage));
+    }
+
+    expect(app.querySelector('#saves-status')?.textContent).toMatch(deleteMessage);
+    expect(app.querySelector('#import-status')?.textContent).toMatch(
+      result === 'success' ? /Imported the save as a new save/ : /could not be read/,
+    );
+    expect(app.querySelector('#import-status')?.getAttribute('role')).toBe('status');
+    if (failure === 'success') expect(store.list()).toEqual([]);
+    else if (result === 'success') {
+      expect(store.list()).toHaveLength(2);
+      expect(storage.items.get(SAVE_KEY_PREFIX + id)).toBe(beforeImport.get(SAVE_KEY_PREFIX + id));
+    } else expect(storage.items).toEqual(beforeImport);
+  });
+
   it.each([1, 2])('imports a matching-name version %i adventure as a new save and can resume it', async (version) => {
     const save = createSave('<b>Trip</b>', createAdventureSettings(7, 'short', version), ['look', 'hint'], earlier);
     const id = store.add(save);
@@ -884,7 +1043,7 @@ describe('renderSavesScreen', () => {
     const { input, form } = chooseFile(store.exportSave(id));
     expect(app.querySelector<HTMLLabelElement>('label[for="import-save"]')?.textContent).toBe('Save file');
     expect(input.accept).toBe('.json,application/json');
-    expect(input.getAttribute('aria-describedby')).toBe('saves-status');
+    expect(input.getAttribute('aria-describedby')).toBe('import-status');
 
     form.requestSubmit();
     await vi.waitFor(() => expect(store.list()).toHaveLength(2));
@@ -892,8 +1051,8 @@ describe('renderSavesScreen', () => {
     expect(storage.items.get(`${SAVE_KEY_PREFIX}${id}`)).toBe(before);
     expect(texts('.save-item h2')).toEqual(['<b>Trip</b>', '<b>Trip</b>']);
     expect(app.querySelector('b')).toBeNull();
-    expect(app.querySelector('[role="status"]')?.textContent).toBe('Imported the save as a new save.');
-    expect(document.activeElement).toBe(app.querySelector('[role="status"]'));
+    expect(app.querySelector('#import-status')?.textContent).toBe('Imported the save as a new save.');
+    expect(document.activeElement).toBe(app.querySelector('#import-status'));
     expect(input.value).toBe('');
     buttonNamed('Resume: <b>Trip</b>').click();
     expect(onResume.mock.calls[0][0].save).toEqual(save);
@@ -903,7 +1062,7 @@ describe('renderSavesScreen', () => {
     render();
     app.querySelector<HTMLFormElement>('form')!.requestSubmit();
 
-    expect(app.querySelector('[role="status"]')?.textContent).toMatch(/Choose a textQuest save file/);
+    expect(app.querySelector('#import-status')?.textContent).toMatch(/Choose a textQuest save file/);
     expect(document.activeElement).toBe(app.querySelector('#import-save'));
     expect(store.list()).toEqual([]);
   });
@@ -923,8 +1082,8 @@ describe('renderSavesScreen', () => {
     form.requestSubmit();
     await vi.waitFor(() => expect(submit.disabled).toBe(false));
 
-    expect(app.querySelector('[role="status"]')?.textContent).toMatch(message);
-    expect(document.activeElement).toBe(app.querySelector('[role="status"]'));
+    expect(app.querySelector('#import-status')?.textContent).toMatch(message);
+    expect(document.activeElement).toBe(app.querySelector('#import-status'));
     expect(storage.items).toEqual(before);
     expect(texts('.save-item h2')).toEqual(['Trip', 'Unreadable save']);
   });
@@ -943,7 +1102,7 @@ describe('renderSavesScreen', () => {
     form.requestSubmit();
     await vi.waitFor(() => expect(submit.disabled).toBe(false));
 
-    expect(app.querySelector('[role="status"]')?.textContent).toMatch(/could not be read|damaged/);
+    expect(app.querySelector('#import-status')?.textContent).toMatch(/could not be read|damaged/);
     expect(storage.items).toEqual(before);
   });
 
@@ -972,7 +1131,7 @@ describe('renderSavesScreen', () => {
     await vi.waitFor(() => expect(submit.disabled).toBe(false));
 
     expect(store.list()).toHaveLength(2);
-    expect(app.querySelector('[role="status"]')?.textContent).toMatch(/Imported/);
+    expect(app.querySelector('#import-status')?.textContent).toMatch(/Imported/);
   });
 
   it('reports an import succeeded when its list cannot be refreshed', async () => {
@@ -988,7 +1147,7 @@ describe('renderSavesScreen', () => {
 
     expect(store.list()).toHaveLength(2);
     expect(input.value).toBe('');
-    expect(app.querySelector('[role="status"]')?.textContent)
+    expect(app.querySelector('#import-status')?.textContent)
       .toBe('The save was imported, but the list could not be refreshed. Storage is blocked.');
   });
 
@@ -1001,7 +1160,7 @@ describe('renderSavesScreen', () => {
     await vi.waitFor(() => expect(submit.disabled).toBe(false));
 
     expect(read).not.toHaveBeenCalled();
-    expect(app.querySelector('[role="status"]')?.textContent).toMatch(/too large/);
+    expect(app.querySelector('#import-status')?.textContent).toMatch(/too large/);
     expect(store.list()).toEqual([]);
   });
 
@@ -1016,7 +1175,7 @@ describe('renderSavesScreen', () => {
     form.requestSubmit();
     await vi.waitFor(() => expect(submit.disabled).toBe(false));
 
-    expect(app.querySelector('[role="status"]')?.textContent).toMatch(
+    expect(app.querySelector('#import-status')?.textContent).toMatch(
       failure === 'read' ? /could not be read/ : /no room left for saves/,
     );
     expect(storage.items).toEqual(before);
@@ -1035,7 +1194,7 @@ describe('renderSavesScreen', () => {
     expect(input.disabled).toBe(true);
     expect(submit.disabled).toBe(true);
     expect(read).toHaveBeenCalledOnce();
-    expect(app.querySelector('[role="status"]')?.textContent).toBe('Reading your save file…');
+    expect(app.querySelector('#import-status')?.textContent).toBe('Reading your save file…');
     if (leave) app.replaceChildren();
     finish(new TextEncoder().encode(text).buffer);
     await vi.waitFor(() => expect(submit.disabled).toBe(false));
