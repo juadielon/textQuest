@@ -119,4 +119,19 @@ describe('renderStartScreen', () => {
     expect(get('#share-word').hasAttribute('aria-invalid')).toBe(false);
     expect(onStart).toHaveBeenCalledExactlyOnceWith(createAdventureSettings(0, 'medium'));
   });
+
+  it('opens an incoming share word through the same callback as a typed word', () => {
+    renderStartScreen(app, { onStart, shareWord: ' Silver-Lantern ' });
+    expect(onStart).toHaveBeenCalledExactlyOnceWith(parseShareWord('silverlantern'));
+  });
+
+  it('focuses an invalid incoming word and lets the player correct it', () => {
+    renderStartScreen(app, { onStart, shareWord: 'silverlantern3' });
+    expect(onStart).not.toHaveBeenCalled();
+    expect(get<HTMLInputElement>('#share-word').value).toBe('silverlantern3');
+    expect(get('#share-word-error').textContent).toContain('version 3');
+    expect(document.activeElement).toBe(get('#share-word'));
+    openShareWord('silverlantern');
+    expect(onStart).toHaveBeenCalledExactlyOnceWith(parseShareWord('silverlantern'));
+  });
 });
