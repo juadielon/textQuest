@@ -3,6 +3,7 @@ import { createAdventureSettings } from '../../adventure-settings';
 import type { AdventureWorld } from '../../adventure-world';
 import { generateAdventureWorld, versionOnePack } from '../../generate-world';
 import type { ContentPack } from './format';
+import { cosyMystery } from './cosy-mystery';
 import { lightFantasy } from './light-fantasy';
 import { scienceFiction } from './science-fiction';
 import { aliasesFor, worldNamesFrom } from './world-names';
@@ -35,7 +36,7 @@ describe('aliasesFor', () => {
 });
 
 describe('worldNamesFrom', () => {
-  it.each([lightFantasy, scienceFiction])('names everything in a $genre world from its pack', (pack) => {
+  it.each([lightFantasy, cosyMystery, scienceFiction])('names everything in a $genre world from its pack', (pack) => {
     const world = worldFrom(pack);
     const names = worldNamesFrom(pack, world);
     expect(names.places.map(({ id, name }) => [id, name]))
@@ -49,10 +50,9 @@ describe('worldNamesFrom', () => {
   });
 
   it('names every place, item and clue in generated worlds', () => {
-    const settings = Array.from({ length: 64 }, (_, seed) => createAdventureSettings(seed, 'long'))
-      .find(({ genre }) => versionOnePack(genre))!;
+    const settings = createAdventureSettings(0, 'long');
     const world = generateAdventureWorld(settings);
-    const names = worldNamesFrom(versionOnePack(settings.genre)!, world);
+    const names = worldNamesFrom(versionOnePack(settings.genre), world);
     expect(names.places.map(({ id }) => id)).toEqual(world.places.map(({ id }) => id));
     expect(names.items.map(({ id }) => id)).toEqual(world.items.map(({ id }) => id));
     expect(names.clues.map(({ id }) => id)).toEqual(world.clues.map(({ id }) => id));
@@ -67,7 +67,11 @@ describe('worldNamesFrom', () => {
 });
 
 describe('versionOnePack', () => {
-  it('gives the pack the generator uses for a genre', () => {
-    expect(versionOnePack('light-fantasy')).toBe(lightFantasy);
+  it.each([
+    ['light-fantasy', lightFantasy],
+    ['cosy-mystery', cosyMystery],
+    ['science-fiction', scienceFiction],
+  ] as const)('gives the generator pack for %s', (genre, pack) => {
+    expect(versionOnePack(genre)).toBe(pack);
   });
 });

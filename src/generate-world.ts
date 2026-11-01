@@ -13,11 +13,8 @@ const versionOnePacks: Readonly<Record<AdventureGenre, ContentPack>> = {
   'science-fiction': scienceFiction,
 };
 
-/**
- * The version 1 content pack the generator uses for a genre, so play can
- * show that pack's names and text. Undefined while a genre has no pack.
- */
-export function versionOnePack(genre: AdventureGenre): ContentPack | undefined {
+/** Returns the version 1 content pack used for a genre. */
+export function versionOnePack(genre: AdventureGenre): ContentPack {
   return versionOnePacks[genre];
 }
 
