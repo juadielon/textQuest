@@ -332,6 +332,8 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
     } catch (error) {
       if (errorStatus === status) reportDeletion(messageFor(error));
       else errorStatus.textContent = messageFor(error);
+      // Rows restored before this refresh need Resume to match pending deletes.
+      updateNavigation();
       if (focused instanceof HTMLElement && !focused.isConnected) status.focus();
       return false;
     }
