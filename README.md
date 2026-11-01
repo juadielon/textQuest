@@ -59,9 +59,7 @@ commands or player answers.
 Prose is an array of literal text and typed entity references. A later
 renderer must resolve references to included entity names, never execute
 text as code. Place descriptions stay true across puzzle states; clue text
-is shown only after discovery. Place descriptions never mention a starting
-item or clue, because the generator may move it. A test checks every pack.
-Puzzle prompts appear before completion,
+is shown only after discovery. Puzzle prompts appear before completion,
 and completion text only after its step.
 Never expose `solution` as a hint or player-facing text.
 
@@ -117,10 +115,14 @@ worlds in each genre/plot/length group across seeds 0 to 999.
 Version 1 is released and stays exactly as authored: it has 27 distinct
 worlds. Its world and content digests, share words and saved-command replay
 must not change. Seeded placement cannot be activated until a new adventure
-version has distinct share words and final matching content. The prose work
-in [#63](https://github.com/juadielon/textQuest/pull/63) must use new content
-rather than edit released version 1. Activation belongs in a later layer
-above that work; it is not implemented here.
+version has distinct share words and final matching content.
+
+Place descriptions in version 1 can still name a starting item or clue that
+seeded placement may move. src/content/v2/place-wording.ts holds separate
+future content that rewrites only those descriptions (and one puzzle prompt),
+so that no place describes something that may be elsewhere. Nothing selects it
+yet: it has no share words, save wiring or digest pin. Activation belongs in a
+later layer once the content is final.
 
 ## Adventure settings and share words
 
