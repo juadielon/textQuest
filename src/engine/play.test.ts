@@ -703,6 +703,9 @@ describe('play with content-pack names', () => {
       `take ${overlapping.name}`).state;
 
     expect(overlapping.name).not.toBe('Badge on locked way');
+    expect(playCommand(world, start, 'look').message.toLowerCase()).toContain(overlapping.name.toLowerCase());
+    expect(playCommand(world, holding, 'inventory').message.toLowerCase())
+      .toContain(overlapping.name.toLowerCase());
     expect(playCommand(world, holding, `use ${overlapping.name}`).state.goalReached).toBe(true);
   });
 
@@ -737,6 +740,28 @@ describe('play with content-pack names', () => {
     expect(opened.message).toContain('A way is now open.');
     expect(discoveredTargets(world, opened.state).some(({ id }) => id === 'finish')).toBe(false);
     expect(playCommand(world, opened.state, 'go quiet study').message).toContain('secret vault');
+  });
+
+  it('keeps ID-only remote unlock wording unchanged', () => {
+    const world: AdventureWorld = {
+      version: 1,
+      startPlaceId: 'entry',
+      places: [{ id: 'entry' }, { id: 'vault' }],
+      exits: [{ id: 'secret-door', fromPlaceId: 'vault', toPlaceId: 'entry', locked: true }],
+      items: [{ id: 'key', placeId: 'entry' }],
+      clues: [],
+      solution: {
+        steps: [{
+          id: 'open-remote', placeId: 'entry', conditions: { itemsHeld: ['key'] },
+          effects: [{ kind: 'unlock-exit', exitId: 'secret-door' }],
+        }],
+        goal: { placeId: 'entry', conditions: { stepsDone: ['open-remote'] } },
+      },
+    };
+
+    const holding = playCommand(world, startPlay(world), 'take key').state;
+    expect(playCommand(world, holding, 'use key').message)
+      .toContain('You use the key. The secret door is now open.');
   });
 
   it('lets the player talk to and examine people only where they are', () => {
