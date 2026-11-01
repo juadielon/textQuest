@@ -115,8 +115,8 @@ export interface Goal {
  * sees, so hints and suggestions never give answers away.
  *
  * Version 1 worlds only ever add progress. Version 2 adds mutually exclusive
- * choices and early endings. Released adventures generate version 1 worlds,
- * and play does not accept version 2 worlds yet.
+ * choices and early endings. Released adventures generate version 1 worlds.
+ * Play accepts version 2 worlds only when every ending is a win.
  */
 export interface AdventureWorld {
   /** World format version. */

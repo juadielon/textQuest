@@ -31,8 +31,11 @@ readers. They have not yet been checked with a real screen reader.
 
 The game is playable, but the written story descriptions and names are not
 shown yet. Places and items currently use simple names based on their
-internal labels. Command suggestions, recovery checkpoints and story choices
-that change the ending are also planned. There is no turn-based combat.
+internal labels. Command suggestions and recovery checkpoints are also
+planned. Hand-built world-format version 2 adventures support mutually
+exclusive choices and winning endings, but released generators do not expose
+them. Failure endings remain blocked until checkpoint recovery is available.
+There is no turn-based combat.
 
 ## Sharing an adventure
 
@@ -102,6 +105,15 @@ starting adventure.
 The game tracks your commands, location and discoveries. A save holds the
 starting details and the commands you entered. When you resume, the game
 recreates the adventure and replays those commands to restore your progress.
+
+World-format version 2 adds mutually exclusive choices and early endings to
+the world rules. The play engine supports these choices and winning endings
+in hand-built worlds; no released generator creates them. Choices appear only
+when they are available, can be undone, and do not reveal hidden outcomes or
+puzzle answers. Hints stay general because route hints do not yet model
+choices. Worlds with failure endings are refused until checkpoint recovery
+is available. See the roadmap for the related work and current limitations.
+Released adventures, share words and saves remain unchanged.
 
 The project is written in TypeScript. Vite turns it into the HTML, CSS and
 JavaScript files used by the browser. The written content is in
