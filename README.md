@@ -341,8 +341,11 @@ build or browser smoke check does not replace that test. See
 
 textQuest builds to plain static files: HTML, CSS, JavaScript and an icon.
 It needs no game server, database, API key or LLM, so any static web host
-can serve it. The current build is the browser placeholder, not a playable
-game.
+can serve it. The current build connects the start and play screens for
+light fantasy, cosy mystery and science fiction. All three genres are
+playable, but authored prose, authored command names and the save/load
+interface remain unfinished. Going back to start or reloading loses progress;
+a share word recreates the starting adventure, not a saved session.
 
 ### Build
 
