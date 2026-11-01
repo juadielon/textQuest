@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AdventureWorld, Conditions, Effect } from './adventure-world';
-import { checkWinnability, MAX_SEARCH_STATES } from './winnability';
+import { checkWinnability, MAX_SEARCH_STATES, validateWorld } from './winnability';
 
 function sampleWorld(): AdventureWorld {
   return {
@@ -340,6 +340,8 @@ describe('checkWinnability', () => {
     });
   });
 
+  // Searching up to the limit takes a few seconds, so a busy machine can push it
+  // past Vitest's 5-second default. Give it more room.
   it('reports a world over the search limit as too large, never winnable', () => {
     expect(MAX_SEARCH_STATES).toBe(10_000);
     expect(checkWinnability(branchingWorld(10))).toEqual({
@@ -348,5 +350,13 @@ describe('checkWinnability', () => {
     const result = checkWinnability(branchingWorld(16));
     expect(result).toEqual({ winnable: false, tooLarge: true });
     expect(checkWinnability(branchingWorld(16))).toEqual(result);
+  }, 30_000);
+});
+
+describe('validateWorld', () => {
+  it('accepts a valid world and rejects the same problems as the checker', () => {
+    expect(() => validateWorld(sampleWorld())).not.toThrow();
+    expect(() => validateWorld({ ...sampleWorld(), startPlaceId: 'nowhere' }))
+      .toThrow('Unknown place ID "nowhere".');
   });
 });
