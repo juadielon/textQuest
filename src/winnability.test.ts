@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AdventureWorld, Conditions, Effect } from './adventure-world';
+import type { AdventureWorld, Conditions, Effect, PuzzleStep } from './adventure-world';
 import { checkWinnability, MAX_SEARCH_STATES, validateWorld } from './winnability';
 
 function sampleWorld(): AdventureWorld {
@@ -657,23 +657,43 @@ describe('world version 2 choices and endings', () => {
     })).toEqual({ winnable: true, unreachableStepIds: [], reachableEndingIds: ['pit'], canGetStuck: true });
   });
 
-  it('checks a large choice group without rescanning every step for each option', () => {
-    const size = 1_000;
-    let choiceReads = 0;
-    const steps = Array.from({ length: size }, (_, index) => ({
-      id: `option-${index}`, placeId: 'start', conditions: {}, effects: [],
-      get choiceId() {
-        choiceReads++;
-        return 'large';
-      },
+  it.each([
+    ['only options', undefined],
+    ['options and automatic steps ready together', () => ({ cluesRevealed: ['mark'] })],
+    ['options and automatic steps listed in reverse dependency order', (index: number, size: number) =>
+      (index === size - 1 ? { cluesRevealed: ['mark'] } : { stepsDone: [`auto-${index + 1}`] })],
+  ] as const)('checks a large choice group with %s without rescanning every step', (_, needs) => {
+    const size = 100;
+    let reads = 0;
+    // Counts every read of a step field, so the test bounds work without timing it.
+    const counted = (step: PuzzleStep): PuzzleStep => {
+      const copy = {} as PuzzleStep;
+      for (const [key, value] of Object.entries(step)) {
+        Object.defineProperty(copy, key, {
+          enumerable: true,
+          get: () => {
+            reads++;
+            return value;
+          },
+        });
+      }
+      return copy;
+    };
+    const options = Array.from({ length: size }, (_, index): PuzzleStep => ({
+      id: `option-${index}`, placeId: 'start', choiceId: 'large', conditions: {},
+      effects: [{ kind: 'reveal-clue', clueId: 'mark' }],
+    }));
+    const automatic = needs === undefined ? [] : Array.from({ length: size }, (_, index): PuzzleStep => ({
+      id: `auto-${index}`, placeId: 'start', conditions: needs(index, size), effects: [],
     }));
     expect(checkWinnability({
       version: 2, startPlaceId: 'start', places: [{ id: 'start' }, { id: 'goal' }],
-      exits: [], items: [], clues: [],
-      solution: { steps, goal: { placeId: 'goal', conditions: {} } },
+      exits: [], items: [], clues: [{ id: 'mark' }],
+      solution: { steps: [...options, ...automatic].map(counted), goal: { placeId: 'goal', conditions: {} } },
     })).toEqual({ winnable: false, unreachableStepIds: [], reachableEndingIds: [], canGetStuck: true });
-    // About 1,001 states each read every option a few times; rescanning per option is about 500 million reads.
-    expect(choiceReads).toBeLessThan(10 * size * size);
+    // About 101 states each read every step a few times, roughly 100,000 reads.
+    // Rescanning every step per option or per automatic step reads at least a million.
+    expect(reads).toBeLessThan(20 * size * size);
   });
 
   it('counts a winning ending as a win when the goal cannot be reached', () => {

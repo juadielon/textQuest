@@ -258,19 +258,63 @@ function settleArea(world: AdventureWorld, state: SearchState, links: Links): st
   return area;
 }
 
+// Automatic steps are not decisions and need no items, so arrival can take them.
+function automaticStepsByPlace(world: AdventureWorld): Map<string, PuzzleStep[]> {
+  const byPlace = new Map<string, PuzzleStep[]>();
+  for (const step of world.solution.steps) {
+    if (isDecision(step) || (step.conditions.itemsHeld ?? []).length) continue;
+    const steps = byPlace.get(step.placeId);
+    if (steps) steps.push(step);
+    else byPlace.set(step.placeId, [step]);
+  }
+  return byPlace;
+}
+
 // Only arrival and automatic steps are forced; taking and using items can end play.
-function settleHere(world: AdventureWorld, state: SearchState): string[] {
+// Automatic steps only add progress, so the order they are taken in can't change
+// the settled state. Each step waits on its missing steps and clues, so settling
+// reads each condition once instead of rescanning the list after every step.
+function settleHere(
+  world: AdventureWorld, state: SearchState, automatic: ReadonlyMap<string, readonly PuzzleStep[]>,
+): string[] {
   state.placesVisited.add(state.placeId);
   for (const clue of world.clues) {
     if (clue.placeId === state.placeId) state.cluesRevealed.add(clue.id);
   }
-  for (let step = world.solution.steps.find((entry) => entry.placeId === state.placeId
-    && !isDecision(entry) && !(entry.conditions.itemsHeld ?? []).length
-    && canTakeStep(state, entry)); step;
-    step = world.solution.steps.find((entry) => entry.placeId === state.placeId
-      && !isDecision(entry) && !(entry.conditions.itemsHeld ?? []).length
-      && canTakeStep(state, entry))) {
+  const waiting = new Map<string, PuzzleStep[]>();
+  const missing = new Map<PuzzleStep, number>();
+  const ready: PuzzleStep[] = [];
+  for (const step of automatic.get(state.placeId) ?? []) {
+    const { stepsDone = [], cluesRevealed = [], placesVisited = [] } = step.conditions;
+    // No other place is visited while settling here.
+    if (state.stepsDone.has(step.id) || !placesVisited.every((id) => state.placesVisited.has(id))) continue;
+    const needs = [
+      ...stepsDone.filter((id) => !state.stepsDone.has(id)).map((id) => `step:${id}`),
+      ...cluesRevealed.filter((id) => !state.cluesRevealed.has(id)).map((id) => `clue:${id}`),
+    ];
+    if (!needs.length) ready.push(step);
+    missing.set(step, needs.length);
+    for (const need of needs) {
+      const steps = waiting.get(need);
+      if (steps) steps.push(step);
+      else waiting.set(need, [step]);
+    }
+  }
+  for (let step = ready.pop(); step; step = ready.pop()) {
+    const gained = new Set([`step:${step.id}`]);
+    for (const effect of step.effects) {
+      if (effect.kind === 'reveal-clue' && !state.cluesRevealed.has(effect.clueId)) {
+        gained.add(`clue:${effect.clueId}`);
+      }
+    }
     completeStep(state, step);
+    for (const fact of gained) {
+      for (const next of waiting.get(fact) ?? []) {
+        const left = missing.get(next)! - 1;
+        missing.set(next, left);
+        if (!left) ready.push(next);
+      }
+    }
   }
   return [state.placeId];
 }
@@ -330,6 +374,7 @@ export function checkWinnability(world: AdventureWorld): WinnabilityResult {
     .filter(({ outcome }) => outcome === 'win').map(({ id }) => id));
   const decisions = world.solution.steps.filter((step) =>
     isDecision(step) || (world.version === 2 && (step.conditions.itemsHeld ?? []).length > 0));
+  const automatic = automaticStepsByPlace(world);
   const choiceOfStep = new Map(world.solution.steps.flatMap(({ id, choiceId }) =>
     choiceId === undefined ? [] : [[id, choiceId] as const]));
   // Links each searched state to the states it leads to, to find any that can't win.
@@ -348,7 +393,8 @@ export function checkWinnability(world: AdventureWorld): WinnabilityResult {
 
   for (let index = 0; index < queue.length; index++) {
     const state = queue[index];
-    const area = world.version === 1 ? settleArea(world, state, links) : settleHere(world, state);
+    const area = world.version === 1
+      ? settleArea(world, state, links) : settleHere(world, state, automatic);
     const key = stateKey(area[0], state);
     const parentKey = parents[index];
     if (parentKey !== null && world.version === 2) {
