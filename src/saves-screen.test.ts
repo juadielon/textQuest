@@ -444,6 +444,55 @@ describe('renderSavesScreen', () => {
     expect(texts('.saves-list li')).toEqual([noSavesMessage]);
   });
 
+  it.each(['ready', 'unreadable'])('Keep cancels a queued deletion of a %s save', async (kind) => {
+    const id = store.add(createSave('Trip', settings, [], earlier));
+    if (kind === 'unreadable') storage.items.set(SAVE_KEY_PREFIX + id, 'broken');
+    const before = new Map(storage.items);
+    render();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    void lock.request(SAVE_LOCK_NAME, () => held);
+    const name = kind === 'ready' ? 'Trip' : 'Unreadable save';
+
+    buttonNamed(`Delete: ${name}`).click();
+    buttonNamed(`Yes, delete: ${name}`).click();
+    buttonNamed(`Keep: ${name}`).click();
+    release();
+    await lock.settled();
+
+    expect(storage.items).toEqual(before);
+    expect(document.activeElement).toBe(buttonNamed(`Delete: ${name}`));
+    expect(app.querySelector('[role="status"]')?.textContent).toBe('');
+
+    buttonNamed(`Delete: ${name}`).click();
+    buttonNamed(`Yes, delete: ${name}`).click();
+    await lock.settled();
+    expect(storage.items.size).toBe(0);
+  });
+
+  it('ignores a delayed lock rejection after Keep and allows a fresh confirmation', async () => {
+    const save = createSave('Trip', settings, [], earlier);
+    const id = store.add(save);
+    render();
+    let reject!: (reason: Error) => void;
+    const pending = new Promise<void>((_resolve, fail) => { reject = fail; });
+    lock.request.mockImplementationOnce(() => pending);
+    buttonNamed('Delete: Trip').click();
+    buttonNamed('Yes, delete: Trip').click();
+    buttonNamed('Keep: Trip').click();
+
+    reject(new DOMException('blocked', 'SecurityError'));
+    await Promise.resolve();
+
+    expect(store.load(id)).toEqual(save);
+    expect(document.activeElement).toBe(buttonNamed('Delete: Trip'));
+    expect(app.querySelector('[role="status"]')?.textContent).toBe('');
+    buttonNamed('Delete: Trip').click();
+    buttonNamed('Yes, delete: Trip').click();
+    await lock.settled();
+    expect(store.list()).toEqual([]);
+  });
+
   it('shows unreadable saves with the reason and keeps them', async () => {
     store.add(createSave('Trip', settings, [], earlier));
     const key = `${SAVE_KEY_PREFIX}${'f'.repeat(32)}`;

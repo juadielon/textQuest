@@ -184,6 +184,7 @@ export interface SavesScreenOptions {
  * @remarks
  * Delete confirms the exact listed save under a shared lock; changed saves
  * stay stored and need fresh confirmation. Without a lock, deletion is refused.
+ * Keep cancels deletion even while it is waiting for the lock.
  * Saves that can't be read are listed
  * with the reason and kept; only the player can delete them. All text goes in
  * through `textContent`. Focus moves to the heading.
@@ -241,7 +242,9 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
     }
 
     const remove = button('Delete', name, () => {
+      let cancelled = false;
       const keep = button('Keep', name, () => {
+        cancelled = true;
         confirmation.replaceWith(actions);
         remove.focus();
       });
@@ -253,6 +256,8 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
           return;
         }
         withSaveLock(locks, () => {
+          if (cancelled) return;
+          cancelled = true;
           try {
             options.store.remove(entry.id, entry.snapshot);
             status.textContent = `Deleted “${name}”.`;
@@ -262,6 +267,7 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
           refresh();
           status.focus();
         }, () => {
+          if (cancelled) return;
           status.textContent = lockFailureMessage;
           status.focus();
         });

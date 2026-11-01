@@ -417,4 +417,35 @@ it('opens saves and returns to start after an invalid adventure link', async () 
   expect(get<HTMLInputElement>('#share-word').value).toBe('');
   expect(get('#share-word-error').textContent).toBe('');
   expect(store.load(id)).toEqual(saved);
+  expect(new URL(window.location.href).searchParams.has('adventure')).toBe(false);
+  expect(window.location.pathname).toBe('/textQuest/');
+  vi.resetModules();
+  await import('./main');
+  expect(get('h1').textContent).toBe('textQuest');
+  expect(document.activeElement).toBe(get('h1'));
+  expect(get('#share-word-error').textContent).toBe('');
+  expect(store.load(id)).toEqual(saved);
+});
+
+it.each(['\t', '\u0085', '\u2028'])('rejects a pasted %j before recording commands, then saves normally', (character) => {
+  openAdventure(adventureSettings.encodeShareWord(settings));
+  const input = get<HTMLInputElement>('#play-command');
+  input.value = `look${character}around`;
+  get<HTMLFormElement>('.play-command').requestSubmit();
+
+  expect(get('.play-log').children).toHaveLength(0);
+  expect(get('.play-sidebar p').textContent).toBe('Turns taken: 0');
+  expect(get('[aria-live="polite"]').textContent).toMatch(/plain text.*tabs/);
+  expect(input.getAttribute('aria-invalid')).toBe('true');
+  expect(document.activeElement).toBe(input);
+
+  input.value = 'look';
+  get<HTMLFormElement>('.play-command').requestSubmit();
+  get<HTMLInputElement>('#save-name').value = 'Safe trip';
+  get<HTMLFormElement>('.save-form').requestSubmit();
+
+  expect(get('#save-status').textContent).toBe('Saved “Safe trip”.');
+  expect(input.hasAttribute('aria-invalid')).toBe(false);
+  const store = createSaveStore(localStorage);
+  expect(store.load(store.list()[0].id).commands).toEqual(['look']);
 });
