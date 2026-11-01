@@ -137,7 +137,8 @@ const namesByWorld = new WeakMap<PlayWorld, readonly CommandTarget[]>();
 function namedTargets(world: PlayWorld): readonly CommandTarget[] {
   const cached = namesByWorld.get(world);
   if (cached) return cached;
-  const named = nameTargets(world);
+  const targets = nameTargets(world);
+  const named = world.version === 2 ? stableUseTargets(world, targets) : targets;
   namesByWorld.set(world, named);
   return named;
 }
@@ -180,6 +181,35 @@ function nameTargets(world: PlayWorld): CommandTarget[] {
   }
 }
 
+// Choose item-use fallbacks for the whole world without displaying hidden names.
+function stableUseTargets(world: PlayWorld, targets: readonly CommandTarget[]): CommandTarget[] {
+  const labels = targets.flatMap(({ name, aliases }) =>
+    [name, ...aliases ?? []].map(normaliseTargetName));
+  const itemLabels = targets.filter(({ kind }) => kind === 'item')
+    .flatMap(({ name, aliases }) => [name, ...aliases ?? []].map(normaliseTargetName));
+  const itemNames = new Set(itemLabels);
+  const numbers = new Map(world.items.map(({ id }, index) => [id, index + 1]));
+  return targets.map((target) => {
+    if (target.kind !== 'item') return target;
+    const name = normaliseTargetName(target.name);
+    const words = target.name.toLowerCase().trim().split(/\s+/);
+    const ambiguous = /[.!?]\s*$/.test(target.name)
+      || words.some((word, index) => word === 'on'
+        && itemNames.has(normaliseName(words.slice(0, index).join(' '))))
+      || itemLabels.some((label) => label.startsWith(`${name} on `));
+    if (!ambiguous) return target;
+    const number = numbers.get(target.id)!;
+    let attempt = 0;
+    let fallback: string;
+    do {
+      fallback = `item ${number}${attempt ? ` ${attempt}` : ''}`;
+      attempt++;
+    } while (labels.some((label) => label.includes(fallback)));
+    labels.push(fallback);
+    return { ...target, name: fallback, aliases: [target.name, ...target.aliases ?? []] };
+  });
+}
+
 function nameOf(world: PlayWorld, kind: Target['kind'], id: string): string {
   return namedTargets(world).find((target) => target.kind === kind && target.id === id)?.name
     ?? id;
@@ -218,7 +248,7 @@ function rawExitName(world: PlayWorld, progress: Progress, exit: Exit): string {
   return same.length < 2 ? base(exit) : `${base(exit)} ${same.indexOf(exit) + 1}`;
 }
 
-function disambiguateExitTargets(targets: readonly CommandTarget[]): CommandTarget[] {
+function disambiguateExitTargets(targets: readonly CommandTarget[], protectItems = false): CommandTarget[] {
   const result = usableAliases(targets);
   const choiceAliases = new Map(targets.filter(({ kind }) => kind === 'choice')
     .map(({ id, aliases }) => [id, aliases] as const));
@@ -238,7 +268,10 @@ function disambiguateExitTargets(targets: readonly CommandTarget[]): CommandTarg
     });
   };
   while (true) {
-    const index = result.findIndex((target) => !reachable(target, result));
+    let index = protectItems
+      ? result.findIndex((target) => target.kind !== 'item' && !reachable(target, result))
+      : -1;
+    if (index < 0) index = result.findIndex((target) => !reachable(target, result));
     if (index < 0) {
       return usableAliases(result.map((target) => target.kind === 'choice'
         ? { ...target, aliases: choiceAliases.get(target.id) } : target));
@@ -259,42 +292,7 @@ function disambiguateExitTargets(targets: readonly CommandTarget[]): CommandTarg
   }
 }
 
-// Make each displayed item and local exit pair usable without changing the command grammar.
-function disambiguateUses(world: PlayWorld, targets: readonly CommandTarget[]): CommandTarget[] {
-  const named = [...targets];
-  const exits = named.filter(({ kind }) => kind === 'exit');
-  // Only these names can add a second "on" split or spoil the item match.
-  const needsCheck = named.some((target) =>
-    (target.kind === 'item' && /[.!?]\s*$/.test(target.name))
-    || [target.name, ...target.aliases ?? []]
-      .some((label) => normaliseTargetName(label).split(' ').includes('on')));
-  if (!exits.length || !needsCheck) return named;
-  const canUseOnExits = (item: CommandTarget, list: readonly CommandTarget[]) =>
-    exits.every((exit) => {
-      const parsed = parseCommand(`use ${item.name} on ${exit.name}`, list);
-      return parsed.ok && parsed.action.kind === 'use' && parsed.action.itemId === item.id
-        && 'targetId' in parsed.action && parsed.action.targetKind === 'exit' && parsed.action.targetId === exit.id;
-    });
-  for (const [index, item] of named.entries()) {
-    if (item.kind !== 'item' || canUseOnExits(item, named)) continue;
-    const number = world.items.findIndex(({ id }) => id === item.id) + 1;
-    for (let attempt = 0; ; attempt++) {
-      const name = `item ${number}${attempt ? ` ${attempt}` : ''}`;
-      // Avoid creating another possible split at "on" in an existing name.
-      if (named.some((target) => [target.name, ...target.aliases ?? []]
-        .some((label) => normaliseTargetName(label).includes(name)))) continue;
-      const renamed = { ...item, name, aliases: [item.name, ...item.aliases ?? []] };
-      const withRenamed = named.map((target, position) => position === index ? renamed : target);
-      if (canUseOnExits(renamed, withRenamed)) {
-        named[index] = renamed;
-        break;
-      }
-    }
-  }
-  return named;
-}
-
-// Only names the player can currently discover take part in disambiguation.
+// Only show names the player can currently discover.
 function stateTargets(world: PlayWorld, progress: Progress): CommandTarget[] {
   const exits = exitsFrom(world, progress.placeId);
   const places = new Set([progress.placeId, ...progress.placesVisited,
@@ -321,8 +319,8 @@ function stateTargets(world: PlayWorld, progress: Progress): CommandTarget[] {
     ...peopleHere(world, progress).map(target('person')),
     ...choices,
   ];
-  const named = world.names || choices.length ? disambiguateExitTargets(targets) : targets;
-  return world.version === 2 ? disambiguateUses(world, named) : named;
+  return world.names || choices.length
+    ? disambiguateExitTargets(targets, world.version === 2) : targets;
 }
 
 function stateNameOf(
@@ -548,8 +546,9 @@ export function startPlay(world: PlayWorld): PlayState {
  * call an exit "locked way" until the player knows where it leads. Names
  * that collide, cannot be parsed, or make an item-on-exit command ambiguous
  * get a neutral numbered name where needed. Some original names and aliases
- * may be ignored or ambiguous. Version 2 item-use fallback numbers follow
- * world item order, not inventory or discovered target order.
+ * may be ignored or ambiguous. Version 2 item names stay usable as choices
+ * appear or the player moves. Neutral item-use fallback numbers follow world
+ * item order, not inventory or discovered target order.
  */
 export function discoveredTargets(world: PlayWorld, state: PlayState): CommandTarget[] {
   const progress = progressFrom(state);

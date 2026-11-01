@@ -336,7 +336,9 @@ ambiguous; use the displayed name to pick a particular target.
 Names are checked together after renaming, so movement and item use remain
 unambiguous even when a fallback name is already occupied. In world format
 version 2, displayed item and exit names also work together in a use command.
-Neutral item-use fallback numbers follow world item order, not inventory order.
+Item names stay usable when choices appear or the player moves. Neutral
+item-use fallback numbers follow world item order, not inventory order, and
+never show undiscovered names.
 Released generated worlds have no compass directions or story choices;
 without pack names, they also have no people. Those commands get a plain
 explanation. Prose, autocomplete and checkpoints are later steps.

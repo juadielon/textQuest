@@ -189,6 +189,31 @@ function choiceWorld(): PlayWorld {
   };
 }
 
+function itemLabelWorld(): PlayWorld {
+  return {
+    version: 2, startPlaceId: 'room', places: [{ id: 'room' }, { id: 'away' }],
+    exits: [{ id: 'gate', fromPlaceId: 'room', toPlaceId: 'away', locked: true }],
+    items: [
+      { id: 'coin-on-gate', placeId: 'room' }, { id: 'coin', placeId: 'room' },
+      { id: 'item-2', placeId: 'room' }, { id: 'secret-key', placeId: 'away' },
+    ],
+    clues: [],
+    solution: {
+      steps: [
+        {
+          id: 'open', placeId: 'room', conditions: { itemsHeld: ['coin'] },
+          effects: [{ kind: 'unlock-exit', exitId: 'gate' }],
+        },
+        {
+          id: 'finish', placeId: 'room', conditions: { itemsHeld: ['coin'], stepsDone: ['open'] },
+          effects: [],
+        },
+      ],
+      goal: { placeId: 'room', conditions: { stepsDone: ['finish'] } },
+    },
+  };
+}
+
 const choiceIds = (world: PlayWorld, state: PlayState) => discoveredTargets(world, state)
   .filter(({ kind }) => kind === 'choice').map(({ id }) => id);
 
@@ -513,28 +538,7 @@ describe('playing world version 2 choices', () => {
   });
 
   it('keeps the displayed fallback usable after taking an item and opening an exit', () => {
-    const world: PlayWorld = {
-      version: 2, startPlaceId: 'room', places: [{ id: 'room' }, { id: 'away' }],
-      exits: [{ id: 'gate', fromPlaceId: 'room', toPlaceId: 'away', locked: true }],
-      items: [
-        { id: 'coin-on-gate', placeId: 'room' }, { id: 'coin', placeId: 'room' },
-        { id: 'item-2', placeId: 'room' }, { id: 'secret-key', placeId: 'away' },
-      ],
-      clues: [],
-      solution: {
-        steps: [
-          {
-            id: 'open', placeId: 'room', conditions: { itemsHeld: ['coin'] },
-            effects: [{ kind: 'unlock-exit', exitId: 'gate' }],
-          },
-          {
-            id: 'finish', placeId: 'room', conditions: { itemsHeld: ['coin'], stepsDone: ['open'] },
-            effects: [],
-          },
-        ],
-        goal: { placeId: 'room', conditions: { stepsDone: ['finish'] } },
-      },
-    };
+    const world = itemLabelWorld();
     const start = startPlay(world);
     const targets = discoveredTargets(world, start);
     const coin = targets.find(({ kind, id }) => kind === 'item' && id === 'coin')!;
@@ -553,6 +557,102 @@ describe('playing world version 2 choices', () => {
     const won = playCommand(world, opened, `use ${coin.name}`).state;
     expect(won.goalReached).toBe(true);
     expect(replayCommands(world, [`take ${coin.name}`, `use ${coin.name}`, `use ${coin.name}`])).toEqual(won);
+  });
+
+  it('keeps item labels usable when taking them reveals a choice with the same name', () => {
+    const base = itemLabelWorld();
+    const examples = [
+      base,
+      { ...base, items: base.items.filter(({ id }) => id === 'coin' || id === 'secret-key') },
+    ];
+    for (const original of examples) {
+      const label = discoveredTargets(original, startPlay(original))
+        .find(({ kind, id }) => kind === 'item' && id === 'coin')!.name;
+      const world: PlayWorld = {
+        ...original,
+        choiceNames: [{ id: 'secret-ending', name: label, aliases: ['hidden celebration'] }],
+        solution: {
+          ...original.solution,
+          steps: [...original.solution.steps, {
+            id: 'secret-ending', placeId: 'room', conditions: { itemsHeld: ['coin'] },
+            effects: [{ kind: 'end-adventure', endingId: 'done' }],
+          }],
+          endings: [{ id: 'done', outcome: 'win' }],
+        },
+      };
+      const start = startPlay(world);
+      const before = discoveredTargets(world, start);
+      expect(before.find(({ kind, id }) => kind === 'item' && id === 'coin')?.name).toBe(label);
+      expect(JSON.stringify(before)).not.toMatch(/secret|hidden celebration/);
+      const taken = playCommand(world, start, `take ${label}`);
+      const after = discoveredTargets(world, taken.state);
+      expect(taken.state.itemsHeld).toEqual(['coin']);
+      expect(taken.message).toContain(label);
+      expect(after.find(({ kind, id }) => kind === 'item' && id === 'coin')?.name).toBe(label);
+      expect(after.find(({ kind }) => kind === 'choice')?.name).not.toBe(label);
+      expect(playCommand(world, taken.state, 'choose hidden celebration').state.goalReached).toBe(true);
+      const opened = playCommand(world, taken.state, `use ${label}`).state;
+      expect(opened.stepsDone).toEqual(['open']);
+      const won = playCommand(world, opened, `use ${label}`).state;
+      expect(won.goalReached).toBe(true);
+      expect(replayCommands(world, [`take ${label}`, `use ${label}`, `use ${label}`])).toEqual(won);
+    }
+  });
+
+  it('keeps an item label usable after moving, including when a hidden name appears', () => {
+    const base = itemLabelWorld();
+    for (const hasAnotherExit of [false, true]) {
+      const world: PlayWorld = {
+        ...base,
+        exits: hasAnotherExit
+          ? [...base.exits, { id: 'door', fromPlaceId: 'away', toPlaceId: 'room', locked: true }]
+          : base.exits,
+        items: hasAnotherExit
+          ? base.items.map((item) => item.id === 'secret-key' ? { ...item, id: 'coin-on-door' } : item)
+          : base.items,
+        solution: {
+          ...base.solution,
+          steps: base.solution.steps.map((step) => step.id === 'finish' ? {
+            ...step, placeId: 'away',
+            effects: hasAnotherExit ? [{ kind: 'unlock-exit' as const, exitId: 'door' }] : [],
+          } : step),
+          goal: { placeId: 'away', conditions: { stepsDone: ['finish'] } },
+        },
+      };
+      const start = startPlay(world);
+      const before = discoveredTargets(world, start);
+      const label = before.find(({ kind, id }) => kind === 'item' && id === 'coin')!.name;
+      expect(JSON.stringify(before)).not.toMatch(/secret|coin.on.door/);
+      expect(playCommand(world, start, 'look').message).not.toContain('coin on door');
+      const taken = playCommand(world, start, `take ${label}`).state;
+      expect(taken.itemsHeld).toEqual(['coin']);
+      const opened = playCommand(world, taken, `use ${label}`).state;
+      const away = playCommand(world, opened, 'go away').state;
+      expect(away.placeId).toBe('away');
+      const after = discoveredTargets(world, away);
+      expect(after.find(({ kind, id }) => kind === 'item' && id === 'coin')?.name).toBe(label);
+      const door = after.find(({ kind, id }) => kind === 'exit' && id === 'door');
+      const use = door ? `use ${label} on ${door.name}` : `use ${label}`;
+      const won = playCommand(world, away, use).state;
+      expect(won.stepsDone).toEqual(['open', 'finish']);
+      expect(won.goalReached).toBe(true);
+      expect(replayCommands(world, [`take ${label}`, `use ${label}`, 'go away', use])).toEqual(won);
+    }
+  });
+
+  it('keeps version 1 item names and commands unchanged', () => {
+    const world: AdventureWorld = { ...itemLabelWorld(), version: 1 };
+    const start = startPlay(world);
+    expect(discoveredTargets(world, start).find(({ kind, id }) => kind === 'item' && id === 'coin')?.name)
+      .toBe('coin');
+    const taken = playCommand(world, start, 'take coin').state;
+    expect(discoveredTargets(world, taken).find(({ kind, id }) => kind === 'item' && id === 'coin')?.name)
+      .toBe('coin');
+    const opened = playCommand(world, taken, 'use coin').state;
+    expect(opened.stepsDone).toEqual(['open']);
+    const won = playCommand(world, opened, 'use coin').state;
+    expect(won.goalReached).toBe(true);
+    expect(replayCommands(world, ['take coin', 'use coin', 'use coin'])).toEqual(won);
   });
 
   it('checks and plays local-exit preference with a punctuated item label', () => {
