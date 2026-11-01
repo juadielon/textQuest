@@ -124,10 +124,14 @@ keeps its original 27 worlds, share words, content and saved-command replay.
 Authored command names remain disabled in both versions; their save
 compatibility is separate work in
 [issue #56](https://github.com/juadielon/textQuest/issues/56).
-The current rules only add progress. World format version 2 rules and checks
-for mutually exclusive choices and early win or failure endings are prepared
-([issue #79](https://github.com/juadielon/textQuest/issues/79)), but no
-adventure generates them and play does not accept them yet.
+Released generated worlds only add progress. World format version 2 rules
+and checks for mutually exclusive choices and early win or failure endings
+are prepared ([issue #79](https://github.com/juadielon/textQuest/issues/79)),
+building on [pull request #89](https://github.com/juadielon/textQuest/pull/89).
+Play supports choices and winning endings in those worlds, but no adventure
+generates them, and failure endings stay refused until checkpoint recovery
+([issue #82](https://github.com/juadielon/textQuest/issues/82)). This play
+support is in [pull request #93](https://github.com/juadielon/textQuest/pull/93).
 
 ### 5. Commands and recovery
 
@@ -149,7 +153,8 @@ forms without changing state. A pure play module runs those actions against a
 world with turn counting, hints and undo, following the winnability checker's
 rules. It can show and accept content-pack names and aliases, and lets the
 player talk to people at their place. Suggestions and checkpoints are not
-implemented.
+implemented; checkpoint recovery is tracked in
+[issue #82](https://github.com/juadielon/textQuest/issues/82).
 
 ### 6. Saves
 
