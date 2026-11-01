@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AdventureWorld, Conditions, Effect } from './adventure-world';
-import { checkWinnability, MAX_SEARCH_STATES } from './winnability';
+import { checkWinnability, MAX_SEARCH_STATES, validateWorld } from './winnability';
 
 function sampleWorld(): AdventureWorld {
   return {
@@ -351,4 +351,12 @@ describe('checkWinnability', () => {
     expect(result).toEqual({ winnable: false, tooLarge: true });
     expect(checkWinnability(branchingWorld(16))).toEqual(result);
   }, 30_000);
+});
+
+describe('validateWorld', () => {
+  it('accepts a valid world and rejects the same problems as the checker', () => {
+    expect(() => validateWorld(sampleWorld())).not.toThrow();
+    expect(() => validateWorld({ ...sampleWorld(), startPlaceId: 'nowhere' }))
+      .toThrow('Unknown place ID "nowhere".');
+  });
 });
