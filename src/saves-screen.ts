@@ -9,6 +9,7 @@ import {
   type SaveListEntry,
   type SaveStore,
 } from './saves';
+import type { CommandReplayMode } from './engine/play';
 import { genreLabels, lengthLabels } from './start-screen-model';
 
 /** Shown when a typed save name can't be used. */
@@ -121,6 +122,8 @@ export interface SaveFormOptions {
   readonly settings: AdventureSettings;
   /** Every command typed so far, oldest first. */
   readonly commands: () => readonly string[];
+  /** Replay mode for each command, oldest first. Defaults to legacy ID names. */
+  readonly commandModes?: () => readonly CommandReplayMode[];
   /** The save this adventure was resumed from, so saving updates it. */
   readonly resumed?: StoredSave;
   /** The name to suggest for a new save. */
@@ -205,6 +208,8 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
     savedMessage = '';
     // Take the commands now, so a save matches the moment the player chose.
     const commands = [...options.commands()];
+    const commandModes = [...(options.commandModes?.()
+      ?? commands.map((): CommandReplayMode => 'id'))];
     const time = now();
     const conflictsAtSubmit = conflictCount;
     const validationAtSubmit = validationCount;
@@ -222,7 +227,7 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
     withSaveLock(locks, () => {
       try {
         if (conflictsAtSubmit !== conflictCount) return;
-        const fresh = createSave(name, options.settings, commands, time);
+        const fresh = createSave(name, options.settings, commands, time, commandModes);
         if (current && locks) {
           // A clock set backwards must not make the update look older than the save.
           const createdAt = current.save.createdAt;

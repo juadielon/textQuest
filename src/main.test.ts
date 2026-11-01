@@ -2,8 +2,9 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import * as adventureSettings from './adventure-settings';
 import { discoveredTargets, replayCommands, startPlay } from './engine/play';
-import { generateAdventureWorld } from './generate-world';
-import { describePlay, playScreenTitle, unplayableMessage } from './play-screen';
+import { adventurePack, generateAdventureWorld } from './generate-world';
+import { worldNamesFrom } from './content/v1/world-names';
+import { describePlay, playScreenTitle, renderPlayScreen, unplayableMessage } from './play-screen';
 import { createSave, createSaveStore, PLAYED_KEY_PREFIX, SAVE_KEY_PREFIX } from './saves';
 import { formatSaveTime, SAVE_LOCK_NAME } from './saves-screen';
 import { summariseAdventure } from './start-screen-model';
@@ -50,9 +51,10 @@ function shownDetails(): Record<string, string> {
 
 function expectPlay(settings: adventureSettings.AdventureSettings): void {
   const world = generateAdventureWorld(settings);
-  const view = describePlay(world, startPlay(world));
+  const named = { ...world, names: worldNamesFrom(adventurePack(settings.version, settings.genre), world) };
+  const view = describePlay(named, startPlay(named));
   expect(get('.play-place-name').textContent).toBe(view.placeName);
-  expect(get('.play-place p').textContent).toBe(view.placeText);
+  expect(get('.play-place p:nth-of-type(3)').textContent).toBe(view.placeText);
   expect(shownDetails()).toEqual({
     'Share word': adventureSettings.encodeShareWord(settings),
     Genre: summariseAdventure(settings).genreLabel,
@@ -60,7 +62,10 @@ function expectPlay(settings: adventureSettings.AdventureSettings): void {
   });
   expect(document.activeElement).toBe(get('h1'));
   expect(app.querySelectorAll('h1')).toHaveLength(1);
-  expect(get('h1').textContent).toBe(playScreenTitle);
+  const direct = document.createElement('main');
+  renderPlayScreen(direct, settings);
+  expect(get('h1').textContent).toBe(direct.querySelector('h1')?.textContent);
+  expect(get('h1').textContent).not.toBe(playScreenTitle);
   expect(app.firstElementChild).toBe(get('h1'));
   expect(get('h1').nextElementSibling).toBe(get('header'));
   expect(get('h1').getAttribute('tabindex')).toBe('-1');
@@ -94,6 +99,12 @@ it.each<adventureSettings.AdventureGenre>(['light-fantasy', 'cosy-mystery', 'sci
     expect(random).toHaveBeenCalledOnce();
     expect(create).toHaveBeenCalledExactlyOnceWith('short', undefined);
     expectPlay(newSettings);
+    const title = get('h1').textContent;
+    const word = shownDetails()['Share word'];
+    get<HTMLButtonElement>('header button').click();
+    openAdventure(word);
+    expectPlay(newSettings);
+    expect(get('h1').textContent).toBe(title);
   },
 );
 
@@ -121,14 +132,18 @@ it('keeps invalid share words on the start screen without creating markup', () =
 it('returns to start with heading focus and restarts the share word without progress', () => {
   const word = adventureSettings.encodeShareWord(settings);
   openAdventure(word);
-  const world = generateAdventureWorld(settings);
+  const generated = generateAdventureWorld(settings);
+  const world = {
+    ...generated,
+    names: worldNamesFrom(adventurePack(settings.version, settings.genre), generated),
+  };
   const state = startPlay(world);
   const exit = world.exits.find((value) => value.fromPlaceId === state.placeId && !value.locked)!;
   const target = discoveredTargets(world, state).find((value) => value.kind === 'exit' && value.id === exit.id)!;
   get<HTMLInputElement>('#play-command').value = `go to ${target.name}`;
   get<HTMLFormElement>('.play-command').requestSubmit();
   expect(get('.play-log').children).toHaveLength(1);
-  expect(get('.play-sidebar p').textContent).toBe('Turns taken: 1');
+  expect(get('.play-sidebar > p:last-child').textContent).toBe('Turns taken: 1');
 
   get<HTMLButtonElement>('header button').click();
 
@@ -139,7 +154,7 @@ it('returns to start with heading focus and restarts the share word without prog
   openAdventure(word);
   expectPlay(settings);
   expect(get('.play-log').children).toHaveLength(0);
-  expect(get('.play-sidebar p').textContent).toBe('Turns taken: 0');
+  expect(get('.play-sidebar > p:last-child').textContent).toBe('Turns taken: 0');
 });
 
 it('shows a generation error and still lets the player return to start', async () => {
@@ -174,10 +189,15 @@ it.each([1, 2])('saves, exports, imports and resumes version %i from a share lin
   await openLink(word, '/textQuest/?unrelated=private#progress');
   expectPlay(short);
   expect(get<HTMLInputElement>('#save-name').value).toBe(word);
-  const world = generateAdventureWorld(short);
+  const generated = generateAdventureWorld(short);
+  const world = {
+    ...generated,
+    names: worldNamesFrom(adventurePack(short.version, short.genre), generated),
+  };
   const exit = world.exits.find((value) => value.fromPlaceId === world.startPlaceId && !value.locked)!;
   const name = discoveredTargets(world, startPlay(world)).find((value) => value.id === exit.id)!.name;
   const commands = [`go to ${name}`, 'hint', 'look'];
+  const commandModes = commands.map(() => 'content' as const);
   for (const command of commands) {
     get<HTMLInputElement>('#play-command').value = command;
     get<HTMLFormElement>('.play-command').requestSubmit();
@@ -210,6 +230,7 @@ it.each([1, 2])('saves, exports, imports and resumes version %i from a share lin
   expect(exported).toBeDefined();
   const text = await exported!.text();
   expect(JSON.parse(text).settings.version).toBe(version);
+  expect(JSON.parse(text).commandModes).toEqual(commandModes);
   const input = get<HTMLInputElement>('#import-save');
   Object.defineProperty(input, 'files', {
     configurable: true, value: [new File([text], 'trip.json', { type: 'application/json' })],
@@ -229,9 +250,9 @@ it.each([1, 2])('saves, exports, imports and resumes version %i from a share lin
   resumeImported.click();
 
   expect(shownDetails()['Share word']).toBe(word);
-  const view = describePlay(world, replayCommands(world, commands));
+  const view = describePlay(world, replayCommands(world, commands, commandModes));
   expect(get('.play-place-name').textContent).toBe(view.placeName);
-  expect(get('.play-sidebar p').textContent).toBe(`Turns taken: ${view.turns}`);
+  expect(get('.play-sidebar > p').textContent).toBe(`Turns taken: ${view.turns}`);
   expect([...app.querySelectorAll('.play-typed')].map((node) => node.textContent))
     .toEqual(commands.map((command) => `> ${command}`));
   expect(get<HTMLInputElement>('#save-name').value).toBe('My trip');
@@ -246,6 +267,8 @@ it.each([1, 2])('saves, exports, imports and resumes version %i from a share lin
   get<HTMLFormElement>('.save-form').requestSubmit();
   await queue;
   expect(get('#save-status').textContent).toBe('Saved “My trip”.');
+  const savedAgain = createSaveStore(localStorage).load(imported.id);
+  expect(savedAgain.commandModes).toEqual([...commandModes, 'content']);
   get<HTMLButtonElement>('header button').click();
   get<HTMLButtonElement>('#open-saves').click();
   expect(app.querySelectorAll('.save-item')).toHaveLength(2);
@@ -267,6 +290,50 @@ it.each([1, 2])('saves, exports, imports and resumes version %i from a share lin
   secondResumeImported.click();
   expect([...app.querySelectorAll('.play-typed')].map((node) => node.textContent))
     .toEqual([...commands, 'inventory'].map((command) => `> ${command}`));
+});
+
+it.each([1, 2])('keeps a failed legacy character talk separate from new content talk in version %i saves', async (version) => {
+  let queue: Promise<unknown> = Promise.resolve();
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: (_name: string, task: () => void) => (queue = queue.then(task)) },
+  });
+  const mixedSettings = adventureSettings.createAdventureSettings(0, 'short', version);
+  const generated = generateAdventureWorld(mixedSettings);
+  const pack = adventurePack(version, mixedSettings.genre);
+  const person = pack.characters.find(({ placeId }) => placeId === generated.startPlaceId)!;
+  const talk = `talk to ${person.name}`;
+  const motive = person.motive.map((part) => typeof part === 'string' ? part : '').join('');
+  const store = createSaveStore(localStorage);
+  const oldSave = createSave(
+    'Mixed trip', mixedSettings, [talk], new Date('2026-10-01T09:00:00.000Z'), ['id'],
+  );
+  store.add(oldSave);
+
+  get<HTMLButtonElement>('#open-saves').click();
+  get<HTMLButtonElement>('button[aria-label="Resume: Mixed trip"]').click();
+
+  const responses = () => [...app.querySelectorAll('.play-entry p:not(.play-typed)')]
+    .map((node) => node.textContent);
+  expect(responses()).toHaveLength(1);
+  expect(responses()[0]).not.toContain(motive);
+
+  get<HTMLInputElement>('#play-command').value = talk;
+  get<HTMLFormElement>('.play-command').requestSubmit();
+  expect(responses()).toHaveLength(2);
+  expect(responses()[0]).not.toContain(motive);
+  expect(responses()[1]).toContain(motive);
+
+  get<HTMLFormElement>('.save-form').requestSubmit();
+  await queue;
+  const saved = store.list().find((entry) => entry.status === 'ready' && entry.name === 'Mixed trip')!;
+  expect(store.load(saved.id).commandModes).toEqual(['id', 'content']);
+  get<HTMLButtonElement>('header button').click();
+  get<HTMLButtonElement>('#open-saves').click();
+  get<HTMLButtonElement>('button[aria-label="Resume: Mixed trip"]').click();
+  expect(responses()).toHaveLength(2);
+  expect(responses()[0]).not.toContain(motive);
+  expect(responses()[1]).toContain(motive);
 });
 
 it('offers no save form when the world cannot be played', async () => {
@@ -309,7 +376,7 @@ it.each(['changed', 'deleted', 'rejected'])('keeps pending-save %s failures visi
   else run();
   await vi.waitFor(() => expect(back.disabled).toBe(false));
 
-  expect(get('h1').textContent).toBe(playScreenTitle);
+  expect(get('h1').textContent).toBe('Restore the warning chain');
   expect(form.isConnected).toBe(true);
   expect(get('#save-status').textContent).toContain(failure === 'rejected' ? 'could not lock' : failure);
   expect([...app.querySelectorAll('.play-typed')].map((node) => node.textContent))
@@ -758,7 +825,7 @@ it('does not record a queued command after the save changes while the lock waits
   get<HTMLFormElement>('.save-form').requestSubmit();
   get<HTMLInputElement>('#play-command').value = 'look';
   get<HTMLFormElement>('.play-command').requestSubmit();
-  const changed = { ...saved, name: 'Other tab', commands: ['north'] };
+  const changed = { ...saved, name: 'Other tab', commands: ['north'], commandModes: ['id'] as const };
   store.put(id, changed);
   waiting.shift()!();
   waiting.shift()!();
@@ -912,7 +979,7 @@ it.each(['start', 'saves', 'another play'])(
         .toContain('Last played time could not be recorded');
       expect(otherStatus.textContent).toBe(previousMessage);
       expect(app.querySelector('h1')?.textContent).toBe(
-        destination === 'start' ? 'textQuest' : destination === 'saves' ? 'Your saves' : playScreenTitle,
+        destination === 'start' ? 'textQuest' : destination === 'saves' ? 'Your saves' : 'Restore the warning chain',
       );
     } finally {
       write.mockRestore();
@@ -992,7 +1059,7 @@ it('keeps playing when the browser cannot record Last played', () => {
     get<HTMLInputElement>('#play-command').value = 'look';
     get<HTMLFormElement>('.play-command').requestSubmit();
 
-    expect(get('h1').textContent).toBe(playScreenTitle);
+    expect(get('h1').textContent).toBe('Restore the warning chain');
     expect([...app.querySelectorAll('.play-typed')].map((node) => node.textContent)).toEqual(['> look']);
     expect(localStorage.getItem(PLAYED_KEY_PREFIX + id)).toBeNull();
     expect(store.load(id)).toEqual(saved);
@@ -1011,7 +1078,7 @@ it('keeps playing without Web Locks and announces that Last played is unavailabl
   get<HTMLInputElement>('#play-command').value = 'look';
   get<HTMLFormElement>('.play-command').requestSubmit();
 
-  expect(get('h1').textContent).toBe(playScreenTitle);
+  expect(get('h1').textContent).toBe('Restore the warning chain');
   expect([...app.querySelectorAll('.play-typed')].map((node) => node.textContent)).toEqual(['> look']);
   expect(localStorage.getItem(PLAYED_KEY_PREFIX + id)).toBeNull();
   expect(store.load(id)).toEqual(saved);
@@ -1099,7 +1166,7 @@ it.each([1, 2])('opens version %i links in fresh play for all genres and lengths
       await openLink(` ${adventureSettings.encodeShareWord(shared).toUpperCase()}- `);
       expectPlay(shared);
       expect(get('.play-log').children).toHaveLength(0);
-      expect(get('.play-sidebar p').textContent).toBe('Turns taken: 0');
+      expect(get('.play-sidebar > p:last-child').textContent).toBe('Turns taken: 0');
       const link = new URL(get<HTMLInputElement>('#adventure-link').value);
       expect(link.pathname).toBe('/textQuest/');
       expect(link.searchParams.get('adventure')).toBe(adventureSettings.encodeShareWord(shared));
@@ -1128,6 +1195,7 @@ it('copies the link and announces success without including any progress', async
   const word = adventureSettings.encodeShareWord(settings);
   await openLink(word, '/games/textQuest/index.html?save=private#progress');
   const originalLink = get<HTMLInputElement>('#adventure-link').value;
+  const title = get('h1').textContent;
   get<HTMLInputElement>('#play-command').value = 'look';
   get<HTMLFormElement>('.play-command').requestSubmit();
   get<HTMLButtonElement>('.share-link button').click();
@@ -1145,6 +1213,7 @@ it('copies the link and announces success without including any progress', async
   await openLink(link.searchParams.get('adventure')!, link.pathname);
   expect(get('.play-log').children).toHaveLength(0);
   expectPlay(settings);
+  expect(get('h1').textContent).toBe(title);
 });
 
 it.each(['missing', 'denied'] as const)('offers an accessible manual link when clipboard is %s', async (failure) => {
@@ -1219,7 +1288,9 @@ it('keeps a changed version 1 save when deleting it after opening a share link',
   get<HTMLButtonElement>('#open-saves').click();
   get<HTMLButtonElement>('button[aria-label="Delete: Old trip"]').click();
 
-  const changed = { ...old, name: 'Changed trip', commands: ['look', 'inventory'] };
+  const changed = {
+    ...old, name: 'Changed trip', commands: ['look', 'inventory'], commandModes: ['id', 'id'] as const,
+  };
   await request(SAVE_LOCK_NAME, () => store.put(id, changed));
   get<HTMLButtonElement>('button[aria-label="Yes, delete: Old trip"]').click();
   await queue;
@@ -1273,7 +1344,7 @@ it.each(['\t', '\u0085', '\u2028'])('rejects a pasted %j before recording comman
   get<HTMLFormElement>('.play-command').requestSubmit();
 
   expect(get('.play-log').children).toHaveLength(0);
-  expect(get('.play-sidebar p').textContent).toBe('Turns taken: 0');
+  expect(get('.play-sidebar > p').textContent).toBe('Turns taken: 0');
   expect(get('[aria-live="polite"]').textContent).toMatch(/plain text.*tabs/);
   expect(input.getAttribute('aria-invalid')).toBe('true');
   expect(document.activeElement).toBe(input);

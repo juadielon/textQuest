@@ -6,6 +6,7 @@ import {
   type AdventureSettings,
   type RandomValueSource,
 } from './adventure-settings';
+import type { CommandReplayMode } from './engine/play';
 
 /*
  * A save holds the starting settings and the commands the player typed.
@@ -20,10 +21,10 @@ import {
  * Bump this only for a change older copies cannot read. Every released
  * version must still load, so players never lose a save.
  */
-export const saveFormatVersion = 1;
+export const saveFormatVersion = 2;
 
 /** The longest save file, in characters, that will be stored or imported. */
-export const MAX_SAVE_FILE_LENGTH = 1_000_000;
+export const MAX_SAVE_FILE_LENGTH = 1_200_000;
 
 /** The most typed commands one save can hold. */
 export const MAX_SAVE_COMMANDS = 10_000;
@@ -44,6 +45,8 @@ export interface AdventureSave {
   readonly settings: AdventureSettings;
   /** Every command the player typed, oldest first, exactly as entered. */
   readonly commands: readonly string[];
+  /** Naming rules used for each command, so replay keeps its original meaning. */
+  readonly commandModes: readonly CommandReplayMode[];
   /** When the save was first made, as an ISO 8601 UTC time. */
   readonly createdAt: string;
   /** When the save last changed, as an ISO 8601 UTC time. */
@@ -169,6 +172,23 @@ function readCommands(value: unknown): string[] {
   });
 }
 
+function isCommandReplayMode(value: unknown): value is CommandReplayMode {
+  return value === 'id' || value === 'content';
+}
+
+function readCommandModes(value: unknown, commandCount: number, legacy: boolean): CommandReplayMode[] {
+  if (legacy) return Array.from({ length: commandCount }, () => 'id' as const);
+  if (!Array.isArray(value) || value.length !== commandCount) {
+    throw damaged('the command replay modes are not valid.');
+  }
+  return Array.from(value, (mode) => {
+    if (!isCommandReplayMode(mode)) {
+      throw damaged('the command replay modes are not valid.');
+    }
+    return mode;
+  });
+}
+
 function isIsoTime(value: unknown): value is string {
   if (typeof value !== 'string' || !isoTimePattern.test(value)) return false;
   const time = new Date(value);
@@ -214,11 +234,13 @@ export function validateSave(value: unknown): AdventureSave {
     throw damaged('the updated time is earlier than the created time.');
   }
 
+  const commands = readCommands(value.commands);
   return {
     formatVersion: saveFormatVersion,
     name: readName(value.name),
     settings: readSettings(value.settings),
-    commands: readCommands(value.commands),
+    commands,
+    commandModes: readCommandModes(value.commandModes, commands.length, formatVersion === 1),
     createdAt,
     updatedAt,
   };
@@ -231,6 +253,7 @@ export function validateSave(value: unknown): AdventureSave {
  * @param settings - The adventure's starting settings.
  * @param commands - Commands typed so far. Defaults to none.
  * @param now - The current time. Used for both timestamps.
+ * @param commandModes - How each command matched names. Defaults to legacy ID names.
  * @returns A checked save.
  * @throws {@link SaveError} if the name, settings or commands are not valid.
  */
@@ -239,6 +262,7 @@ export function createSave(
   settings: AdventureSettings,
   commands: readonly string[] = [],
   now: Date = new Date(),
+  commandModes: readonly CommandReplayMode[] = commands.map((): CommandReplayMode => 'id'),
 ): AdventureSave {
   const time = now.toISOString();
   return validateSave({
@@ -246,6 +270,7 @@ export function createSave(
     name,
     settings,
     commands,
+    commandModes,
     createdAt: time,
     updatedAt: time,
   });

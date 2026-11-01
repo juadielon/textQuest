@@ -26,7 +26,10 @@ export function aliasesFor(name: string): string[] {
  *
  * @throws RangeError when the world has a place, item or clue the pack lacks.
  */
-export function worldNamesFrom(pack: ContentPack, world: AdventureWorld): WorldNames {
+export function worldNamesFrom(
+  pack: Pick<ContentPack, 'genre' | 'places' | 'items' | 'clues' | 'characters'>,
+  world: AdventureWorld,
+): WorldNames {
   const named = (kind: 'place' | 'item' | 'clue', entries: readonly { readonly id: string; readonly name: string }[]) =>
     world[`${kind}s`].map(({ id }): NamedThing => {
       const entry = entries.find((candidate) => candidate.id === id);

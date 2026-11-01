@@ -1265,9 +1265,13 @@ describe('replaying a long save', () => {
     while (settings.genre !== 'light-fantasy') settings = createAdventureSettings(settings.seed + 1, 'long', 1);
     const generated = generateAdventureWorld(settings);
     const world: PlayWorld = { ...generated, names: worldNamesFrom(lightFantasy, generated) };
+    const commands = Array<string>(2000).fill('look');
     const started = Date.now();
-    expect(replayCommands(world, Array<string>(2000).fill('look'))).toEqual(startPlay(world));
+    expect(replayCommands(world, commands)).toEqual(startPlay(world));
     expect(Date.now() - started).toBeLessThan(10_000);
+    const legacyStarted = Date.now();
+    expect(replayCommands(world, commands, commands.map(() => 'id'))).toEqual(startPlay(world));
+    expect(Date.now() - legacyStarted).toBeLessThan(10_000);
   }, 20_000);
 });
 

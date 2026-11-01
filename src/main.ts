@@ -59,6 +59,7 @@ if (app) {
   const showPlay = (settings: AdventureSettings, resumed?: StoredSave): void => {
     refreshSaves = undefined;
     let commands: readonly string[] = resumed?.save.commands ?? [];
+    let commandModes = resumed?.save.commandModes ?? [];
     let playing = resumed?.id;
     let pendingPlayTime: Date | undefined;
     let latestPlayTime: Date | undefined;
@@ -91,8 +92,10 @@ if (app) {
     };
     const playable = renderPlayScreen(app, settings, {
       commands,
-      onCommand: (latest) => {
+      commandModes,
+      onCommand: (latest, latestModes) => {
         commands = latest;
+        commandModes = latestModes;
         markPlayed();
       },
     });
@@ -170,6 +173,7 @@ if (app) {
     if (playable) {
       header.append(buildSaveForm({
         store, settings, resumed, suggestedName: summary.shareWord, commands: () => commands,
+        commandModes: () => commandModes,
         onPendingChange: (pending) => { back.disabled = pending; },
         onStoredChange: (saved) => {
           const previousId = playing;

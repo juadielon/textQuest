@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAdventureSettings, type RandomValueSource } from './adventure-settings';
 import {
   createSave, createSaveStore, MAX_SAVE_FILE_LENGTH, PLAYED_KEY_PREFIX,
-  SAVE_KEY_PREFIX, SaveError, type SaveStore, type StorageLike,
+  SAVE_KEY_PREFIX, SaveError, type AdventureSave, type SaveStore, type StorageLike,
 } from './saves';
 import {
   buildSaveForm, formatSaveTime, noLocksMessage, noSavesMessage, recordPlayed, renderSavesScreen,
@@ -55,6 +55,10 @@ function fakeLocks() {
     return run;
   });
   return { locks: { request } as unknown as SaveLocks, request, settled: () => queue };
+}
+
+function withCommands(save: AdventureSave, commands: string[]): AdventureSave {
+  return { ...save, commands, commandModes: commands.map(() => 'id' as const) };
 }
 
 const settings = createAdventureSettings(7, 'long');
@@ -376,7 +380,7 @@ describe('buildSaveForm', () => {
     form.requestSubmit();
     commands.push('inventory');
     form.requestSubmit();
-    if (change === 'changed') store.put(id, { ...save, commands: ['look', 'north'] });
+    if (change === 'changed') store.put(id, withCommands(save, ['look', 'north']));
     else store.remove(id);
     const before = new Map(storage.items);
     release();
@@ -408,7 +412,7 @@ describe('buildSaveForm', () => {
     form.requestSubmit();
     lock.request.mockImplementationOnce(() => rejected);
     form.requestSubmit();
-    store.put(id, { ...save, commands: ['look', 'north'] });
+    store.put(id, withCommands(save, ['look', 'north']));
     const before = new Map(storage.items);
     await lock.settled();
     const warning = status.textContent;
@@ -759,7 +763,7 @@ describe('renderSavesScreen', () => {
     buttonNamed('Delete: B').click();
     buttonNamed('Yes, delete: B').click();
     const keep = buttonNamed('Keep: B');
-    if (result === 'changed') store.put(id, { ...saved, commands: ['look'] });
+    if (result === 'changed') store.put(id, withCommands(saved, ['look']));
     if (result === 'deleted') store.remove(id);
     waiting.shift()!();
     expect(keep.isConnected).toBe(true);
@@ -820,7 +824,7 @@ describe('renderSavesScreen', () => {
       buttonNamed('Yes, delete: A').click();
       const focused = focusTarget === 'row' ? buttonNamed('Delete: B') : app.querySelector<HTMLElement>('h1')!;
       focused.focus();
-      if (result === 'conflict') store.put(id, { ...saved, commands: ['look'] });
+      if (result === 'conflict') store.put(id, withCommands(saved, ['look']));
       if (result === 'rejection') {
         reject(new DOMException('blocked', 'SecurityError'));
         await Promise.resolve();
@@ -918,7 +922,7 @@ describe('renderSavesScreen', () => {
       buttonNamed(`Yes, delete: ${name}`).click();
     }
     const back = [...app.querySelectorAll('button')].find((node) => node.textContent === 'Back to start')!;
-    store.put(id, { ...saved, commands: ['look'] });
+    store.put(id, withCommands(saved, ['look']));
     if (order === 'last') waiting.get('B')!();
     vi.spyOn(store, 'list').mockImplementationOnce(() => { throw new Error('storage blocked'); });
     waiting.get('A')!();
@@ -956,7 +960,7 @@ describe('renderSavesScreen', () => {
     const id = store.add(save);
     render();
     buttonNamed('Delete: Old name').click();
-    const updated = change === 'rename' ? { ...save, name: 'New name' } : { ...save, commands: ['look', 'hint'] };
+    const updated = change === 'rename' ? { ...save, name: 'New name' } : withCommands(save, ['look', 'hint']);
     void lock.request(SAVE_LOCK_NAME, () => store.put(id, updated));
 
     buttonNamed('Yes, delete: Old name').click();
@@ -1134,7 +1138,7 @@ describe('renderSavesScreen', () => {
     const save = createSave('Old trip', settings, ['look'], earlier);
     const id = store.add(save);
     render();
-    store.put(id, { ...save, name: 'New trip', commands: ['look', 'hint'] });
+    store.put(id, { ...withCommands(save, ['look', 'hint']), name: 'New trip' });
     const before = new Map(storage.items);
     let blob: Blob | undefined;
     vi.useFakeTimers();
@@ -1322,7 +1326,7 @@ describe('renderSavesScreen', () => {
     form.requestSubmit();
     buttonNamed('Delete: Trip').click();
     buttonNamed('Yes, delete: Trip').click();
-    if (failure === 'conflict') store.put(id, { ...save, commands: ['look', 'hint'] });
+    if (failure === 'conflict') store.put(id, withCommands(save, ['look', 'hint']));
     const beforeImport = new Map(storage.items);
     const deleteMessage = failure === 'lock failure' ? /could not lock save storage/
       : failure === 'conflict' ? /not deleted/ : /Deleted/;
@@ -1394,7 +1398,7 @@ describe('renderSavesScreen', () => {
   it.each([
     ['{broken', /not valid JSON/],
     ['{}', /damaged/],
-    [JSON.stringify({ formatVersion: 2 }), /newer version/],
+    [JSON.stringify({ ...createSave('Future', settings, [], earlier), formatVersion: 3 }), /newer version/],
     [' '.repeat(MAX_SAVE_FILE_LENGTH + 1), /too large/],
   ])('rejects a bad file without changing any saves', async (text, message) => {
     store.add(createSave('Trip', settings, [], earlier));
@@ -1431,7 +1435,7 @@ describe('renderSavesScreen', () => {
   });
 
   it('accepts a valid non-ASCII save whose byte size exceeds the character limit', async () => {
-    const save = createSave('Trip', settings, Array(1700).fill('\u6f22'.repeat(200)), earlier);
+    const save = createSave('Trip', settings, Array(2000).fill('\u6f22'.repeat(200)), earlier);
     const id = store.add(save);
     render();
     const { file, form, submit } = chooseFile(store.exportSave(id));

@@ -5,7 +5,7 @@ import {
 } from './adventure-settings';
 import { worldNamesFrom } from './content/v1/world-names';
 import { discoveredTargets, playCommand, replayCommands, startPlay, type PlayState, type PlayWorld } from './engine/play';
-import { generateAdventureWorld, versionOnePack } from './generate-world';
+import { adventurePack, generateAdventureWorld } from './generate-world';
 import {
   createSave, createSaveStore, exportSaveFile, importSaveFile, type AdventureSave, type StorageLike,
 } from './saves';
@@ -45,7 +45,7 @@ function seedsFor(genre: AdventureGenre, length: AdventureLength, count: number,
 function worldFrom(settings: AdventureSettings, packNames: boolean): PlayWorld {
   const parsed = parseShareWord(encodeShareWord(settings));
   const world = generateAdventureWorld(parsed);
-  return packNames ? { ...world, names: worldNamesFrom(versionOnePack(parsed.genre), world) } : world;
+  return packNames ? { ...world, names: worldNamesFrom(adventurePack(parsed.version, parsed.genre), world) } : world;
 }
 
 function nameOf(world: PlayWorld, state: PlayState, kind: string, id: string): string {
@@ -106,7 +106,7 @@ function commandsToWin(world: PlayWorld): string[] {
 // Rebuilds a game the way a player resuming a save would.
 function resume(save: AdventureSave, packNames: boolean): PlayState {
   const world = worldFrom(save.settings, packNames);
-  return replayCommands(world, save.commands);
+  return replayCommands(world, save.commands, save.commandModes);
 }
 
 function roundTrips(settings: AdventureSettings, commands: readonly string[], packNames: boolean): PlayState {
@@ -114,7 +114,10 @@ function roundTrips(settings: AdventureSettings, commands: readonly string[], pa
   let original = startPlay(world);
   for (const input of commands) original = playCommand(world, original, input).state;
 
-  const save = createSave('Round trip', settings, commands, savedTime);
+  const commandMode = packNames ? 'content' : 'id';
+  const save = createSave(
+    'Round trip', settings, commands, savedTime, commands.map(() => commandMode),
+  );
   const imported = importSaveFile(exportSaveFile(save));
   expect(imported).toStrictEqual(save);
   expect(resume(imported, packNames)).toStrictEqual(original);

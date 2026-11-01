@@ -29,15 +29,23 @@ readers. They have not yet been checked with a real screen reader.
 
 ### What's unfinished
 
-The game is playable, but the written story descriptions and names are not
-shown yet. Places and items currently use simple names based on their
-internal labels. Command suggestions and recovery checkpoints are also
-planned. Hand-built world-format version 2 adventures support mutually
-exclusive choices and winning endings, but released generators do not expose
-them. Failure endings remain blocked until checkpoint recovery is available.
-There is no turn-based combat.
+The play screen shows each version's authored names and story text. References
+to hidden places, people, items and clues stay generic until they are
+discovered. Command suggestions and recovery checkpoints are still planned.
+Hand-built world-format version 2 adventures support mutually exclusive
+choices and winning endings, but released generators do not expose them.
+Failure endings remain blocked until checkpoint recovery is available. There
+is no turn-based combat.
 
 ## Sharing an adventure
+
+The play screen's heading is a readable story title, based on the selected
+plot's authored name ([issue #81](https://github.com/juadielon/textQuest/issues/81)).
+If the name contains a hidden name or alias, it uses a generic genre title instead.
+It stays the same for new and shared adventures in versions 1 and 2, without
+revealing hidden discoveries. Titles can repeat: use the exact share word or
+link to identify an adventure, not just its title. An unplayable adventure
+keeps the fallback heading "Your adventure".
 
 Each adventure has a **Share word** and an **Adventure link**. Give either to
 someone else and they can start the same adventure from the beginning. They
@@ -115,6 +123,9 @@ starting adventure.
 The game tracks your commands, location and discoveries. A save holds the
 starting details and the commands you entered. When you resume, the game
 recreates the adventure and replays those commands to restore your progress.
+Each saved command keeps whether it used internal ID names or authored names,
+so older histories keep their original meaning. Format 1 saves migrate to
+ID-name replay; new saves use format 2 and preserve mixed histories.
 
 World-format version 2 adds mutually exclusive choices and early endings to
 the world rules. The play engine supports these choices and winning endings
