@@ -357,6 +357,10 @@ can still interrupt saving and lose unsaved progress. A Saved message is shown
 only after the last queued save succeeds. Before leaving, wait for that message
 and for Back to start to become available; any commands typed after the last
 save submission still need another save.
+Name-validation errors and unacknowledged save failures are shown together.
+Correcting a name while older saves wait does not acknowledge their later
+failures. After a conflict, already-queued submissions are skipped; press Save
+again after the queue finishes to retry explicitly.
 
 Play rejects commands before execution or recording if they would exceed
 10,000 saved commands or the 1,000,000-character JSON file limit, including
@@ -365,6 +369,9 @@ to undo: it adds a command rather than shortening the saved history. Existing
 valid saves still replay unchanged, and rejected commands leave that progress
 saveable. A file-limit warning may allow a shorter command; at the command-count
 limit no further commands can be recorded.
+Rejected control characters and capacity errors are shown visibly and announced
+in the live region without entering command history. A valid command clears
+the visible error; normal responses appear only in the log.
 The file guard reserves room for the largest valid name: 60 unpaired UTF-16
 surrogate code units, each escaped as six JSON characters. A one-character
 plain name can therefore reach the guard up to 359 characters before its actual
@@ -378,6 +385,12 @@ first. While a deletion waits for storage, Back and Resume are unavailable,
 but Keep still cancels it. When another deletion refreshes the list, other
 live confirmations retain their original Keep controls and focus. Their
 confirmed snapshots are still checked when the lock arrives.
+Keep cancels the request and refreshes its row, so changes or deletion in another
+tab are reflected. If reading the list fails, existing rows are retained and the
+error is reported; the cancelled request remains cancelled.
+Other keyboard focus is preserved too, using the equivalent refreshed control
+when its unchanged row is replaced; results receive focus only if the old
+focused control has gone and has no suitable replacement.
 Overlapping deletion results are kept together, so a later success cannot
 hide an earlier conflict or lock failure.
 Last saved changes only when Save is pressed successfully, not on Resume

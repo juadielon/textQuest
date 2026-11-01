@@ -94,7 +94,8 @@ export interface SaveFormOptions {
  * A failed save leaves any stored version as it was.
  * Pending changes let the caller keep this form visible until all requests finish.
  * Success is announced only when no other save is waiting; errors remain visible.
- * Older requests cannot replace a later name-validation error.
+ * Name errors and unacknowledged save failures remain visible together until
+ * corrected and explicitly retried after the queue finishes.
  */
 export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
   const now = options.now ?? (() => new Date());
@@ -103,6 +104,9 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
   let conflictCount = 0;
   let pending = 0;
   let validationCount = 0;
+  let nameProblem = '';
+  let failures: string[] = [];
+  let savedMessage = '';
 
   const input = create('input', {
     type: 'text', id: 'save-name', maxLength: MAX_SAVE_NAME_LENGTH, autocomplete: 'off',
@@ -114,18 +118,31 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
   const form = create('form', { className: 'save-form', noValidate: true },
     create('label', { htmlFor: input.id }, 'Save name'), input,
     create('button', { type: 'submit' }, 'Save adventure'), status);
+  const showStatus = (): void => {
+    const problems = [nameProblem, ...failures].filter(Boolean);
+    status.textContent = problems.length ? problems.join(' ')
+      : pending > 0 ? 'Saving the commands from when Save was pressed. Stay here until saving finishes.'
+        : savedMessage;
+  };
+  const reportFailure = (message: string): void => {
+    if (!failures.includes(message)) failures.push(message);
+  };
 
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     const name = input.value.trim();
     if (!name || name.length > MAX_SAVE_NAME_LENGTH || controlCharacterPattern.test(name)) {
       validationCount += 1;
-      status.textContent = saveNameMessage;
+      nameProblem = saveNameMessage;
+      showStatus();
       input.setAttribute('aria-invalid', 'true');
       input.focus();
       return;
     }
     input.removeAttribute('aria-invalid');
+    nameProblem = '';
+    if (pending === 0) failures = [];
+    savedMessage = '';
     // Take the commands now, so a save matches the moment the player chose.
     const commands = [...options.commands()];
     const time = now();
@@ -133,13 +150,14 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
     const validationAtSubmit = validationCount;
     pending += 1;
     options.onPendingChange?.(true);
-    status.textContent = 'Saving the commands from when Save was pressed. Stay here until saving finishes.';
+    showStatus();
     let finished = false;
     const finish = (): void => {
       if (finished) return;
       finished = true;
       pending -= 1;
       options.onPendingChange?.(pending > 0);
+      showStatus();
     };
     withSaveLock(locks, () => {
       try {
@@ -152,12 +170,12 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
           const save = { ...fresh, createdAt, updatedAt: fresh.updatedAt < updatedAt ? updatedAt : fresh.updatedAt };
           options.store.replace(current.id, current.save, save);
           current = { id: current.id, save };
-          if (pending === 1 && validationAtSubmit === validationCount) status.textContent = `Saved “${name}”.`;
+          if (pending === 1 && validationAtSubmit === validationCount) savedMessage = `Saved “${name}”.`;
         } else {
           const copied = current !== undefined;
           current = { id: options.store.add(fresh), save: fresh };
           if (pending === 1 && validationAtSubmit === validationCount) {
-            status.textContent = copied ? `Saved “${name}” as a new save. ${noLocksMessage}` : `Saved “${name}”.`;
+            savedMessage = copied ? `Saved “${name}” as a new save. ${noLocksMessage}` : `Saved “${name}”.`;
           }
         }
       } catch (error) {
@@ -166,13 +184,13 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
           current = undefined;
           conflictCount += 1;
         }
-        if (validationAtSubmit === validationCount) status.textContent = conflict ?? messageFor(error);
+        reportFailure(conflict ?? messageFor(error));
       } finally {
         finish();
       }
     }, () => {
-      if (conflictsAtSubmit === conflictCount && validationAtSubmit === validationCount) {
-        status.textContent = lockFailureMessage;
+      if (conflictsAtSubmit === conflictCount) {
+        reportFailure(lockFailureMessage);
       }
       finish();
     });
@@ -188,7 +206,7 @@ function conflictMessage(error: unknown): string | undefined {
     return undefined;
   }
   const what = error.problem === 'changed' ? 'changed' : 'deleted';
-  return `This save was ${what} in another tab or window, so it was not overwritten. Choose Save adventure again to keep this progress as a new save.`;
+  return `This save was ${what} in another tab or window, so it was not overwritten. Saves queued before this warning will not be written. Choose Save adventure again to keep this progress as a new save.`;
 }
 
 /** Options for {@link renderSavesScreen}. */
@@ -240,13 +258,16 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
     }
   };
 
-  const refresh = (): void => {
+  const refresh = (focused: Element | null = document.activeElement): void => {
+    const focusId = focused instanceof HTMLElement ? focused.closest('.save-item')?.getAttribute('aria-labelledby') : null;
+    const focusLabel = focused?.getAttribute('aria-label');
+    const focusText = focused?.textContent;
     let entries: SaveListEntry[];
     try {
       entries = options.store.list();
     } catch (error) {
-      if (!confirmations.size) list.replaceChildren();
       reportDeletion(messageFor(error));
+      if (focused instanceof HTMLElement && !focused.isConnected) status.focus();
       return;
     }
     const items = entries.map((entry) => confirmations.get(entry.id) ?? saveItem(entry));
@@ -254,15 +275,26 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
       if (!entries.some((entry) => entry.id === id)) items.push(item);
     }
     if (!items.length) items.push(create('li', {}, noSavesMessage));
-    const focused = document.activeElement;
     for (const old of [...list.children]) {
       if (!items.some((item) => item === old)) old.remove();
     }
     items.forEach((item, index) => {
       if (list.children[index] !== item) list.insertBefore(item, list.children[index] ?? null);
     });
-    if (focused instanceof HTMLElement && focused.isConnected && document.activeElement !== focused) focused.focus();
     updateNavigation();
+    if (focused instanceof HTMLElement) {
+      if (focused.isConnected) {
+        if (document.activeElement !== focused) focused.focus();
+      } else {
+        const replacement = [...list.querySelectorAll<HTMLElement>('.save-item')]
+          .find((item) => item.getAttribute('aria-labelledby') === focusId)
+          ?.querySelectorAll<HTMLElement>('[aria-label]');
+        const control = [...replacement ?? []].find((node) =>
+          node.getAttribute('aria-label') === focusLabel || node.textContent === focusText);
+        if (control instanceof HTMLButtonElement && !control.disabled) control.focus();
+        else status.focus();
+      }
+    }
   };
 
   const saveItem = (entry: SaveListEntry): HTMLLIElement => {
@@ -312,6 +344,7 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
         confirmation.replaceWith(actions);
         updateNavigation();
         remove.focus();
+        refresh();
       });
       // Delete waits for any save in progress in another tab, so that save can't bring it back.
       const confirm = button('Yes, delete', name, () => {
@@ -327,21 +360,24 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
         updateNavigation();
         withSaveLock(locks, () => {
           if (cancelled) return;
+          const focused = document.activeElement;
           cancel();
+          confirmation.replaceWith(actions);
           try {
             options.store.remove(entry.id, entry.snapshot);
+            item.remove();
             reportDeletion(`Deleted “${name}”.`);
           } catch (error) {
             reportDeletion(messageFor(error));
           }
-          refresh();
-          if (!list.contains(document.activeElement)) status.focus();
+          refresh(focused);
         }, () => {
           if (cancelled) return;
+          const focused = document.activeElement;
           cancel();
+          confirmation.replaceWith(actions);
           reportDeletion(lockFailureMessage);
-          refresh();
-          if (!list.contains(document.activeElement)) status.focus();
+          refresh(focused);
         });
       });
       const question = create('p', { id: `delete-question-${entry.id}` }, `Delete “${name}”? This can’t be undone.`);

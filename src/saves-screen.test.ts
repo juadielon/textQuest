@@ -191,7 +191,7 @@ describe('buildSaveForm', () => {
 
     expect(status.textContent).toBe(
       'This save was changed in another tab or window, so it was not overwritten. '
-      + 'Choose Save adventure again to keep this progress as a new save.',
+      + 'Saves queued before this warning will not be written. Choose Save adventure again to keep this progress as a new save.',
     );
     expect(store.load(id)).toEqual(elsewhere);
 
@@ -236,7 +236,7 @@ describe('buildSaveForm', () => {
 
     expect(status.textContent).toBe(
       `This save was ${change} in another tab or window, so it was not overwritten. `
-      + 'Choose Save adventure again to keep this progress as a new save.',
+      + 'Saves queued before this warning will not be written. Choose Save adventure again to keep this progress as a new save.',
     );
     expect(storage.items).toEqual(before);
 
@@ -586,6 +586,103 @@ describe('renderSavesScreen', () => {
     expect(app.querySelector('[role="status"]')!.textContent).toContain('Deleted “B”.');
     expect(store.list()).toHaveLength(1);
     expect(store.load(id).name).toBe(failure === 'conflict' ? 'Updated A' : 'A');
+  });
+
+  it.each(['success', 'conflict', 'rejection'])('preserves newer keyboard focus after a delete %s refresh', async (result) => {
+    const saved = createSave('A', settings, [], earlier);
+    const id = store.add(saved);
+    store.add(createSave('B', settings, [], earlier));
+    for (const focusTarget of ['row', 'heading']) {
+      let run!: () => void;
+      let reject!: (error: Error) => void;
+      lock.request.mockImplementationOnce((_name: string, task: () => unknown) => new Promise<void>((resolve, fail) => {
+        run = () => { task(); resolve(); };
+        reject = fail;
+      }));
+      render();
+      buttonNamed('Delete: A').click();
+      buttonNamed('Yes, delete: A').click();
+      const focused = focusTarget === 'row' ? buttonNamed('Delete: B') : app.querySelector<HTMLElement>('h1')!;
+      focused.focus();
+      if (result === 'conflict') store.put(id, { ...saved, commands: ['look'] });
+      if (result === 'rejection') {
+        reject(new DOMException('blocked', 'SecurityError'));
+        await Promise.resolve();
+      } else run();
+      expect(document.activeElement).toBe(focusTarget === 'row' ? buttonNamed('Delete: B') : focused);
+      store.put(id, saved);
+    }
+  });
+
+  it.each(['changed', 'deleted', 'list-failure'])('reconciles a kept %s row without reviving its queued deletion', (change) => {
+    store.add(createSave('A', settings, [], earlier));
+    const saved = createSave('B', settings, [], earlier);
+    const id = store.add(saved);
+    store.add(createSave('C', settings, [], earlier));
+    const waiting: (() => void)[] = [];
+    lock.request.mockImplementation((_name: string, task: () => unknown) => new Promise<void>((resolve) => {
+      waiting.push(() => { task(); resolve(); });
+    }));
+    render();
+    for (const name of ['A', 'B']) {
+      buttonNamed(`Delete: ${name}`).click();
+      buttonNamed(`Yes, delete: ${name}`).click();
+    }
+    buttonNamed('Delete: C').click();
+    const otherKeep = buttonNamed('Keep: C');
+    if (change === 'deleted') store.remove(id);
+    else store.put(id, { ...saved, name: 'Updated B' });
+    waiting.shift()!();
+    expect(buttonNamed('Keep: B').isConnected).toBe(true);
+    if (change === 'list-failure') vi.spyOn(store, 'list').mockImplementationOnce(() => { throw new Error('storage blocked'); });
+    buttonNamed('Keep: B').click();
+    expect(otherKeep.isConnected).toBe(true);
+    if (change === 'changed') {
+      expect(texts('.save-item h2')).toContain('Updated B');
+      expect(document.activeElement).toBe(buttonNamed('Delete: Updated B'));
+    } else if (change === 'deleted') {
+      expect(texts('.save-item h2')).not.toContain('B');
+      expect(document.activeElement).toBe(app.querySelector('[role="status"]'));
+    } else {
+      expect(app.querySelector('[role="status"]')!.textContent).toContain('Something went wrong');
+      expect(document.activeElement).toBe(buttonNamed('Delete: B'));
+      // A later successful refresh can reconcile the retained row.
+      buttonNamed('Keep: C').click();
+      expect(texts('.save-item h2')).toContain('Updated B');
+    }
+    const status = app.querySelector('[role="status"]')!.textContent;
+    waiting.shift()!();
+    expect(app.querySelector('[role="status"]')!.textContent).toBe(status);
+    if (change !== 'deleted') expect(store.load(id).name).toBe('Updated B');
+    else expect(store.list().some((entry) => entry.id === id)).toBe(false);
+  });
+
+  it('restores usable actions after a delete conflict and failed list refresh', () => {
+    const saved = createSave('A', settings, [], earlier);
+    const id = store.add(saved);
+    store.add(createSave('B', settings, [], earlier));
+    const waiting: (() => void)[] = [];
+    lock.request.mockImplementation((_name: string, task: () => unknown) => new Promise<void>((resolve) => {
+      waiting.push(() => { task(); resolve(); });
+    }));
+    render();
+    buttonNamed('Delete: A').click();
+    buttonNamed('Yes, delete: A').click();
+    buttonNamed('Delete: B').click();
+    const keep = buttonNamed('Keep: B');
+    store.put(id, { ...saved, name: 'Updated A' });
+    vi.spyOn(store, 'list').mockImplementationOnce(() => { throw new Error('storage blocked'); });
+    waiting.shift()!();
+    expect(buttonNamed('Yes, delete: A')).toBeNull();
+    expect(buttonNamed('Delete: A')).not.toBeNull();
+    expect(keep.isConnected).toBe(true);
+    expect(document.activeElement).toBe(keep);
+    expect(app.querySelector('[role="status"]')!.textContent).toContain('not deleted');
+    expect(app.querySelector('[role="status"]')!.textContent).toContain('Something went wrong');
+    buttonNamed('Delete: A').click();
+    buttonNamed('Keep: A').click();
+    expect(buttonNamed('Delete: Updated A')).not.toBeNull();
+    expect(store.load(id).name).toBe('Updated A');
   });
 
   it('shows unreadable saves with the reason and keeps them', async () => {

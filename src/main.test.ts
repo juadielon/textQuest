@@ -352,7 +352,7 @@ it('keeps a queued lock failure visible through an intermediate successful save'
   expect(get('#save-status').textContent).toBe(warning);
   waiting.shift()!.run();
   expect(back.disabled).toBe(false);
-  expect(get('#save-status').textContent).toContain('Saved');
+  expect(get('#save-status').textContent).toBe(warning);
   const store = createSaveStore(localStorage);
   expect(store.load(store.list()[0].id).commands).toEqual(['look']);
 });
@@ -480,6 +480,78 @@ it('allows Back after Keep and ignores a cancelled deletion rejection on the nex
   expect(get('h1').textContent).toBe('textQuest');
   expect(document.activeElement).toBe(get('h1'));
   expect(store.load(id)).toEqual(saved);
+});
+
+it.each(['conflict', 'deleted', 'lock', 'storage'])('keeps name validation and an older %s save failure visible together', async (failure) => {
+  let run!: () => void;
+  let reject!: (error: Error) => void;
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: (_name: string, task: () => void) => new Promise<void>((resolve, fail) => {
+      run = () => { task(); resolve(); };
+      reject = fail;
+    }) },
+  });
+  const store = createSaveStore(localStorage);
+  const saved = createSave('My trip', settings, ['look'], new Date('2026-10-01T09:00:00.000Z'));
+  const id = store.add(saved);
+  get<HTMLButtonElement>('#open-saves').click();
+  get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+  const form = get<HTMLFormElement>('.save-form');
+  form.requestSubmit();
+  const name = get<HTMLInputElement>('#save-name');
+  name.value = '';
+  form.requestSubmit();
+  if (failure === 'conflict') store.put(id, { ...saved, name: 'Other tab' });
+  if (failure === 'deleted') store.remove(id);
+  const write = failure === 'storage' ? vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+    throw new DOMException('full', 'QuotaExceededError');
+  }) : undefined;
+  if (failure === 'lock') reject(new DOMException('blocked', 'SecurityError'));
+  else run();
+  await vi.waitFor(() => expect(get<HTMLButtonElement>('header button').disabled).toBe(false));
+  expect(get('#save-status').textContent).toContain('Give your save a name');
+  expect(get('#save-status').textContent).toContain(
+    failure === 'lock' ? 'could not lock' : failure === 'storage' ? 'storage' : failure === 'deleted' ? 'deleted' : 'changed',
+  );
+  expect(get('#save-status').textContent).not.toContain('Saving');
+  expect(document.activeElement).toBe(name);
+  expect(name.getAttribute('aria-invalid')).toBe('true');
+  write?.mockRestore();
+});
+
+it('reports an older conflict after name correction and skips the pre-warning queued retry', () => {
+  const waiting: (() => void)[] = [];
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: (_name: string, task: () => void) => new Promise<void>((resolve) => {
+      waiting.push(() => { task(); resolve(); });
+    }) },
+  });
+  const store = createSaveStore(localStorage);
+  const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
+  const id = store.add(saved);
+  get<HTMLButtonElement>('#open-saves').click();
+  get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+  const form = get<HTMLFormElement>('.save-form');
+  form.requestSubmit();
+  const name = get<HTMLInputElement>('#save-name');
+  name.value = '';
+  form.requestSubmit();
+  name.value = 'Corrected trip';
+  form.requestSubmit();
+  store.put(id, { ...saved, name: 'Other tab' });
+  waiting.shift()!();
+  waiting.shift()!();
+  expect(get<HTMLButtonElement>('header button').disabled).toBe(false);
+  expect(get('#save-status').textContent).toContain('changed');
+  expect(get('#save-status').textContent).toContain('Choose Save adventure again');
+  expect(get('#save-status').textContent).not.toContain('Saving');
+  expect(store.list()).toHaveLength(1);
+  form.requestSubmit();
+  waiting.shift()!();
+  expect(get('#save-status').textContent).toBe('Saved “Corrected trip”.');
+  expect(store.list()).toHaveLength(2);
 });
 
 async function openLink(word: string, path = '/textQuest/'): Promise<void> {

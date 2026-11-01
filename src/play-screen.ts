@@ -72,6 +72,7 @@ export function describePlay(world: AdventureWorld, state: PlayState): PlayView 
  * be generated or started because of a validation `RangeError`, a plain
  * message is shown instead of the game. Unexpected errors are rethrown.
  * Control characters are rejected before play so recorded commands remain saveable.
+ * Rejected input shows a visible, live-announced error without entering the log.
  * New commands, including undo, cannot exceed save count or file-size limits.
  * File-size checks reserve room for any allowed save name.
  *
@@ -160,6 +161,7 @@ export function renderPlayScreen(
     event.preventDefault();
     // Save files only accept plain, single-line command text.
     if (/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(input.value)) {
+      announcer.className = 'error';
       announcer.replaceChildren(element('span', undefined,
         'Use plain text without tabs, line breaks or control characters.'));
       input.setAttribute('aria-invalid', 'true');
@@ -184,12 +186,14 @@ export function renderPlayScreen(
       }
     }
     if (limitMessage) {
+      announcer.className = 'error';
       announcer.replaceChildren(element('span', undefined, limitMessage));
       input.setAttribute('aria-invalid', 'true');
       input.focus();
       return;
     }
     const message = run(command);
+    announcer.className = 'visually-hidden';
     log.scrollTop = log.scrollHeight;
     // A fresh node is announced even when the text repeats the last response.
     announcer.replaceChildren(element('span', undefined, message));
@@ -200,7 +204,7 @@ export function renderPlayScreen(
   });
 
   update();
-  const screen = element('div', 'play-screen', place, ending, log, form, sidebar, announcer);
+  const screen = element('div', 'play-screen', place, ending, log, form, announcer, sidebar);
   target.replaceChildren(title, screen);
   return true;
 }

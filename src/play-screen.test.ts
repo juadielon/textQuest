@@ -91,6 +91,24 @@ describe('describePlay', () => {
 });
 
 describe('renderPlayScreen', () => {
+  it('shows rejected control characters visibly and clears the error on valid play', () => {
+    const target = renderTiny();
+    type(target, 'look\taround');
+    const response = target.querySelector<HTMLElement>('#play-response')!;
+    expect(response.textContent).toContain('plain text');
+    expect(response.classList.contains('visually-hidden')).toBe(false);
+    expect(response.getAttribute('aria-live')).toBe('polite');
+    expect(target.querySelector('.play-command')!.nextElementSibling).toBe(response);
+    expect(response.nextElementSibling).toBe(target.querySelector('.play-sidebar'));
+    expect(target.querySelectorAll('[aria-live]')).toHaveLength(1);
+    expect(target.querySelectorAll('.play-entry')).toHaveLength(0);
+    type(target, 'look');
+    expect(response.classList.contains('visually-hidden')).toBe(true);
+    expect(response.textContent).not.toContain('plain text');
+    expect(target.querySelectorAll('.play-entry')).toHaveLength(1);
+    expect(target.querySelector('#play-command')!.hasAttribute('aria-invalid')).toBe(false);
+  });
+
   it.each([MAX_SAVE_COMMANDS - 1, MAX_SAVE_COMMANDS])('replays %i commands and blocks input beyond the save count limit', (count) => {
     // Check the real history/guard without attaching ten thousand log entries.
     const append = vi.spyOn(HTMLOListElement.prototype, 'append').mockImplementation(() => undefined);
@@ -118,6 +136,7 @@ describe('renderPlayScreen', () => {
       expect(append).toHaveBeenCalledTimes(MAX_SAVE_COMMANDS);
       expect(onCommand).toHaveBeenCalledTimes(MAX_SAVE_COMMANDS - count);
       expect(text(target, '#play-response')[0]).toContain('save command limit');
+      expect(target.querySelector('#play-response')!.classList.contains('visually-hidden')).toBe(false);
       expect(document.activeElement).toBe(target.querySelector('#play-command'));
       expect(target.querySelector('#play-command')!.getAttribute('aria-invalid')).toBe('true');
     }
@@ -142,12 +161,14 @@ describe('renderPlayScreen', () => {
     type(target, last + '\\');
     expect(onCommand).not.toHaveBeenCalled();
     expect(text(target, '#play-response')[0]).toContain('save file limit');
+    expect(target.querySelector('#play-response')!.classList.contains('visually-hidden')).toBe(false);
     expect(target.querySelectorAll('.play-entry')).toHaveLength(commands.length);
     type(target, last);
     expect(onCommand).toHaveBeenCalledOnce();
     const recorded = onCommand.mock.calls[0][0];
     expect(exportSaveFile(createSave(name, settings, recorded))).toHaveLength(MAX_SAVE_FILE_LENGTH);
     expect(target.querySelector('#play-command')!.hasAttribute('aria-invalid')).toBe(false);
+    expect(target.querySelector('#play-response')!.classList.contains('visually-hidden')).toBe(true);
     type(target, 'undo');
     expect(onCommand).toHaveBeenCalledOnce();
     expect(text(target, '#play-response')[0]).toContain('save file limit');
