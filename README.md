@@ -385,6 +385,27 @@ type-aware rules. The linter uses TypeScript 6 because typescript-eslint does
 not yet support TypeScript 7. Builds still use TypeScript 7 through the
 `typescript-native` package alias.
 
+For [issue #72](https://github.com/juadielon/textQuest/issues/72), minimatch
+11.0.3 is pinned through overrides scoped to the checked versions of ESLint,
+`@eslint/config-array` and `@typescript-eslint/typescript-estree`. The latest
+supported upstream releases checked on 1 November 2026 still require
+vulnerable minimatch 10. There is no global override: a new or older consumer
+must be assessed separately. ESLint is pinned to match its scoped override.
+`npm test` also runs Node's unit tests in
+`scripts/lint-tooling.test.mjs`, checking every locked minimatch copy and
+each actual consumer's installed version, file selection, negated ignores,
+nested and dot paths, braces, extglobs and the TypeScript parser service.
+
+The checked consumers use `Minimatch`, `match`, `pattern` and `minimatch()`,
+not v11's removed regular-expression or internal APIs. V11 is not a general
+drop-in replacement: it changes empty extglob path portions and fixes complex
+globstar and Windows path matching. These do not change this project's
+Docker-run `src/**/*.ts` selection; representative consumer behaviour was
+compared with v10 before applying the overrides. Reassess compatibility when
+upgrading these packages or changing lint patterns, run
+`docker compose run --rm app npm audit --json`, and remove the overrides when
+a supported upstream chain includes the patch.
+
 To serve the production build in a container, open <http://localhost:8080>:
 
 ```sh

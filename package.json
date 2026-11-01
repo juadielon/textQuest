@@ -7,15 +7,26 @@
     "dev": "vite --host 0.0.0.0 --port 5173 --strictPort",
     "build": "node node_modules/typescript-native/bin/tsc --noEmit && vite build --base=./",
     "lint": "eslint src",
-    "test": "vitest run"
+    "test": "vitest run src && node --test scripts/lint-tooling.test.mjs"
   },
   "devDependencies": {
-    "eslint": "^10.12.0",
+    "eslint": "10.12.0",
     "happy-dom": "^21.0.4",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.71.1",
     "typescript-native": "npm:typescript@^7.0.2",
     "vite": "^8.3.4",
     "vitest": "^5.0.3"
+  },
+  "overrides": {
+    "eslint@10.12.0": {
+      "minimatch": "11.0.3"
+    },
+    "@eslint/config-array@0.23.5": {
+      "minimatch": "11.0.3"
+    },
+    "@typescript-eslint/typescript-estree@8.71.1": {
+      "minimatch": "11.0.3"
+    }
   }
 }
