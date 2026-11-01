@@ -379,12 +379,6 @@ docker compose run --rm app npm run lint
 docker compose run --rm app npm run build
 ```
 
-Production builds use relative asset URLs, so the contents of `dist/` can
-be served at the site root or a sub-path such as `/textQuest/`. Serve the
-app's `index.html` at that path and keep its `assets/` directory beside it.
-Shared links use a query parameter, not a separate route, so no route rewrite
-is needed. The server must still serve the app when a query is present.
-
 ESLint checks all TypeScript in `src/`, including tests, with
 typescript-eslint's recommended rules. These are syntax-based checks, not
 type-aware rules. The linter uses TypeScript 6 because typescript-eslint does
@@ -430,10 +424,14 @@ keeping the `assets/` folder next to `index.html`.
 
 ### Host on a sub-path
 
-By default the build expects to be served from the site root, such as
-`https://example.com/`. To serve it from a folder, such as
-`https://example.com/textQuest/`, pass Vite's `--base` option with leading
-and trailing slashes:
+By default the build uses relative asset URLs, so the same `dist/` can be
+served from the site root or a folder such as `https://example.com/textQuest/`.
+Serve `index.html` at that path and keep `assets/` beside it. Shared links use
+a query parameter, not a separate route, so no route rewrite is needed.
+The server must still serve the app when a query is present.
+
+To pin asset URLs to one hosting folder instead, pass Vite's `--base` option
+with leading and trailing slashes:
 
 ```sh
 docker compose run --rm app npm run build -- --base=/textQuest/
@@ -454,9 +452,8 @@ docker compose --profile production up --build production
 This builds a fresh copy inside the image, so it does not use your `dist/`.
 It always serves from the root.
 
-To preview the `dist/` you built, including a sub-path build, run Vite's
-preview server. Use the same `--base` you built with, or leave it out for a
-root build:
+To preview the `dist/` you built, run Vite's preview server. Give it the
+hosting sub-path as `--base`, or leave the option out to preview at the root:
 
 ```sh
 docker compose run --rm --service-ports app npx vite preview --host 0.0.0.0 --port 5173 --strictPort --base=/textQuest/
