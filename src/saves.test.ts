@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { createAdventureSettings, type RandomValueSource } from './adventure-settings';
+import {
+  adventureLengths, createAdventureSettings, encodeShareWord, parseShareWord, type RandomValueSource,
+} from './adventure-settings';
+import { generateAdventureWorld } from './generate-world';
+import { replayCommands } from './engine/play';
 import {
   MAX_COMMAND_LENGTH,
   MAX_SAVE_COMMANDS,
@@ -17,7 +21,7 @@ import {
   type StorageLike,
 } from './saves';
 
-const settings = createAdventureSettings(1234, 'medium');
+const settings = createAdventureSettings(1234, 'medium', 1);
 const createdTime = new Date('2026-10-12T04:00:00.000Z');
 
 function sampleSave(name = 'Lighthouse trip', commands: string[] = ['look', 'go north']) {
@@ -229,10 +233,10 @@ describe('importing untrusted save files', () => {
   });
 
   it('rejects an adventure version this copy does not support', () => {
-    const text = JSON.stringify({ ...good(), settings: { ...settings, version: 2 } });
+    const text = JSON.stringify({ ...good(), settings: { ...settings, version: 3 } });
     expect(problemOf(() => importSaveFile(text))).toBe('unsupported-adventure');
     expect(messageOf(() => importSaveFile(text))).toBe(
-      'This save is for adventure version 2, which this copy of textQuest does not support.',
+      'This save is for adventure version 3, which this copy of textQuest does not support.',
     );
   });
 
@@ -252,6 +256,27 @@ describe('save store', () => {
     const storage = new MemoryStorage();
     return { storage, store: createSaveStore(storage, countingSource()) };
   }
+
+  it('stores both adventure versions and imports copies without changing existing saves', () => {
+    const { storage, store } = setUp();
+    for (const version of [1, 2]) for (const seed of [0, 1, 17000]) for (const length of adventureLengths) {
+      const settings = createAdventureSettings(seed, length, version);
+      const save = createSave('Versioned trip', settings, ['look', 'take unknown item', 'undo'], createdTime);
+      const id = store.add(save);
+      const file = store.exportSave(id);
+      const before = new Map(storage.items);
+      const copy = store.importSave(file);
+      expect(copy).not.toBe(id);
+      expect(store.load(copy)).toEqual(save);
+      expect(store.list()).toContainEqual(expect.objectContaining({ id: copy, status: 'ready', settings }));
+      for (const [key, text] of before) expect(storage.items.get(key)).toBe(text);
+      const restored = store.load(copy);
+      expect(parseShareWord(encodeShareWord(restored.settings))).toEqual(settings);
+      expect(replayCommands(generateAdventureWorld(restored.settings), restored.commands))
+        .toEqual(replayCommands(generateAdventureWorld(settings), save.commands));
+    }
+    expect(store.list()).toHaveLength(36);
+  });
 
   it('saves, lists, loads and deletes several adventures', () => {
     const { storage, store } = setUp();

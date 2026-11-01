@@ -55,7 +55,7 @@ describe('isAdventureLength', () => {
 
 describe('summariseAdventure', () => {
   it('gives the share word and readable genre and length', () => {
-    const settings = createAdventureSettings(0, 'short');
+    const settings = createAdventureSettings(0, 'short', 1);
 
     expect(summariseAdventure(settings)).toEqual({
       shareWord: 'ableacorn',
@@ -85,10 +85,10 @@ describe('readShareWord', () => {
   });
 
   it('uses the existing message for a newer version', () => {
-    const result = readShareWord('silverlantern2');
+    const result = readShareWord('silverlantern3');
 
-    expect(result).toEqual({ ok: false, message: messageFor('silverlantern2') });
-    expect(result.ok === false && result.message).toMatch(/version 2/);
+    expect(result).toEqual({ ok: false, message: messageFor('silverlantern3') });
+    expect(result.ok === false && result.message).toMatch(/version 3/);
   });
 
   it('asks for a word when the input is blank', () => {

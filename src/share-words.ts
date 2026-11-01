@@ -76,3 +76,9 @@ export const versionOneSecondWords: readonly string[] = [
   'kangaroo', 'llama', 'nugget', 'octopus', 'pinwheel', 'quartz', 'starfish', 'teacup',
   'toucan', 'unicorn', 'walnut', 'harmonica', 'jellyfish', 'magnet', 'saucer',
 ];
+
+/** Version 2 first words, in reverse released version 1 order. Never change this order. */
+export const versionTwoFirstWords: readonly string[] = [...versionOneFirstWords].reverse();
+
+/** Version 2 second words, in reverse released version 1 order. Never change this order. */
+export const versionTwoSecondWords: readonly string[] = [...versionOneSecondWords].reverse();

@@ -16,7 +16,7 @@ const seedCount = 600;
 
 function firstSeedFor(pack: ContentPack): number {
   let seed = 0;
-  while (createAdventureSettings(seed, 'short').genre !== pack.genre) seed += 1;
+  while (createAdventureSettings(seed, 'short', 1).genre !== pack.genre) seed += 1;
   return seed;
 }
 
@@ -24,14 +24,14 @@ describe('version 1 world generation', () => {
   it('generates a world for every version 1 genre', () => {
     expect(packs.map(({ genre }) => genre).sort()).toEqual([...adventureGenres].sort());
     for (const pack of packs) {
-      expect(generateAdventureWorld(createAdventureSettings(firstSeedFor(pack), 'short')).startPlaceId)
+      expect(generateAdventureWorld(createAdventureSettings(firstSeedFor(pack), 'short', 1)).startPlaceId)
         .toBe(pack.startPlaceId);
     }
   });
 
   for (const pack of packs) for (const length of adventureLengths) {
     it(`${pack.genre}, ${length}: recreates the same world from settings and share words without real randomness`, () => {
-      const settings = createAdventureSettings(firstSeedFor(pack), length);
+      const settings = createAdventureSettings(firstSeedFor(pack), length, 1);
       const random = vi.spyOn(Math, 'random').mockImplementation(() => {
         throw new Error('Generation must use only the seed.');
       });
@@ -50,7 +50,7 @@ describe('version 1 world generation', () => {
   it.each(packs)('$genre: selects every authored graph across seeds, without correlating plot with genre', (pack) => {
     const worlds = new Set<string>();
     for (let seed = 0; seed < seedCount; seed += 1) {
-      const settings = createAdventureSettings(seed, 'short');
+      const settings = createAdventureSettings(seed, 'short', 1);
       if (settings.genre === pack.genre) {
         worlds.add(JSON.stringify(generateAdventureWorld(settings)));
       }
@@ -62,7 +62,7 @@ describe('version 1 world generation', () => {
     it(`${pack.genre}, ${length}: preserves the exact plan, local rules and optional routes for every graph`, () => {
       const seenPlots = new Set<string>();
       for (let seed = 0; seed < seedCount; seed += 1) {
-        const settings = createAdventureSettings(seed, length);
+        const settings = createAdventureSettings(seed, length, 1);
         if (settings.genre !== pack.genre) continue;
         const world = generateAdventureWorld(settings);
         const plot = pack.plots.find((entry) => world.solution.steps.every((step) =>
@@ -118,7 +118,7 @@ describe('version 1 world generation', () => {
 
   it.each(packs)('$genre: does not mutate or share nested data with the pack or other generated worlds', (pack) => {
     const before = structuredClone(pack);
-    const settings = createAdventureSettings(firstSeedFor(pack), 'long');
+    const settings = createAdventureSettings(firstSeedFor(pack), 'long', 1);
     const first = generateAdventureWorld(settings);
     const second = generateAdventureWorld(settings);
     function checkDetached(left: unknown, right: unknown) {
@@ -143,7 +143,7 @@ describe('version 1 world generation', () => {
   });
 
   it.each([
-    [{ version: 2 }, 'Adventure version 2 is not supported.'],
+    [{ version: 3 }, 'Adventure version 3 is not supported.'],
     [{ seed: -1 }, 'seed must be a whole number'],
     [{ seed: 0.5 }, 'seed must be a whole number'],
     [{ seed: Number.NaN }, 'seed must be a whole number'],
@@ -151,7 +151,7 @@ describe('version 1 world generation', () => {
     [{ length: 'endless' }, 'Choose a short, medium or long adventure.'],
     [{ genre: 'cosy-mystery' }, 'The genre does not match this seed and version.'],
   ])('rejects invalid settings %j', (changes, message) => {
-    const settings = { ...createAdventureSettings(0, 'short'), ...changes } as AdventureSettings;
+    const settings = { ...createAdventureSettings(0, 'short', 1), ...changes } as AdventureSettings;
     expect(() => generateAdventureWorld(settings)).toThrow(message);
   });
 
@@ -168,7 +168,7 @@ describe('version 1 world generation', () => {
   ] satisfies [number, AdventureLength, AdventureGenre, string][])(
     'pins the complete version 1 world for seed %i, %s, %s',
     async (seed, length, genre, expected) => {
-      const settings = createAdventureSettings(seed, length);
+      const settings = createAdventureSettings(seed, length, 1);
       expect(settings.genre).toBe(genre);
       const world: AdventureWorld = generateAdventureWorld(settings);
       const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(world)));

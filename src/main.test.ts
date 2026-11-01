@@ -91,16 +91,17 @@ it.each<adventureSettings.AdventureGenre>(['light-fantasy', 'cosy-mystery', 'sci
   },
 );
 
-it.each<adventureSettings.AdventureGenre>(['light-fantasy', 'cosy-mystery', 'science-fiction'])(
-  'opens a shared %s adventure directly in play, accepting capitals and hyphens', (genre) => {
+it.each([1, 2])('opens all version %i shared genres directly in play, accepting capitals and hyphens', (version) => {
+  for (const genre of adventureSettings.adventureGenres) {
     const sharedSettings = Array.from({ length: 100 }, (_, seed) =>
-      adventureSettings.createAdventureSettings(seed, 'short'))
+      adventureSettings.createAdventureSettings(seed, 'short', version))
       .find((value) => value.genre === genre)!;
     openAdventure(` ${adventureSettings.encodeShareWord(sharedSettings).toUpperCase()}- `);
 
     expectPlay(sharedSettings);
-  },
-);
+    get<HTMLButtonElement>('header button').click();
+  }
+});
 
 it('keeps invalid share words on the start screen without creating markup', () => {
   openAdventure('<img src=x onerror=alert(1)>');
