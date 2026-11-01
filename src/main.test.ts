@@ -221,7 +221,7 @@ it.each([1, 2])('saves and resumes version %i from a share link without sharing 
   get<HTMLButtonElement>('header button').click();
   get<HTMLButtonElement>('#open-saves').click();
   expect(app.querySelectorAll('.save-item')).toHaveLength(1);
-  expect(request).toHaveBeenCalledTimes(2);
+  expect(request).toHaveBeenCalledTimes(4);
   const key = localStorage.key(0)!;
   const saved = localStorage.getItem(key);
 
@@ -371,6 +371,7 @@ it('retains the conflict and play session until both queued saves have finished'
   const id = store.add(saved);
   get<HTMLButtonElement>('#open-saves').click();
   get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+  waiting.shift()!();
   const form = get<HTMLFormElement>('.save-form');
   form.requestSubmit();
   form.requestSubmit();
@@ -533,6 +534,7 @@ it('reports an older conflict after name correction and skips the pre-warning qu
   const id = store.add(saved);
   get<HTMLButtonElement>('#open-saves').click();
   get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+  waiting.shift()!();
   const form = get<HTMLFormElement>('.save-form');
   form.requestSubmit();
   const name = get<HTMLInputElement>('#save-name');
@@ -640,9 +642,28 @@ it('keeps playing when the browser cannot record Last played', () => {
   const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
   const id = store.add(saved);
   get<HTMLButtonElement>('#open-saves').click();
-  vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+  const write = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
     throw new DOMException('full', 'QuotaExceededError');
   });
+  try {
+    get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+    get<HTMLInputElement>('#play-command').value = 'look';
+    get<HTMLFormElement>('.play-command').requestSubmit();
+
+    expect(get('h1').textContent).toBe(playScreenTitle);
+    expect([...app.querySelectorAll('.play-typed')].map((node) => node.textContent)).toEqual(['> look']);
+    expect(localStorage.getItem(PLAYED_KEY_PREFIX + id)).toBeNull();
+    expect(store.load(id)).toEqual(saved);
+  } finally {
+    write.mockRestore();
+  }
+});
+
+it('keeps playing without Web Locks and leaves Last played at the saved time', () => {
+  const store = createSaveStore(localStorage);
+  const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
+  const id = store.add(saved);
+  get<HTMLButtonElement>('#open-saves').click();
   get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
   get<HTMLInputElement>('#play-command').value = 'look';
   get<HTMLFormElement>('.play-command').requestSubmit();
@@ -651,6 +672,7 @@ it('keeps playing when the browser cannot record Last played', () => {
   expect([...app.querySelectorAll('.play-typed')].map((node) => node.textContent)).toEqual(['> look']);
   expect(localStorage.getItem(PLAYED_KEY_PREFIX + id)).toBeNull();
   expect(store.load(id)).toEqual(saved);
+  expect(store.list()[0]).toMatchObject({ lastPlayedAt: saved.updatedAt });
 });
 
 it.each([1, 2])('opens version %i links in fresh play for all genres and lengths', async (version) => {

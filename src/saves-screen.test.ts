@@ -98,13 +98,13 @@ describe('recordPlayed', () => {
     const id = addSave();
     const release = holdLock();
     const markPlayed = vi.spyOn(store, 'markPlayed');
+    recordPlayed(store, id, { now: secondPlay, locks: lock.locks });
     recordPlayed(store, id, { now: firstPlay, locks: lock.locks });
     await Promise.resolve();
     expect(markPlayed).not.toHaveBeenCalled();
-    createSaveStore(storage).markPlayed(id, secondPlay);
     release();
     await lock.settled();
-    expect(markPlayed).toHaveBeenCalledOnce();
+    expect(markPlayed).toHaveBeenCalledTimes(2);
     expect(playedTime(id)).toBe(secondPlay.toISOString());
   });
 
@@ -112,11 +112,23 @@ describe('recordPlayed', () => {
     const id = addSave();
     const [listed] = store.list();
     const release = holdLock();
+    void lock.locks.request(SAVE_LOCK_NAME, () => createSaveStore(storage).remove(id, listed.snapshot));
     recordPlayed(store, id, { now: firstPlay, locks: lock.locks });
-    createSaveStore(storage).remove(id, listed.snapshot);
     release();
     await lock.settled();
     expect(storage.items.size).toBe(0);
+  });
+
+  it('keeps progress changed in another tab while the play time waits for the lock', async () => {
+    const id = addSave();
+    const updated = createSave('Changed elsewhere', settings, ['look'], later);
+    const release = holdLock();
+    void lock.locks.request(SAVE_LOCK_NAME, () => store.put(id, updated));
+    recordPlayed(store, id, { now: firstPlay, locks: lock.locks });
+    release();
+    await lock.settled();
+    expect(store.load(id)).toEqual(updated);
+    expect(playedTime(id)).toBe(firstPlay.toISOString());
   });
 
   it('records nothing without Web Locks, so Last played shows the last saved time', () => {
