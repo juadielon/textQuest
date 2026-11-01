@@ -403,6 +403,166 @@ const withGoal = (world: AdventureWorld, goal: AdventureWorld['solution']['goal'
   ({ ...world, solution: { ...world.solution, goal } });
 
 describe('world version 2 choices and endings', () => {
+  function goalWorld(): AdventureWorld {
+    return {
+      version: 2, startPlaceId: 'start',
+      places: [{ id: 'start' }, { id: 'goal' }, { id: 'beyond' }],
+      exits: [
+        ...twoWay('start', 'goal'), ...twoWay('goal', 'beyond'),
+      ],
+      items: [], clues: [],
+      solution: {
+        steps: [{
+          id: 'leave', placeId: 'beyond', conditions: {},
+          effects: [{ kind: 'end-adventure', endingId: 'escape' }],
+        }],
+        goal: { placeId: 'start', conditions: {} },
+        endings: [{ id: 'escape', outcome: 'win' }],
+      },
+    };
+  }
+
+  it('does not follow a one-way exit after winning at the start', () => {
+    const world = goalWorld();
+    expect(checkWinnability({
+      ...world, exits: [{ id: 'out', fromPlaceId: 'start', toPlaceId: 'beyond', locked: false }],
+      solution: { ...world.solution, steps: [] },
+    })).toEqual({
+      winnable: true, unreachableStepIds: [], reachableEndingIds: [], canGetStuck: false,
+    });
+  });
+
+  it('does not visit returnable places or take an ending after winning at the start', () => {
+    expect(checkWinnability(goalWorld())).toEqual({
+      winnable: true, unreachableStepIds: ['leave'], reachableEndingIds: [], canGetStuck: false,
+    });
+  });
+
+  it('stops at a goal midway along a returnable route', () => {
+    expect(checkWinnability(withGoal(goalWorld(), { placeId: 'goal', conditions: {} }))).toEqual({
+      winnable: true, unreachableStepIds: ['leave'], reachableEndingIds: [], canGetStuck: false,
+    });
+  });
+
+  it('still explores routes that avoid the goal', () => {
+    const world = withGoal(goalWorld(), { placeId: 'goal', conditions: {} });
+    expect(checkWinnability({
+      ...world, exits: [...world.exits, ...twoWay('start', 'beyond')],
+    })).toEqual({
+      winnable: true, unreachableStepIds: [], reachableEndingIds: ['escape'], canGetStuck: false,
+    });
+  });
+
+  it.each<Conditions>([
+    { itemsHeld: ['token'] }, { cluesRevealed: ['note'] },
+    { stepsDone: ['prepare'] }, { placesVisited: ['goal'] },
+  ])('can leave an unmet goal and return when its conditions hold: %j', (conditions) => {
+    const world = withGoal(goalWorld(), { placeId: 'start', conditions });
+    expect(checkWinnability({
+      ...world,
+      items: [{ id: 'token', placeId: 'goal' }],
+      clues: [{ id: 'note', placeId: 'goal' }],
+      solution: {
+        ...world.solution,
+        steps: [...world.solution.steps, {
+          id: 'prepare', placeId: 'goal', conditions: {}, effects: [],
+        }],
+      },
+    })).toEqual({
+      winnable: true, unreachableStepIds: [], reachableEndingIds: ['escape'], canGetStuck: false,
+    });
+  });
+
+  it('stops when a decision at the goal meets its conditions', () => {
+    const world = withGoal(goalWorld(), { placeId: 'start', conditions: { stepsDone: ['finish'] } });
+    expect(checkWinnability({
+      ...world,
+      solution: {
+        ...world.solution,
+        steps: [...world.solution.steps,
+          { id: 'finish', placeId: 'start', choiceId: 'plan', conditions: {}, effects: [] },
+          { id: 'wait', placeId: 'start', choiceId: 'plan', conditions: {}, effects: [] },
+          {
+            id: 'too-late', placeId: 'start', conditions: { stepsDone: ['finish'] },
+            effects: [{ kind: 'end-adventure', endingId: 'escape' }],
+          },
+        ],
+      },
+    })).toEqual({
+      winnable: true, unreachableStepIds: ['too-late'],
+      reachableEndingIds: ['escape'], canGetStuck: false,
+    });
+  });
+
+  it('preserves version 1 exploration beyond a reached goal and its result shape', () => {
+    const world = goalWorld();
+    expect(checkWinnability({
+      ...world, version: 1,
+      solution: {
+        goal: world.solution.goal,
+        steps: [{ id: 'after-goal', placeId: 'beyond', conditions: {}, effects: [] }],
+      },
+    })).toEqual({ winnable: true, unreachableStepIds: [] });
+  });
+
+  it.each(['take', 'use'] as const)('preserves an early ending before %s wins at the goal', (action) => {
+    const world: AdventureWorld = {
+      version: 2, startPlaceId: 'room', places: [{ id: 'room' }], exits: [],
+      items: [{ id: 'key', placeId: 'room' }], clues: [],
+      solution: {
+        goal: {
+          placeId: 'room',
+          conditions: action === 'take' ? { itemsHeld: ['key'] } : { stepsDone: ['finish'] },
+        },
+        steps: [
+          {
+            id: 'leave-early', placeId: 'room', conditions: {},
+            effects: [{ kind: 'end-adventure', endingId: 'early' }],
+          },
+          {
+            id: 'leave-late', placeId: 'room',
+            conditions: action === 'take' ? { itemsHeld: ['key'] } : { stepsDone: ['finish'] },
+            effects: [{ kind: 'end-adventure', endingId: 'late' }],
+          },
+          {
+            id: 'leave-holding-key', placeId: 'room', conditions: { itemsHeld: ['key'] },
+            effects: [{ kind: 'end-adventure', endingId: 'holding-key' }],
+          },
+          {
+            id: 'finish', placeId: 'room', conditions: { itemsHeld: ['key'] }, effects: [],
+          },
+        ],
+        endings: [
+          { id: 'early', outcome: 'failure' }, { id: 'late', outcome: 'failure' },
+          { id: 'holding-key', outcome: 'failure' },
+        ],
+      },
+    };
+    expect(checkWinnability(world)).toEqual({
+      winnable: true,
+      unreachableStepIds: action === 'take'
+        ? ['leave-late', 'leave-holding-key', 'finish'] : ['leave-late'],
+      reachableEndingIds: action === 'take' ? ['early'] : ['early', 'holding-key'],
+      canGetStuck: false,
+    });
+  });
+
+  it('settles automatic steps and clues at the current place before checking the goal', () => {
+    const world = withGoal(goalWorld(), { placeId: 'start', conditions: { stepsDone: ['finish'] } });
+    expect(checkWinnability({
+      ...world,
+      clues: [{ id: 'note', placeId: 'start' }],
+      solution: {
+        ...world.solution,
+        steps: [...world.solution.steps, {
+          id: 'finish', placeId: 'start', conditions: { cluesRevealed: ['note'] }, effects: [],
+        }],
+      },
+    })).toEqual({
+      winnable: true, unreachableStepIds: ['leave'], reachableEndingIds: [], canGetStuck: false,
+    });
+  });
+
   it('searches every choice and reports each reachable ending without changing the world', () => {
     const world = choiceWorld();
     const before = JSON.stringify(world);

@@ -256,6 +256,23 @@ function settleArea(world: AdventureWorld, state: SearchState, links: Links): st
   return area;
 }
 
+// Only arrival and automatic steps are forced; taking and using items can end play.
+function settleHere(world: AdventureWorld, state: SearchState): string[] {
+  state.placesVisited.add(state.placeId);
+  for (const clue of world.clues) {
+    if (clue.placeId === state.placeId) state.cluesRevealed.add(clue.id);
+  }
+  for (let step = world.solution.steps.find((entry) => entry.placeId === state.placeId
+    && !isDecision(entry) && !(entry.conditions.itemsHeld ?? []).length
+    && canTakeStep(world, state, entry)); step;
+    step = world.solution.steps.find((entry) => entry.placeId === state.placeId
+      && !isDecision(entry) && !(entry.conditions.itemsHeld ?? []).length
+      && canTakeStep(world, state, entry))) {
+    completeStep(state, step);
+  }
+  return [state.placeId];
+}
+
 function copyState(state: SearchState, placeId: string): SearchState {
   return {
     placeId,
@@ -283,9 +300,10 @@ function stateKey(areaId: string, state: SearchState): string {
  * `TooLargeToCheck` result. The same world always gives the same result.
  *
  * @remarks
- * For world version 2, the search tries each choice and early ending
- * separately, and also reports reachable endings and whether a player can get
- * stuck. Version 1 results keep their original shape.
+ * For world version 2, the search tries moves, item takes, uses and decisions
+ * separately, stopping each route at its goal or early ending. It also reports
+ * reachable endings and whether a player can get stuck. Version 1 keeps its
+ * original area search and result shape.
  *
  * @throws RangeError when the world has invalid references, empty or repeated
  * IDs, an unsupported version or an unknown effect.
@@ -308,7 +326,8 @@ export function checkWinnability(world: AdventureWorld): WinnabilityResult {
   const reachedEndings = new Set<string>();
   const winningOutcome = new Set((world.solution.endings ?? [])
     .filter(({ outcome }) => outcome === 'win').map(({ id }) => id));
-  const decisions = world.solution.steps.filter(isDecision);
+  const decisions = world.solution.steps.filter((step) =>
+    isDecision(step) || (world.version === 2 && (step.conditions.itemsHeld ?? []).length > 0));
   // Links each searched state to the states it leads to, to find any that can't win.
   const parents: (string | null)[] = [null];
   const ledFrom = new Map<string, string[]>();
@@ -325,7 +344,7 @@ export function checkWinnability(world: AdventureWorld): WinnabilityResult {
 
   for (let index = 0; index < queue.length; index++) {
     const state = queue[index];
-    const area = settleArea(world, state, links);
+    const area = world.version === 1 ? settleArea(world, state, links) : settleHere(world, state);
     const key = stateKey(area[0], state);
     const parentKey = parents[index];
     if (parentKey !== null && world.version === 2) {
@@ -338,7 +357,20 @@ export function checkWinnability(world: AdventureWorld): WinnabilityResult {
     for (const id of state.stepsDone) reachableSteps.add(id);
     const goal = world.solution.goal;
     let wins = area.includes(goal.placeId) && meetsConditions(state, goal.conditions);
+    if (wins && world.version === 2) {
+      winnable = true;
+      winningKeys.push(key);
+      continue;
+    }
     const inArea = new Set(area);
+    if (world.version === 2) {
+      for (const item of world.items) {
+        if (item.placeId !== state.placeId || state.itemsHeld.has(item.id)) continue;
+        const taken = copyState(state, state.placeId);
+        taken.itemsHeld.add(item.id);
+        if (!enqueue(taken, key)) return { winnable: false, tooLarge: true };
+      }
+    }
     for (const step of decisions) {
       if (!inArea.has(step.placeId) || !canTakeStep(world, state, step)) continue;
       const chosen = copyState(state, step.placeId);

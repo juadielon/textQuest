@@ -220,7 +220,12 @@ mutually exclusive: once one is done, the others can never be done. A step
 can also end the adventure early with an `end-adventure` effect naming one of
 the world's `endings`, each a `win` or a `failure`. Version 1 worlds reject
 these fields, so released worlds, share words, saves and replays are
-unchanged. The checker tries each choice and ending separately. For version 2
+unchanged. For version 2 the checker visits one place at a time and tries
+moves, item takes, uses, choices and endings separately. Only clues and
+steps needing no items or decision happen automatically at the current place.
+After those automatic changes, reaching the goal stops the route before any
+further action. This keeps endings available before taking or using an item
+that would win, without counting actions taken after a win. For version 2
 it also returns `reachableEndingIds` and `canGetStuck`, which is true when a
 route reaches a point where the player can no longer win. The point just
 before a failure must still be able to win, so recovery from it works. No
