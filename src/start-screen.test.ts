@@ -80,9 +80,9 @@ describe('renderStartScreen', () => {
   it('shows the existing message for an invalid word and marks the field', () => {
     const input = get<HTMLInputElement>('#share-word');
 
-    openShareWord('silverlantern2');
+    openShareWord('silverlantern3');
 
-    expect(get('#share-word-error').textContent).toMatch(/version 2/);
+    expect(get('#share-word-error').textContent).toMatch(/version 3/);
     expect(input.getAttribute('aria-invalid')).toBe('true');
     expect(input.getAttribute('aria-describedby')).toContain('share-word-error');
     expect(document.activeElement).toBe(input);

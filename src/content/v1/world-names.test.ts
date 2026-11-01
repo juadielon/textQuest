@@ -50,7 +50,7 @@ describe('worldNamesFrom', () => {
   });
 
   it('names every place, item and clue in generated worlds', () => {
-    const settings = createAdventureSettings(0, 'long');
+    const settings = createAdventureSettings(0, 'long', 1);
     const world = generateAdventureWorld(settings);
     const names = worldNamesFrom(versionOnePack(settings.genre), world);
     expect(names.places.map(({ id }) => id)).toEqual(world.places.map(({ id }) => id));
