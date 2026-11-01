@@ -149,7 +149,8 @@ forms without changing state. A pure play module runs those actions against a
 world with turn counting, hints and undo, following the winnability checker's
 rules. It can show and accept content-pack names and aliases, and lets the
 player talk to people at their place. Suggestions and checkpoints are not
-implemented.
+implemented; checkpoint recovery is tracked in
+[issue #82](https://github.com/juadielon/textQuest/issues/82).
 
 ### 6. Saves
 
