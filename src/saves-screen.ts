@@ -19,10 +19,10 @@ export const noSavesMessage = 'You have no saves yet. Save during an adventure t
 const controlCharacterPattern = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
 
 /**
- * Turns a save's ISO time into a short, readable local date and time,
+ * Turns a save's last-saved ISO time into a short, readable local date and time,
  * such as "12 Oct 2026, 3:40 pm".
  */
-export function formatLastPlayed(isoTime: string): string {
+export function formatLastSaved(isoTime: string): string {
   return new Intl.DateTimeFormat('en-AU', { dateStyle: 'medium', timeStyle: 'short' })
     .format(new Date(isoTime));
 }
@@ -93,6 +93,8 @@ export interface SaveFormOptions {
  * Results and problems go to a polite status message as plain text.
  * A failed save leaves any stored version as it was.
  * Pending changes let the caller keep this form visible until all requests finish.
+ * Success is announced only when no other save is waiting; errors remain visible.
+ * Older requests cannot replace a later name-validation error.
  */
 export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
   const now = options.now ?? (() => new Date());
@@ -100,6 +102,7 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
   let current = options.resumed;
   let conflictCount = 0;
   let pending = 0;
+  let validationCount = 0;
 
   const input = create('input', {
     type: 'text', id: 'save-name', maxLength: MAX_SAVE_NAME_LENGTH, autocomplete: 'off',
@@ -116,6 +119,7 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
     event.preventDefault();
     const name = input.value.trim();
     if (!name || name.length > MAX_SAVE_NAME_LENGTH || controlCharacterPattern.test(name)) {
+      validationCount += 1;
       status.textContent = saveNameMessage;
       input.setAttribute('aria-invalid', 'true');
       input.focus();
@@ -126,9 +130,10 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
     const commands = [...options.commands()];
     const time = now();
     const conflictsAtSubmit = conflictCount;
+    const validationAtSubmit = validationCount;
     pending += 1;
     options.onPendingChange?.(true);
-    status.textContent = 'Saving adventure. Stay here until saving finishes.';
+    status.textContent = 'Saving the commands from when Save was pressed. Stay here until saving finishes.';
     let finished = false;
     const finish = (): void => {
       if (finished) return;
@@ -147,11 +152,13 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
           const save = { ...fresh, createdAt, updatedAt: fresh.updatedAt < updatedAt ? updatedAt : fresh.updatedAt };
           options.store.replace(current.id, current.save, save);
           current = { id: current.id, save };
-          status.textContent = `Saved “${name}”.`;
+          if (pending === 1 && validationAtSubmit === validationCount) status.textContent = `Saved “${name}”.`;
         } else {
           const copied = current !== undefined;
           current = { id: options.store.add(fresh), save: fresh };
-          status.textContent = copied ? `Saved “${name}” as a new save. ${noLocksMessage}` : `Saved “${name}”.`;
+          if (pending === 1 && validationAtSubmit === validationCount) {
+            status.textContent = copied ? `Saved “${name}” as a new save. ${noLocksMessage}` : `Saved “${name}”.`;
+          }
         }
       } catch (error) {
         const conflict = conflictMessage(error);
@@ -159,12 +166,14 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
           current = undefined;
           conflictCount += 1;
         }
-        status.textContent = conflict ?? messageFor(error);
+        if (validationAtSubmit === validationCount) status.textContent = conflict ?? messageFor(error);
       } finally {
         finish();
       }
     }, () => {
-      if (conflictsAtSubmit === conflictCount) status.textContent = lockFailureMessage;
+      if (conflictsAtSubmit === conflictCount && validationAtSubmit === validationCount) {
+        status.textContent = lockFailureMessage;
+      }
       finish();
     });
   });
@@ -196,12 +205,14 @@ export interface SavesScreenOptions {
 
 /**
  * Replaces the contents of `target` with the list of saves. Each save shows
- * its name, genre, length and last played time, with Resume and Delete.
+ * its name, genre, length and last saved time, with Resume and Delete.
  *
  * @remarks
  * Delete confirms the exact listed save under a shared lock; changed saves
  * stay stored and need fresh confirmation. Without a lock, deletion is refused.
  * Keep cancels deletion even while it is waiting for the lock.
+ * Refresh preserves live confirmations and focus. Pending deletes keep Back and Resume
+ * unavailable, so failures remain visible until completion or cancellation.
  * Saves that can't be read are listed
  * with the reason and kept; only the player can delete them. All text goes in
  * through `textContent`. Focus moves to the heading.
@@ -215,18 +226,43 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
   list.setAttribute('aria-label', 'Saved adventures');
   const back = create('button', { type: 'button' }, 'Back to start');
   back.addEventListener('click', options.onBack);
+  const confirmations = new Map<string, HTMLLIElement>();
+  let pendingDeletes = 0;
+  let deletionOutcomes: string[] = [];
+  const reportDeletion = (message: string): void => {
+    deletionOutcomes.push(message);
+    status.textContent = deletionOutcomes.join(' ');
+  };
+  const updateNavigation = (): void => {
+    back.disabled = pendingDeletes > 0;
+    for (const resume of list.querySelectorAll<HTMLButtonElement>('button[aria-label^="Resume:"]')) {
+      resume.disabled = pendingDeletes > 0;
+    }
+  };
 
   const refresh = (): void => {
     let entries: SaveListEntry[];
     try {
       entries = options.store.list();
     } catch (error) {
-      list.replaceChildren();
-      status.textContent = messageFor(error);
+      if (!confirmations.size) list.replaceChildren();
+      reportDeletion(messageFor(error));
       return;
     }
-    list.replaceChildren(...entries.map((entry) => saveItem(entry)));
-    if (!entries.length) list.append(create('li', {}, noSavesMessage));
+    const items = entries.map((entry) => confirmations.get(entry.id) ?? saveItem(entry));
+    for (const [id, item] of confirmations) {
+      if (!entries.some((entry) => entry.id === id)) items.push(item);
+    }
+    if (!items.length) items.push(create('li', {}, noSavesMessage));
+    const focused = document.activeElement;
+    for (const old of [...list.children]) {
+      if (!items.some((item) => item === old)) old.remove();
+    }
+    items.forEach((item, index) => {
+      if (list.children[index] !== item) list.insertBefore(item, list.children[index] ?? null);
+    });
+    if (focused instanceof HTMLElement && focused.isConnected && document.activeElement !== focused) focused.focus();
+    updateNavigation();
   };
 
   const saveItem = (entry: SaveListEntry): HTMLLIElement => {
@@ -240,7 +276,7 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
       item.append(details([
         ['Genre', genreLabels[entry.settings.genre]],
         ['Length', lengthLabels[entry.settings.length]],
-        ['Last played', formatLastPlayed(entry.updatedAt)],
+        ['Last saved', formatLastSaved(entry.updatedAt)],
       ]));
       actions.append(button('Resume', name, () => {
         let save: AdventureSave;
@@ -260,9 +296,21 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
 
     const remove = button('Delete', name, () => {
       let cancelled = false;
-      const keep = button('Keep', name, () => {
+      let pending = false;
+      const cancel = (): void => {
         cancelled = true;
+        confirmations.delete(entry.id);
+        if (pending) {
+          pending = false;
+          pendingDeletes -= 1;
+          updateNavigation();
+        }
+      };
+      confirmations.set(entry.id, item);
+      const keep = button('Keep', name, () => {
+        cancel();
         confirmation.replaceWith(actions);
+        updateNavigation();
         remove.focus();
       });
       // Delete waits for any save in progress in another tab, so that save can't bring it back.
@@ -272,21 +320,28 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
           status.focus();
           return;
         }
+        if (pending || cancelled) return;
+        if (pendingDeletes === 0) deletionOutcomes = [];
+        pending = true;
+        pendingDeletes += 1;
+        updateNavigation();
         withSaveLock(locks, () => {
           if (cancelled) return;
-          cancelled = true;
+          cancel();
           try {
             options.store.remove(entry.id, entry.snapshot);
-            status.textContent = `Deleted “${name}”.`;
+            reportDeletion(`Deleted “${name}”.`);
           } catch (error) {
-            status.textContent = messageFor(error);
+            reportDeletion(messageFor(error));
           }
           refresh();
-          status.focus();
+          if (!list.contains(document.activeElement)) status.focus();
         }, () => {
           if (cancelled) return;
-          status.textContent = lockFailureMessage;
-          status.focus();
+          cancel();
+          reportDeletion(lockFailureMessage);
+          refresh();
+          if (!list.contains(document.activeElement)) status.focus();
         });
       });
       const question = create('p', { id: `delete-question-${entry.id}` }, `Delete “${name}”? This can’t be undone.`);

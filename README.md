@@ -347,16 +347,42 @@ file as a new save. A full or blocked storage is reported clearly.
 [Issue #43](https://github.com/juadielon/textQuest/issues/43) adds saving to
 the browser. During play, a **Save adventure** form stores the adventure in
 `localStorage` under a name the player chooses. Saving again, or saving a
-resumed adventure, updates that save. While saves are waiting or being written,
-**Back to start** is unavailable. Play stays open after success or failure;
+resumed adventure, updates that save. Each submission keeps the commands
+present when Save was pressed, not commands typed later while waiting for
+storage. While saves are waiting or being written, **Back to start** is
+unavailable. Play stays open after success or failure;
 errors remain visible so the player can retry, and returning to start always
 requires another choice after saving finishes. Closing or reloading the tab
-can still interrupt saving and lose unsaved progress; wait for the Saved message
-before leaving the page.
+can still interrupt saving and lose unsaved progress. A Saved message is shown
+only after the last queued save succeeds. Before leaving, wait for that message
+and for Back to start to become available; any commands typed after the last
+save submission still need another save.
+
+Play rejects commands before execution or recording if they would exceed
+10,000 saved commands or the 1,000,000-character JSON file limit, including
+escaped characters and room for any allowed save name. The same guard applies
+to undo: it adds a command rather than shortening the saved history. Existing
+valid saves still replay unchanged, and rejected commands leave that progress
+saveable. A file-limit warning may allow a shorter command; at the command-count
+limit no further commands can be recorded.
+The file guard reserves room for the largest valid name: 60 unpaired UTF-16
+surrogate code units, each escaped as six JSON characters. A one-character
+plain name can therefore reach the guard up to 359 characters before its actual
+file reaches the limit. This conservative allowance lets players rename later
+without making their progress too large to save. Existing near-limit saves
+with shorter names still replay and can be saved unchanged.
 
 **Your saves** on the start screen
-lists every save with its name, genre, length and last played time, newest
-first.
+lists every save with its name, genre, length and last saved time, newest
+first. While a deletion waits for storage, Back and Resume are unavailable,
+but Keep still cancels it. When another deletion refreshes the list, other
+live confirmations retain their original Keep controls and focus. Their
+confirmed snapshots are still checked when the lock arrives.
+Overlapping deletion results are kept together, so a later success cannot
+hide an earlier conflict or lock failure.
+Last saved changes only when Save is pressed successfully, not on Resume
+or unsaved play. Tracking when a save was last played remains unfinished
+under issue #43 and needs a separate safe follow-up.
 
 An update only goes ahead if the stored save is still exactly the version
 that tab last loaded or wrote. Updates and deletes take turns through a Web

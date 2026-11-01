@@ -313,16 +313,48 @@ it('keeps Back blocked until every queued successful save finishes without navig
   expect(form.isConnected).toBe(true);
   waiting.shift()!();
   expect(back.disabled).toBe(true);
+  expect(get('#save-status').textContent).toContain('Saving');
+  expect(get('#save-status').textContent).not.toContain('Saved');
   back.click();
   expect(form.isConnected).toBe(true);
   waiting.shift()!();
   await vi.waitFor(() => expect(back.disabled).toBe(false));
   expect(form.isConnected).toBe(true);
+  expect(get('#save-status').textContent).toContain('Saved');
   const saves = createSaveStore(localStorage).list();
   expect(saves).toHaveLength(1);
   expect(createSaveStore(localStorage).load(saves[0].id).commands).toEqual(['look']);
   back.click();
   expect(get('h1').textContent).toBe('textQuest');
+});
+
+it('keeps a queued lock failure visible through an intermediate successful save', async () => {
+  const waiting: { run: () => void; reject: (error: Error) => void }[] = [];
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: (_name: string, task: () => void) => new Promise<void>((resolve, reject) => {
+      waiting.push({ run: () => { task(); resolve(); }, reject });
+    }) },
+  });
+  openAdventure(adventureSettings.encodeShareWord(settings));
+  const form = get<HTMLFormElement>('.save-form');
+  form.requestSubmit();
+  form.requestSubmit();
+  get<HTMLInputElement>('#play-command').value = 'look';
+  get<HTMLFormElement>('.play-command').requestSubmit();
+  form.requestSubmit();
+  const back = get<HTMLButtonElement>('header button');
+  waiting.shift()!.reject(new DOMException('Lock unavailable', 'SecurityError'));
+  await vi.waitFor(() => expect(get('#save-status').textContent).toContain('could not lock'));
+  const warning = get('#save-status').textContent;
+  waiting.shift()!.run();
+  expect(back.disabled).toBe(true);
+  expect(get('#save-status').textContent).toBe(warning);
+  waiting.shift()!.run();
+  expect(back.disabled).toBe(false);
+  expect(get('#save-status').textContent).toContain('Saved');
+  const store = createSaveStore(localStorage);
+  expect(store.load(store.list()[0].id).commands).toEqual(['look']);
 });
 
 it('retains the conflict and play session until both queued saves have finished', () => {
@@ -333,6 +365,7 @@ it('retains the conflict and play session until both queued saves have finished'
       waiting.push(() => { task(); resolve(); });
     }) },
   });
+
   const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
   const store = createSaveStore(localStorage);
   const id = store.add(saved);
@@ -356,6 +389,99 @@ it('retains the conflict and play session until both queued saves have finished'
   expect(store.load(id).name).toBe('Other tab');
 });
 
+it('keeps a newer invalid-name error when an earlier snapshot finishes saving', () => {
+  let run!: () => void;
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: (_name: string, task: () => void) => new Promise<void>((resolve) => {
+      run = () => { task(); resolve(); };
+    }) },
+  });
+  openAdventure(adventureSettings.encodeShareWord(settings));
+  const form = get<HTMLFormElement>('.save-form');
+  form.requestSubmit();
+  get<HTMLInputElement>('#play-command').value = 'look';
+  get<HTMLFormElement>('.play-command').requestSubmit();
+  const name = get<HTMLInputElement>('#save-name');
+  name.value = '';
+  form.requestSubmit();
+  const warning = get('#save-status').textContent;
+  expect(warning).toContain('Give your save a name');
+  run();
+  expect(get('#save-status').textContent).toBe(warning);
+  expect(name.getAttribute('aria-invalid')).toBe('true');
+  expect(document.activeElement).toBe(name);
+  expect(get<HTMLButtonElement>('header button').disabled).toBe(false);
+  const store = createSaveStore(localStorage);
+  expect(store.load(store.list()[0].id).commands).toEqual([]);
+  name.value = 'Latest trip';
+  form.requestSubmit();
+  run();
+  expect(name.hasAttribute('aria-invalid')).toBe(false);
+  expect(get('#save-status').textContent).toBe('Saved “Latest trip”.');
+  expect(store.list()).toHaveLength(1);
+  expect(store.load(store.list()[0].id).commands).toEqual(['look']);
+});
+
+it.each(['success', 'conflict', 'rejection'])('keeps a pending delete %s on the saves screen when Back or Resume is chosen', async (result) => {
+  let run!: () => void;
+  let reject!: (error: Error) => void;
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: (_name: string, task: () => void) => new Promise<void>((resolve, fail) => {
+      run = () => { task(); resolve(); };
+      reject = fail;
+    }) },
+  });
+  const store = createSaveStore(localStorage);
+  const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
+  const id = store.add(saved);
+  store.add({ ...saved, name: 'Other trip' });
+  get<HTMLButtonElement>('#open-saves').click();
+  get<HTMLButtonElement>('button[aria-label="Delete: My trip"]').click();
+  get<HTMLButtonElement>('button[aria-label="Yes, delete: My trip"]').click();
+  const back = get<HTMLButtonElement>('.saves-list + button');
+  const resume = get<HTMLButtonElement>('button[aria-label="Resume: Other trip"]');
+  expect(back.disabled).toBe(true);
+  expect(resume.disabled).toBe(true);
+  back.click();
+  resume.click();
+  expect(get('h1').textContent).toBe('Your saves');
+  if (result === 'conflict') store.put(id, { ...saved, name: 'Other tab' });
+  if (result === 'rejection') reject(new DOMException('blocked', 'SecurityError'));
+  else run();
+  await vi.waitFor(() => expect(back.disabled).toBe(false));
+  expect(get('h1').textContent).toBe('Your saves');
+  expect(document.activeElement).toBe(get('.saves-status'));
+  expect(get('.saves-status').textContent).toContain(
+    result === 'success' ? 'Deleted' : result === 'conflict' ? 'not deleted' : 'could not lock',
+  );
+  expect(store.list()).toHaveLength(result === 'success' ? 1 : 2);
+  back.click();
+  expect(get('h1').textContent).toBe('textQuest');
+});
+
+it('allows Back after Keep and ignores a cancelled deletion rejection on the next screen', async () => {
+  let reject!: (error: Error) => void;
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: () => new Promise<void>((_resolve, fail) => { reject = fail; }) },
+  });
+  const store = createSaveStore(localStorage);
+  const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
+  const id = store.add(saved);
+  get<HTMLButtonElement>('#open-saves').click();
+  get<HTMLButtonElement>('button[aria-label="Delete: My trip"]').click();
+  get<HTMLButtonElement>('button[aria-label="Yes, delete: My trip"]').click();
+  get<HTMLButtonElement>('button[aria-label="Keep: My trip"]').click();
+  get<HTMLButtonElement>('.saves-list + button').click();
+  reject(new DOMException('blocked', 'SecurityError'));
+  await Promise.resolve();
+  expect(get('h1').textContent).toBe('textQuest');
+  expect(document.activeElement).toBe(get('h1'));
+  expect(store.load(id)).toEqual(saved);
+});
+
 async function openLink(word: string, path = '/textQuest/'): Promise<void> {
   const url = new URL(path, window.location.href);
   url.searchParams.set('adventure', word);
@@ -363,6 +489,22 @@ async function openLink(word: string, path = '/textQuest/'): Promise<void> {
   vi.resetModules();
   await import('./main');
 }
+
+it('labels the stored timestamp Last saved without writing metadata on Resume or unsaved play', () => {
+  const store = createSaveStore(localStorage);
+  const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
+  const id = store.add(saved);
+  get<HTMLButtonElement>('#open-saves').click();
+  expect(get('.save-item dl').textContent).toContain('Last saved');
+  expect(get('.save-item dl').textContent).not.toContain('Last played');
+  get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+  get<HTMLInputElement>('#play-command').value = 'look';
+  get<HTMLFormElement>('.play-command').requestSubmit();
+  get<HTMLButtonElement>('header button').click();
+  get<HTMLButtonElement>('#open-saves').click();
+  expect(store.load(id)).toEqual(saved);
+  expect(get('.save-item dl').textContent).toContain('Last saved');
+});
 
 it.each([1, 2])('opens version %i links in fresh play for all genres and lengths', async (version) => {
   for (const genre of adventureSettings.adventureGenres) {

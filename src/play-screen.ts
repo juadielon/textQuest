@@ -3,7 +3,9 @@ import type { AdventureWorld } from './adventure-world';
 import type { CommandTarget } from './engine/commands';
 import { discoveredTargets, playCommand, startPlay, type PlayState } from './engine/play';
 import { generateAdventureWorld } from './generate-world';
-import { MAX_COMMAND_LENGTH } from './saves';
+import {
+  createSave, exportSaveFile, MAX_COMMAND_LENGTH, MAX_SAVE_COMMANDS, MAX_SAVE_NAME_LENGTH, SaveError,
+} from './saves';
 
 /** Options for {@link renderPlayScreen}. */
 export interface PlayScreenOptions {
@@ -70,6 +72,8 @@ export function describePlay(world: AdventureWorld, state: PlayState): PlayView 
  * be generated or started because of a validation `RangeError`, a plain
  * message is shown instead of the game. Unexpected errors are rethrown.
  * Control characters are rejected before play so recorded commands remain saveable.
+ * New commands, including undo, cannot exceed save count or file-size limits.
+ * File-size checks reserve room for any allowed save name.
  *
  * @param options - Saved commands to replay and a hook that hears each new command.
  * @returns False when the world can't be played, so there is nothing to save.
@@ -165,6 +169,26 @@ export function renderPlayScreen(
     input.removeAttribute('aria-invalid');
     const command = input.value.trim();
     if (!command) return;
+    let limitMessage: string | undefined;
+    if (commands.length >= MAX_SAVE_COMMANDS) {
+      limitMessage = 'This adventure has reached the save command limit. Your existing progress can still be saved, but no more commands can be added.';
+    } else {
+      try {
+        // Unpaired surrogates use six JSON characters each: the largest valid name.
+        exportSaveFile(createSave('\ud800'.repeat(MAX_SAVE_NAME_LENGTH), settings, [...commands, command]));
+      } catch (error) {
+        if (!(error instanceof SaveError)) throw error;
+        limitMessage = error.problem === 'too-large'
+          ? 'This command would exceed the save file limit. Try a shorter command. Your existing progress can still be saved.'
+          : error.message;
+      }
+    }
+    if (limitMessage) {
+      announcer.replaceChildren(element('span', undefined, limitMessage));
+      input.setAttribute('aria-invalid', 'true');
+      input.focus();
+      return;
+    }
     const message = run(command);
     log.scrollTop = log.scrollHeight;
     // A fresh node is announced even when the text repeats the last response.

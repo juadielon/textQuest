@@ -5,7 +5,7 @@ import {
   createSave, createSaveStore, SAVE_KEY_PREFIX, type SaveStore, type StorageLike,
 } from './saves';
 import {
-  buildSaveForm, formatLastPlayed, noLocksMessage, noSavesMessage, renderSavesScreen, SAVE_LOCK_NAME,
+  buildSaveForm, formatLastSaved, noLocksMessage, noSavesMessage, renderSavesScreen, SAVE_LOCK_NAME,
   saveNameMessage, type SaveLocks,
 } from './saves-screen';
 import { genreLabels, lengthLabels } from './start-screen-model';
@@ -64,9 +64,9 @@ const texts = (selector: string) => [...app.querySelectorAll(selector)].map((nod
 const buttonNamed = (name: string) =>
   app.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)!;
 
-describe('formatLastPlayed', () => {
+describe('formatLastSaved', () => {
   it('shows a readable Australian date and time', () => {
-    expect(formatLastPlayed(later.toISOString())).toBe(
+    expect(formatLastSaved(later.toISOString())).toBe(
       new Intl.DateTimeFormat('en-AU', { dateStyle: 'medium', timeStyle: 'short' }).format(later),
     );
   });
@@ -142,7 +142,7 @@ describe('buildSaveForm', () => {
     });
   });
 
-  it('keeps Last played when the clock moves between creation and the previous update', async () => {
+  it('keeps Last saved when the clock moves between creation and the previous update', async () => {
     const save = { ...createSave('Trip', settings, ['look'], later), createdAt: earlier.toISOString() };
     const id = store.add(save);
     const { form, status } = mountForm(['look', 'hint'], {
@@ -351,7 +351,7 @@ describe('renderSavesScreen', () => {
     expect(onBack).toHaveBeenCalledOnce();
   });
 
-  it('lists name, genre, length and last played time, newest first', () => {
+  it('lists name, genre, length and last saved time, newest first', () => {
     store.add(createSave('First', settings, [], earlier));
     store.add(createSave('<b>Second</b>', createAdventureSettings(3, 'short'), [], later));
 
@@ -363,7 +363,7 @@ describe('renderSavesScreen', () => {
     expect([...first.querySelectorAll('dt, dd')].map((node) => node.textContent)).toEqual([
       'Genre', genreLabels[settings.genre],
       'Length', lengthLabels.long,
-      'Last played', formatLastPlayed(earlier.toISOString()),
+      'Last saved', formatLastSaved(earlier.toISOString()),
     ]);
     expect(first.getAttribute('aria-labelledby')).toBe(first.querySelector('h2')?.id);
   });
@@ -491,6 +491,101 @@ describe('renderSavesScreen', () => {
     buttonNamed('Yes, delete: Trip').click();
     await lock.settled();
     expect(store.list()).toEqual([]);
+  });
+
+  it.each(['success', 'rejection', 'list-failure'])('preserves other queued confirmations and focus during a %s refresh', async (result) => {
+    const first = store.add(createSave('A', settings, [], earlier));
+    const second = store.add(createSave('B', settings, [], earlier));
+    const waiting: { run: () => void; reject: (error: Error) => void }[] = [];
+    lock.request.mockImplementation((_name: string, task: () => unknown) => new Promise<void>((resolve, reject) => {
+      waiting.push({ run: () => { task(); resolve(); }, reject });
+    }));
+    render();
+    buttonNamed('Delete: A').click();
+    buttonNamed('Yes, delete: A').click();
+    buttonNamed('Delete: B').click();
+    buttonNamed('Yes, delete: B').click();
+    const oldKeep = buttonNamed('Keep: B');
+    if (result === 'list-failure') vi.spyOn(store, 'list').mockImplementationOnce(() => { throw new Error('storage blocked'); });
+    if (result !== 'rejection') waiting.shift()!.run();
+    else {
+      waiting.shift()!.reject(new DOMException('blocked', 'SecurityError'));
+      await Promise.resolve();
+    }
+    expect(oldKeep.isConnected).toBe(true);
+    expect(document.activeElement).toBe(oldKeep);
+    expect(buttonNamed('Keep: B')).toBe(oldKeep);
+    oldKeep.click();
+    const status = app.querySelector('[role="status"]')!.textContent;
+    waiting.shift()!.run();
+    expect(store.load(second).name).toBe('B');
+    expect(app.querySelector('[role="status"]')!.textContent).toBe(status);
+    expect(document.activeElement).toBe(buttonNamed('Delete: B'));
+    expect(store.list()).toHaveLength(result === 'rejection' ? 2 : 1);
+    if (result === 'rejection') expect(store.load(first).name).toBe('A');
+    buttonNamed('Delete: B').click();
+    buttonNamed('Yes, delete: B').click();
+    waiting.shift()!.run();
+    expect(store.list().some((entry) => entry.id === second)).toBe(false);
+  });
+
+  it.each(['unchanged', 'changed', 'deleted'])('checks the original %s snapshot after an unrelated deletion refresh', (result) => {
+    store.add(createSave('A', settings, [], earlier));
+    const saved = createSave('B', settings, [], earlier);
+    const id = store.add(saved);
+    const waiting: (() => void)[] = [];
+    lock.request.mockImplementation((_name: string, task: () => unknown) => new Promise<void>((resolve) => {
+      waiting.push(() => { task(); resolve(); });
+    }));
+    render();
+    buttonNamed('Delete: A').click();
+    buttonNamed('Yes, delete: A').click();
+    buttonNamed('Delete: B').click();
+    buttonNamed('Yes, delete: B').click();
+    const keep = buttonNamed('Keep: B');
+    if (result === 'changed') store.put(id, { ...saved, commands: ['look'] });
+    if (result === 'deleted') store.remove(id);
+    waiting.shift()!();
+    expect(keep.isConnected).toBe(true);
+    expect(document.activeElement).toBe(keep);
+    waiting.shift()!();
+    if (result === 'unchanged') {
+      expect(store.list()).toHaveLength(0);
+      expect(app.querySelector('[role="status"]')!.textContent).toContain('Deleted “B”.');
+    } else {
+      expect(app.querySelector('[role="status"]')!.textContent).not.toBe('Deleted “B”.');
+      expect(store.list()).toHaveLength(result === 'changed' ? 1 : 0);
+      if (result === 'changed') expect(store.load(id).commands).toEqual(['look']);
+    }
+  });
+
+  it.each(['conflict', 'rejection'])('keeps a concurrent delete %s visible after another delete succeeds', async (failure) => {
+    const saved = createSave('A', settings, [], earlier);
+    const id = store.add(saved);
+    store.add(createSave('B', settings, [], earlier));
+    const waiting: { run: () => void; reject: (error: Error) => void }[] = [];
+    lock.request.mockImplementation((_name: string, task: () => unknown) => new Promise<void>((resolve, reject) => {
+      waiting.push({ run: () => { task(); resolve(); }, reject });
+    }));
+    render();
+    for (const name of ['A', 'B']) {
+      buttonNamed(`Delete: ${name}`).click();
+      buttonNamed(`Yes, delete: ${name}`).click();
+    }
+    if (failure === 'conflict') {
+      store.put(id, { ...saved, name: 'Updated A' });
+      waiting.shift()!.run();
+    } else {
+      waiting.shift()!.reject(new DOMException('blocked', 'SecurityError'));
+      await Promise.resolve();
+    }
+    const warning = app.querySelector('[role="status"]')!.textContent!;
+    expect(warning).toContain(failure === 'conflict' ? 'not deleted' : 'could not lock');
+    waiting.shift()!.run();
+    expect(app.querySelector('[role="status"]')!.textContent).toContain(warning);
+    expect(app.querySelector('[role="status"]')!.textContent).toContain('Deleted “B”.');
+    expect(store.list()).toHaveLength(1);
+    expect(store.load(id).name).toBe(failure === 'conflict' ? 'Updated A' : 'A');
   });
 
   it('shows unreadable saves with the reason and keeps them', async () => {
