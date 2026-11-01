@@ -216,6 +216,63 @@ describe('buildSaveForm', () => {
     expect(storage.items.size).toBe(0);
   });
 
+  it.each(['changed', 'deleted'])('keeps the %s warning when two saves were queued before it', async (change) => {
+    const save = createSave('Trip', settings, ['look'], earlier);
+    const id = store.add(save);
+    const commands = ['look', 'hint'];
+    const { form, status } = mountForm(commands, { resumed: { id, save } });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    void lock.request(SAVE_LOCK_NAME, () => held);
+
+    form.requestSubmit();
+    commands.push('inventory');
+    form.requestSubmit();
+    if (change === 'changed') store.put(id, { ...save, commands: ['look', 'north'] });
+    else store.remove(id);
+    const before = new Map(storage.items);
+    release();
+    await lock.settled();
+
+    expect(status.textContent).toBe(
+      `This save was ${change} in another tab or window, so it was not overwritten. `
+      + 'Choose Save adventure again to keep this progress as a new save.',
+    );
+    expect(storage.items).toEqual(before);
+
+    commands.push('help');
+    form.requestSubmit();
+    await lock.settled();
+
+    expect(status.textContent).toBe('Saved “Trip”.');
+    const copy = store.list().find((entry) => !before.has(SAVE_KEY_PREFIX + entry.id))!;
+    expect(store.load(copy.id).commands).toEqual(commands);
+    expect(storage.items.size).toBe(before.size + 1);
+    for (const [key, text] of before) expect(storage.items.get(key)).toBe(text);
+  });
+
+  it('keeps the conflict warning when an earlier queued lock request later rejects', async () => {
+    const save = createSave('Trip', settings, ['look'], earlier);
+    const id = store.add(save);
+    const { form, status } = mountForm(['look', 'hint'], { resumed: { id, save } });
+    let reject!: (reason: Error) => void;
+    const rejected = new Promise<void>((_resolve, fail) => { reject = fail; });
+    form.requestSubmit();
+    lock.request.mockImplementationOnce(() => rejected);
+    form.requestSubmit();
+    store.put(id, { ...save, commands: ['look', 'north'] });
+    const before = new Map(storage.items);
+    await lock.settled();
+    const warning = status.textContent;
+    expect(warning).toMatch(/^This save was changed/);
+
+    reject(new DOMException('blocked', 'SecurityError'));
+    await Promise.resolve();
+
+    expect(status.textContent).toBe(warning);
+    expect(storage.items).toEqual(before);
+  });
+
   it('lets only the first of two tabs saving the same moment update the save', async () => {
     const save = createSave('Trip', settings, ['look'], earlier);
     const id = store.add(save);
