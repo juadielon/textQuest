@@ -740,6 +740,57 @@ describe('renderPlayScreen', () => {
     expect(target.querySelector('.play-story')?.textContent).not.toContain('allotments');
   });
 
+  it('keeps an exposed place name in prose after leaving, replaying and undoing', () => {
+    const world: AdventureWorld = {
+      ...tinyWorld,
+      places: [...tinyWorld.places, { id: 'secret-garden' }],
+      exits: [...tinyWorld.exits, {
+        id: 'garden-walk', fromPlaceId: 'old-tower', toPlaceId: 'secret-garden', locked: false,
+      }],
+      solution: { ...tinyWorld.solution, goal: { placeId: 'secret-garden', conditions: {} } },
+    };
+    const pack: ContentPack = {
+      ...tinyPack,
+      places: [...tinyPack.places, {
+        id: 'secret-garden', name: 'Secret garden', description: [],
+      }],
+      plots: tinyPack.plots.map((plot) => ({
+        ...plot,
+        introduction: [...plot.introduction, ' Remember ', { kind: 'place', id: 'secret-garden' },
+          ' and Secret garden.'],
+      })),
+    };
+    const commands = ['take brass key', 'use brass key', 'go old tower', 'go gate'];
+    const commandModes = commands.map(() => 'content' as const);
+    vi.mocked(generateAdventureWorld).mockReturnValueOnce(world);
+    vi.mocked(adventurePack).mockReturnValueOnce(pack);
+    const target = document.createElement('main');
+    document.body.append(target);
+
+    renderPlayScreen(target, settingsFor('light-fantasy'), { commands, commandModes });
+
+    expect(target.querySelector('.play-place-name')?.textContent).toBe('gate');
+    expect(target.querySelector('.play-introduction')?.textContent)
+      .toBe('Find quiet gem and hidden note. Remember Secret garden and Secret garden.');
+    type(target, 'go Secret garden');
+    expect(target.querySelector('.play-log')?.lastElementChild?.textContent)
+      .toContain('That name is not one you have discovered.');
+    type(target, 'undo');
+
+    expect(target.querySelector('.play-place-name')?.textContent).toBe('old tower');
+    expect(target.querySelector('.play-introduction')?.textContent)
+      .toBe('Find quiet gem and hidden note. Remember Secret garden and Secret garden.');
+
+    const replayed = document.createElement('main');
+    document.body.append(replayed);
+    vi.mocked(generateAdventureWorld).mockReturnValueOnce(world);
+    vi.mocked(adventurePack).mockReturnValueOnce(pack);
+    renderPlayScreen(replayed, settingsFor('light-fantasy'), { commands, commandModes });
+    expect(replayed.querySelector('.play-place-name')?.textContent).toBe('gate');
+    expect(replayed.querySelector('.play-introduction')?.textContent)
+      .toBe('Find quiet gem and hidden note. Remember Secret garden and Secret garden.');
+  });
+
   it('does not select a blame ending for an automatic force step', () => {
     const settings = createAdventureSettings(6, 'short', 2);
     const generated = generateAdventureWorld(settings);

@@ -158,6 +158,13 @@ export function renderPlayScreen(
     const step = world.solution.steps.find((entry) => entry.id === id);
     return step && !(step.conditions.itemsHeld ?? []).length ? [id] : [];
   }));
+  const knownPlacesByState = new WeakMap<PlayState, ReadonlySet<string>>();
+  const currentPlaceTargets = (playState: PlayState) => new Set(
+    discoveredTargets(world, playState)
+      .filter(({ kind }) => kind === 'place')
+      .map(({ id }) => id),
+  );
+  knownPlacesByState.set(state, currentPlaceTargets(state));
 
   const endingText = element('p');
   const authoredEnding = element('p', 'play-authored-ending');
@@ -168,19 +175,20 @@ export function renderPlayScreen(
   const update = () => {
     const view = describePlay(world, state);
     const targets = discoveredTargets(world, state);
+    const knownPlaces = knownPlacesByState.get(state) ?? currentPlaceTargets(state);
     placeName.textContent = view.placeName;
-    plotName.textContent = hideUndiscoveredNames(plot.name, pack, world, state, targets);
-    introduction.textContent = renderProse(plot.introduction, pack, world, state, targets);
+    plotName.textContent = hideUndiscoveredNames(plot.name, pack, world, state, targets, knownPlaces);
+    introduction.textContent = renderProse(plot.introduction, pack, world, state, targets, knownPlaces);
     const authoredPlace = pack.places.find(({ id }) => id === state.placeId);
     description.textContent = authoredPlace
-      ? renderProse(authoredPlace.description, pack, world, state, targets) : '';
+      ? renderProse(authoredPlace.description, pack, world, state, targets, knownPlaces) : '';
     description.hidden = !authoredPlace;
     placeText.textContent = view.placeText;
     const presentPeople = pack.characters.filter(({ placeId }) =>
       placeId === state.placeId && world.places.some(({ id }) => id === placeId));
     fillDetails(people, presentPeople.map((person) => ({
       name: person.name,
-      text: renderProse(person.description, pack, world, state, targets),
+      text: renderProse(person.description, pack, world, state, targets, knownPlaces),
     })));
     peopleHeading.hidden = !presentPeople.length;
     people.hidden = !presentPeople.length;
@@ -188,7 +196,9 @@ export function renderPlayScreen(
     const presentItems = world.items.flatMap(({ id, placeId }) => {
       if (placeId !== state.placeId || state.itemsHeld.includes(id)) return [];
       const item = pack.items.find((entry) => entry.id === id);
-      return item ? [{ name: item.name, text: renderProse(item.description, pack, world, state, targets) }] : [];
+      return item ? [{
+        name: item.name, text: renderProse(item.description, pack, world, state, targets, knownPlaces),
+      }] : [];
     });
     fillDetails(itemsHere, presentItems);
     itemsHeading.hidden = !presentItems.length;
@@ -200,7 +210,7 @@ export function renderPlayScreen(
         && world.solution.steps.some((step) => step.id === id))
       .map((step) => ({
         text: renderProse(state.stepsDone.includes(step.id) ? step.completion : step.prompt,
-          pack, world, state, targets),
+          pack, world, state, targets, knownPlaces),
       }));
     story.replaceChildren(...placeStory.map(({ text }) => element('li', undefined, text)));
     storyHeading.hidden = !placeStory.length;
@@ -208,11 +218,15 @@ export function renderPlayScreen(
 
     fillDetails(inventory, state.itemsHeld.flatMap((id) => {
       const item = pack.items.find((entry) => entry.id === id);
-      return item ? [{ name: item.name, text: renderProse(item.description, pack, world, state, targets) }] : [];
+      return item ? [{
+        name: item.name, text: renderProse(item.description, pack, world, state, targets, knownPlaces),
+      }] : [];
     }), 'You are not carrying anything.');
     fillDetails(clues, state.cluesRevealed.flatMap((id) => {
       const clue = pack.clues.find((entry) => entry.id === id);
-      return clue ? [{ name: clue.name, text: renderProse(clue.text, pack, world, state, targets) }] : [];
+      return clue ? [{
+        name: clue.name, text: renderProse(clue.text, pack, world, state, targets, knownPlaces),
+      }] : [];
     }), 'No clues found yet.');
     turns.textContent = `Turns taken: ${view.turns}`;
     ending.hidden = !view.ended;
@@ -223,7 +237,7 @@ export function renderPlayScreen(
       : state;
     const selectedEnding = view.ended ? endingFor(pack, plot, endingState) : undefined;
     authoredEnding.textContent = selectedEnding
-      ? renderProse(selectedEnding.text, pack, world, state, targets) : '';
+      ? renderProse(selectedEnding.text, pack, world, state, targets, knownPlaces) : '';
     authoredEnding.hidden = !selectedEnding;
   };
 
@@ -236,13 +250,23 @@ export function renderPlayScreen(
   const run = (command: string, mode: CommandReplayMode): string => {
     const commandWorld = mode === 'id' ? idWorld : world;
     const parsed = parseCommand(command, discoveredTargets(commandWorld, state));
+    const previousState = state;
     const turn = playCommand(commandWorld, state, command);
     state = turn.state;
+    const knownPlaces = new Set(
+      knownPlacesByState.get(state) ?? knownPlacesByState.get(previousState) ?? [],
+    );
+    for (const { id } of discoveredTargets(world, state).filter(({ kind }) => kind === 'place')) {
+      knownPlaces.add(id);
+    }
+    knownPlacesByState.set(state, knownPlaces);
     const personId = parsed.ok && parsed.action.kind === 'talk' && 'targetId' in parsed.action
       ? parsed.action.targetId : undefined;
     const person = personId ? pack.characters.find(({ id }) => id === personId) : undefined;
     const response = person
-      ? `${turn.message} ${renderProse(person.motive, pack, world, state, discoveredTargets(world, state))}`
+      ? `${turn.message} ${renderProse(
+        person.motive, pack, world, state, discoveredTargets(world, state), knownPlaces,
+      )}`
       : turn.message;
     log.append(element('li', 'play-entry',
       element('p', 'play-typed', `> ${command}`), element('p', undefined, response)));
@@ -318,18 +342,19 @@ function fillDetails(
 
 function renderProse(
   prose: Prose, pack: ReturnType<typeof adventurePack>, world: PlayWorld,
-  state: PlayState, targets: readonly CommandTarget[],
+  state: PlayState, targets: readonly CommandTarget[], knownPlaces: ReadonlySet<string>,
 ): string {
   const text = prose.map((part) => typeof part === 'string'
-    ? part : entityName(part, pack, world, state, targets)).join('');
-  return hideUndiscoveredNames(text, pack, world, state, targets);
+    ? part : entityName(part, pack, world, state, targets, knownPlaces)).join('');
+  return hideUndiscoveredNames(text, pack, world, state, targets, knownPlaces);
 }
 
 function hideUndiscoveredNames(
   text: string, pack: ReturnType<typeof adventurePack>, world: PlayWorld, state: PlayState,
-  targets: readonly CommandTarget[],
+  targets: readonly CommandTarget[], knownPlaces: ReadonlySet<string>,
 ): string {
   const discovered = new Set(targets.map(({ kind, id }) => `${kind}:${id}`));
+  for (const id of knownPlaces) discovered.add(`place:${id}`);
   const visibleNames = new Set(targets.map(({ name }) => name.toLowerCase()));
   for (const person of pack.characters) {
     if (world.places.some(({ id }) => id === person.placeId)
@@ -397,15 +422,18 @@ function hideUndiscoveredNames(
 
 function entityName(
   reference: EntityReference, pack: ReturnType<typeof adventurePack>, world: PlayWorld,
-  state: PlayState, targets: readonly CommandTarget[],
+  state: PlayState, targets: readonly CommandTarget[], knownPlaces: ReadonlySet<string>,
 ): string {
   const targetKind = reference.kind === 'character' ? 'person' : reference.kind;
   const discovered = targets.find(({ id, kind }) => id === reference.id && kind === targetKind);
   if (discovered) return discovered.name;
 
   switch (reference.kind) {
-    case 'place':
-      return 'a place';
+    case 'place': {
+      const place = knownPlaces.has(reference.id)
+        ? pack.places.find(({ id }) => id === reference.id) : undefined;
+      return place?.name ?? 'a place';
+    }
     case 'character': {
       const person = pack.characters.find(({ id }) => id === reference.id);
       return person && world.places.some(({ id }) => id === person.placeId)
