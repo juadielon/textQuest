@@ -214,9 +214,34 @@ paths. Places the player can walk to and back from are checked together as
 one area, because visiting them all only adds progress. Choices between
 one-way paths still create separate routes.
 
+[Issue #79](https://github.com/juadielon/textQuest/issues/79) prepares world
+format version 2 for consequential choices. Steps that share a `choiceId` are
+mutually exclusive: once one is done, the others can never be done. A step
+can also end the adventure early with an `end-adventure` effect naming one of
+the world's `endings`, each a `win` or a `failure`. Version 1 worlds reject
+these fields, so released worlds, share words, saves and replays are
+unchanged. For version 2 the checker visits one place at a time and tries
+moves, item takes, uses, choices and endings separately. Only clues and
+steps needing no items or decision happen automatically at the current place.
+After those automatic changes, reaching the goal stops the route before any
+further action. This keeps endings available before taking or using an item
+that would win, without counting actions taken after a win. For version 2
+it also returns `reachableEndingIds` and `canGetStuck`, which is true when a
+route reaches a point where the player can no longer win. The point just
+before a failure must still be able to win, so recovery from it works. No
+released adventure generates version 2 worlds, and play refuses them until it
+supports choices and checkpoint recovery
+([issue #82](https://github.com/juadielon/textQuest/issues/82)).
+
 [Issue #16](https://github.com/juadielon/textQuest/issues/16) limits the
-search to `MAX_SEARCH_STATES` (10,000) states, so a large world cannot freeze
-the page. A world that needs more returns `{ winnable: false, tooLarge: true }`
+search to `MAX_SEARCH_STATES` (10,000) states. Version 2 terminal-option
+copies count towards this limit as well. The limit caps how many states are
+created, not how long it takes to read a very large world, so it does not
+promise that any input finishes instantly. Version 2 choice checks look up
+already-taken choices once per state instead of rescanning every step for each
+option, and arrival takes automatic steps as their conditions are met instead
+of rescanning the step list after each one.
+A world that needs more returns `{ winnable: false, tooLarge: true }`
 instead. It must be treated as rejected, never as winnable. The same world
 always gives the same result, whatever the time, locale or browser. Tests show
 long worlds with 28 places and 14 required steps finish within the limit. The
