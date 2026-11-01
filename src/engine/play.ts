@@ -110,12 +110,14 @@ function baseTargets(world: PlayWorld): CommandTarget[] {
   ];
 }
 
+const normaliseTargetName = (name: string) => normaliseName(name.replace(/[\s.!?]+$/, ''));
+
 // Drop aliases that repeat any name, or that the parser would read as a direction or article.
 function usableAliases(targets: readonly CommandTarget[]): CommandTarget[] {
-  const names = new Set(targets.map(({ name }) => normaliseName(name)));
+  const names = new Set(targets.map(({ name }) => normaliseTargetName(name)));
   return targets.map((target) => {
     const aliases = [...new Set(target.aliases ?? [])].filter((alias) => {
-      if (names.has(normaliseName(alias))) return false;
+      if (names.has(normaliseTargetName(alias))) return false;
       const result = parseCommand(`go ${alias}`, [{ id: target.id, kind: 'place', name: alias }]);
       return result.ok && 'targetId' in result.action;
     });
@@ -222,29 +224,35 @@ function rawExitName(world: PlayWorld, progress: Progress, exit: Exit): string {
 
 function disambiguateExitTargets(targets: readonly CommandTarget[]): CommandTarget[] {
   const result = usableAliases(targets);
-  const original = [...result];
-  const reachable = (target: CommandTarget, list: readonly CommandTarget[]) =>
-    ['examine', 'go'].every((verb) => {
+  const reachable = (target: CommandTarget, list: readonly CommandTarget[]) => {
+    const verbs = target.kind === 'item' ? ['examine', 'take', 'use']
+      : target.kind === 'place' || target.kind === 'exit' ? ['examine', 'go']
+        : target.kind === 'person' ? ['examine', 'talk to'] : ['examine'];
+    return verbs.every((verb) => {
       const parsed = parseCommand(`${verb} ${target.name}`, list);
-      return parsed.ok && 'targetId' in parsed.action
-        && parsed.action.targetId === target.id && parsed.action.targetKind === target.kind;
+      if (!parsed.ok) return false;
+      if (parsed.action.kind === 'use') {
+        return parsed.action.itemId === target.id && !('targetId' in parsed.action);
+      }
+      return 'targetId' in parsed.action && parsed.action.targetId === target.id
+        && parsed.action.targetKind === target.kind;
     });
+  };
   while (true) {
-    const index = result.findIndex((target) => target.kind === 'exit' && !reachable(target, result));
+    const index = result.findIndex((target) => !reachable(target, result));
     if (index < 0) return usableAliases(result);
-    const target = original[index];
-    let attempt = 0;
-    while (true) {
+    const target = result[index];
+    for (let attempt = 0; ; attempt++) {
       const name = attempt === 0 ? `${target.name} (${target.kind} ${index + 1})`
         : `${target.kind} ${index + 1}${attempt > 1 ? ` ${attempt - 1}` : ''}`;
-      const renamed = { ...target, name, aliases: [target.name, ...target.aliases ?? []] };
+      const renamed = { ...target, name, aliases: [] };
       const candidate = parseCommand(`examine ${name}`, result);
       const withCandidate = result.map((entry, position) => position === index ? renamed : entry);
-      if (!candidate.ok && candidate.problem === 'unknown-target' && reachable(renamed, withCandidate)) {
+      if (!candidate.ok && candidate.problem === 'unknown-target'
+        && reachable(renamed, withCandidate)) {
         result[index] = renamed;
         break;
       }
-      attempt++;
     }
   }
 }
@@ -344,6 +352,9 @@ function completeStep(world: PlayWorld, progress: Progress, step: PuzzleStep): s
       case 'unlock-exit': {
         progress.unlockedExits.add(effect.exitId);
         const exit = world.exits.find(({ id }) => id === effect.exitId)!;
+        if (exit.fromPlaceId !== progress.placeId && !progress.placesVisited.has(exit.toPlaceId)) {
+          return 'A way is now open.';
+        }
         return `${capitalise(withThe(exitName(world, progress, exit)))} is now open.`;
       }
       case 'give-item':

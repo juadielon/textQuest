@@ -658,6 +658,87 @@ describe('play with content-pack names', () => {
     expect(playCommand(world, state, 'look').message).toContain(`the ${exit.name}`);
   });
 
+  it('disambiguates generated exits using the parser punctuation rules', () => {
+    const base = namedWorld();
+    const world: PlayWorld = {
+      ...base,
+      names: {
+        ...base.names!,
+        items: base.names!.items.map((item) =>
+          item.id === 'pebble' ? { ...item, name: 'Locked way.' } : item),
+      },
+    };
+    const state = startPlay(world);
+    const targets = discoveredTargets(world, state);
+    const item = targets.find(({ id, kind }) => id === 'pebble' && kind === 'item')!;
+    const exit = targets.find(({ id, kind }) => id === 'door' && kind === 'exit')!;
+
+    expect(exit.name).not.toBe(item.name);
+    expect(playCommand(world, state, 'examine Locked way.').message).toContain('is here.');
+    expect(playCommand(world, state, `examine ${exit.name}`).message).toContain('is locked.');
+  });
+
+  it('keeps an item named like an item-on-exit command usable', () => {
+    const base = namedWorld();
+    const world: PlayWorld = {
+      ...base,
+      items: base.items.map((item) => item.id === 'key' ? { ...item, placeId: 'entry' } : item),
+      names: {
+        ...base.names!,
+        items: base.names!.items.map((item) => item.id === 'key' ? { ...item, name: 'Badge' }
+          : item.id === 'pebble' ? { ...item, name: 'Badge on locked way' } : item),
+      },
+      solution: {
+        steps: [{
+          id: 'finish', placeId: 'entry', conditions: { itemsHeld: ['pebble'] }, effects: [],
+        }],
+        goal: { placeId: 'entry', conditions: { stepsDone: ['finish'] } },
+      },
+    };
+    const start = startPlay(world);
+    const targets = discoveredTargets(world, start);
+    const badge = targets.find(({ id, kind }) => id === 'key' && kind === 'item')!;
+    const overlapping = targets.find(({ id, kind }) => id === 'pebble' && kind === 'item')!;
+    const holding = playCommand(world, playCommand(world, start, `take ${badge.name}`).state,
+      `take ${overlapping.name}`).state;
+
+    expect(overlapping.name).not.toBe('Badge on locked way');
+    expect(playCommand(world, holding, `use ${overlapping.name}`).state.goalReached).toBe(true);
+  });
+
+  it('does not name an undiscovered destination when a remote exit opens', () => {
+    const base = namedWorld();
+    const world: PlayWorld = {
+      ...base,
+      items: base.items.map((item) => item.id === 'key' ? { ...item, placeId: 'entry' } : item),
+      exits: [
+        { id: 'to-study', fromPlaceId: 'entry', toPlaceId: 'study', locked: false },
+        { id: 'to-entry', fromPlaceId: 'study', toPlaceId: 'entry', locked: false },
+        { id: 'secret-door', fromPlaceId: 'study', toPlaceId: 'finish', locked: true },
+      ],
+      solution: {
+        steps: [{
+          id: 'open-remote', placeId: 'entry', conditions: { itemsHeld: ['key'] },
+          effects: [{ kind: 'unlock-exit', exitId: 'secret-door' }],
+        }],
+        goal: { placeId: 'finish', conditions: { stepsDone: ['open-remote'] } },
+      },
+      names: {
+        ...base.names!,
+        places: base.names!.places.map((place) =>
+          place.id === 'finish' ? { ...place, name: 'Secret vault' } : place),
+      },
+    };
+    const start = startPlay(world);
+    const holding = playCommand(world, start, 'take brass key').state;
+    const opened = playCommand(world, holding, 'use brass key');
+
+    expect(opened.message).not.toContain('secret vault');
+    expect(opened.message).toContain('A way is now open.');
+    expect(discoveredTargets(world, opened.state).some(({ id }) => id === 'finish')).toBe(false);
+    expect(playCommand(world, opened.state, 'go quiet study').message).toContain('secret vault');
+  });
+
   it('lets the player talk to and examine people only where they are', () => {
     const world = namedWorld();
     const start = startPlay(world);
