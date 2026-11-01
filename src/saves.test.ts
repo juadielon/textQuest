@@ -34,6 +34,7 @@ class MemoryStorage implements StorageLike {
   readonly items = new Map<string, string>();
   failWrites: unknown = null;
   failReads: unknown = null;
+  failReadKey: string | null = null;
   failRemoveKey: string | null = null;
 
   get length() {
@@ -45,7 +46,7 @@ class MemoryStorage implements StorageLike {
   }
 
   getItem(key: string) {
-    if (this.failReads) throw this.failReads;
+    if (this.failReads || key === this.failReadKey) throw this.failReads ?? new DOMException('blocked', 'SecurityError');
     return this.items.get(key) ?? null;
   }
 
@@ -532,6 +533,24 @@ describe('save store', () => {
       expect(listed()).toMatchObject({ lastPlayedAt: played.toISOString() });
       storage.items.set(PLAYED_KEY_PREFIX + id, '2026-10-01T00:00:00.000Z');
       expect(listed()).toMatchObject({ lastPlayedAt: '2026-10-01T00:00:00.000Z' });
+    });
+
+    it('keeps readable saves listed when play-time metadata cannot be read and refuses to overwrite it', () => {
+      const { storage, store } = setUp();
+      const id = store.add(sampleSave());
+      const metadataKey = PLAYED_KEY_PREFIX + id;
+      const previousTime = '2026-10-19T00:00:00.000Z';
+      storage.items.set(metadataKey, previousTime);
+      storage.failReadKey = metadataKey;
+
+      expect(store.list()).toEqual([expect.objectContaining({
+        id,
+        status: 'ready',
+        lastPlayedUnavailable: true,
+      })]);
+      expect(store.list()[0]).not.toHaveProperty('lastPlayedAt');
+      expect(problemOf(() => store.markPlayed(id, played))).toBe('storage-unavailable');
+      expect(storage.items.get(metadataKey)).toBe(previousTime);
     });
 
     it('lists the most recently played save first', () => {

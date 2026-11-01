@@ -315,6 +315,8 @@ export type SaveListEntry =
        * time. Missing when play time was never recorded or could not be read.
        */
       readonly lastPlayedAt?: string;
+      /** True when browser storage refused to read this save's play-time metadata. */
+      readonly lastPlayedUnavailable?: boolean;
     }
   | {
       /** A stored save that can't be read. It is left in place, never deleted. */
@@ -333,7 +335,8 @@ type ReadySave = Extract<SaveListEntry, { status: 'ready' }>;
 export interface SaveStore {
   /**
    * Lists every stored save, most recently played first. Saves that can't be
-   * read come last and are kept, so they are never lost.
+   * read come last and are kept, so they are never lost. A play-time read
+   * failure leaves the save accessible and marks its time unavailable.
    */
   list(): SaveListEntry[];
   /**
@@ -559,7 +562,14 @@ export function createSaveStore(
           unreadable.push({ id, snapshot, status: 'unreadable', message });
           continue;
         }
-        const played = readPlayed(id);
+        let played: string | undefined;
+        let lastPlayedUnavailable = false;
+        try {
+          played = readPlayed(id);
+        } catch (error) {
+          if (!(error instanceof SaveError) || error.problem !== 'storage-unavailable') throw error;
+          lastPlayedUnavailable = true;
+        }
         ready.push({
           id,
           snapshot,
@@ -571,6 +581,7 @@ export function createSaveStore(
           updatedAt: save.updatedAt,
           // Saving happens during play, so a later save counts as playing too.
           ...(played ? { lastPlayedAt: played } : {}),
+          ...(lastPlayedUnavailable ? { lastPlayedUnavailable: true } : {}),
         });
       }
       // Saves without a recorded play time go last; plain comparisons keep order stable.

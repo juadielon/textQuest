@@ -29,6 +29,7 @@ if (app) {
   trackingStatus.className = 'hint';
   trackingStatus.setAttribute('role', 'status');
   const trackingWarnings = new Map<string, string>();
+  const deletedSaveWarning = 'This save was deleted in another tab. Last played was not recorded; save this adventure again to keep your current progress.';
   const showTrackingWarnings = (): void => {
     trackingStatus.textContent = [...trackingWarnings.values()].join(' ');
   };
@@ -60,6 +61,8 @@ if (app) {
     let commands: readonly string[] = resumed?.save.commands ?? [];
     let playing = resumed?.id;
     let pendingPlayTime: Date | undefined;
+    let latestPlayTime: Date | undefined;
+    let detachedSaveId: string | undefined;
     const record = (id: string, time: Date): void => {
       recordPlayed(store, id, {
         now: time,
@@ -70,10 +73,7 @@ if (app) {
             showTrackingWarnings();
             refreshSaves?.();
           } else if (result === 'missing') {
-            trackingWarnings.set(
-              id,
-              'This save was deleted in another tab. Last played was not recorded; save this adventure again to keep your current progress.',
-            );
+            trackingWarnings.set(id, deletedSaveWarning);
             showTrackingWarnings();
             refreshSaves?.();
           } else {
@@ -85,6 +85,7 @@ if (app) {
     };
     const markPlayed = (): void => {
       const time = new Date();
+      latestPlayTime = time;
       if (playing === undefined) pendingPlayTime = time;
       else record(playing, time);
     };
@@ -173,14 +174,20 @@ if (app) {
         store, settings, resumed, suggestedName: summary.shareWord, commands: () => commands,
         onPendingChange: (pending) => { back.disabled = pending; },
         onStoredChange: (saved) => {
+          const previousId = playing;
           playing = saved?.id;
           if (!saved) {
-            pendingPlayTime = undefined;
-          } else if (pendingPlayTime) {
-            const time = pendingPlayTime;
-            pendingPlayTime = undefined;
-            record(saved.id, time);
+            detachedSaveId = previousId;
+            pendingPlayTime = latestPlayTime;
+            return;
           }
+          if (pendingPlayTime) record(saved.id, pendingPlayTime);
+          pendingPlayTime = undefined;
+          if (detachedSaveId && trackingWarnings.get(detachedSaveId) === deletedSaveWarning) {
+            trackingWarnings.delete(detachedSaveId);
+            showTrackingWarnings();
+          }
+          detachedSaveId = undefined;
         },
       }));
     }

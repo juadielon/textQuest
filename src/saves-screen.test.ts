@@ -17,12 +17,16 @@ class MemoryStorage implements StorageLike {
   failRemoveKey: string | null = null;
   failListAfterRemove = false;
   failList = false;
+  failReadKey: string | null = null;
   get length() {
     if (this.failList) throw new DOMException('blocked', 'SecurityError');
     return this.items.size;
   }
   key(index: number) { return [...this.items.keys()][index] ?? null; }
-  getItem(key: string) { return this.items.get(key) ?? null; }
+  getItem(key: string) {
+    if (key === this.failReadKey) throw new DOMException('blocked', 'SecurityError');
+    return this.items.get(key) ?? null;
+  }
   setItem(key: string, value: string) {
     if (this.failWrites) throw Object.assign(new Error('full'), { name: 'QuotaExceededError' });
     this.items.set(key, value);
@@ -522,6 +526,32 @@ describe('renderSavesScreen', () => {
         genreLabels[settings.genre], lengthLabels.long,
         formatSaveTime(played.toISOString()), formatSaveTime(earlier.toISOString()),
       ]);
+  });
+
+  it('keeps Resume and Export available when play-time metadata cannot be read', async () => {
+    const save = createSave('Trip', settings, ['look'], earlier);
+    const id = store.add(save);
+    storage.failReadKey = PLAYED_KEY_PREFIX + id;
+    vi.useFakeTimers();
+    let blob: Blob | undefined;
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((value) => {
+      if (value instanceof Blob) blob = value;
+      return 'blob:save-file';
+    });
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    render();
+
+    const row = app.querySelector('.save-item')!;
+    const playedLabel = [...row.querySelectorAll('dt')].find((label) => label.textContent === 'Last played');
+    expect(playedLabel?.nextElementSibling?.textContent).toBe('Unavailable (could not read)');
+    buttonNamed('Resume: Trip').click();
+    expect(onResume).toHaveBeenCalledWith({ id, save });
+    buttonNamed('Export: Trip').click();
+
+    expect(await blob?.text()).toBe(store.exportSave(id));
+    expect(app.querySelector('#export-status')?.textContent).toContain('download started');
+    vi.runAllTimers();
   });
 
   it('refreshes after a played time is recorded without moving keyboard focus', async () => {

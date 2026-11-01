@@ -665,6 +665,80 @@ it('records play for a new save once saved, and stops after a conflict', async (
   expect(store.load(id).name).toBe('Other tab');
 });
 
+it('records the latest play time on a new save immediately after a conflict', async () => {
+  const resumedAt = new Date('2026-10-05T01:00:00.000Z');
+  const playedAt = new Date('2026-10-05T02:00:00.000Z');
+  const copiedAt = new Date('2026-10-05T03:00:00.000Z');
+  vi.useFakeTimers({ toFake: ['Date'], now: resumedAt });
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: async (_name: string, task: () => void) => { task(); } },
+  });
+  try {
+    const store = createSaveStore(localStorage);
+    const saved = createSave('My trip', settings, [], resumedAt);
+    const id = store.add(saved);
+    get<HTMLButtonElement>('#open-saves').click();
+    get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+
+    vi.setSystemTime(playedAt);
+    get<HTMLInputElement>('#play-command').value = 'look';
+    get<HTMLFormElement>('.play-command').requestSubmit();
+    const timeBeforeConflict = localStorage.getItem(PLAYED_KEY_PREFIX + id);
+    store.put(id, { ...saved, name: 'Other tab' });
+    get<HTMLFormElement>('.save-form').requestSubmit();
+    await vi.waitFor(() => expect(get('#save-status').textContent).toContain('changed'));
+
+    vi.setSystemTime(copiedAt);
+    get<HTMLFormElement>('.save-form').requestSubmit();
+    const copy = store.list().find((entry) => entry.id !== id);
+
+    expect(copy).toMatchObject({ status: 'ready', lastPlayedAt: playedAt.toISOString() });
+    expect(localStorage.getItem(PLAYED_KEY_PREFIX + id)).toBe(timeBeforeConflict);
+    expect(store.load(id).name).toBe('Other tab');
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('clears only the deleted-save warning after recovery as a new save', async () => {
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: async (_name: string, task: () => void) => { task(); } },
+  });
+  const store = createSaveStore(localStorage);
+  const deletedId = store.add(createSave('Deleted', settings, [], new Date('2026-10-01T09:00:00.000Z')));
+  const otherId = store.add(createSave('Other', settings, [], new Date('2026-10-02T09:00:00.000Z')));
+  get<HTMLButtonElement>('#open-saves').click();
+  const originalSetItem = localStorage.setItem.bind(localStorage);
+  const failedWrite = vi.spyOn(localStorage, 'setItem').mockImplementation((key, value) => {
+    if (key === PLAYED_KEY_PREFIX + otherId) throw new DOMException('blocked', 'SecurityError');
+    originalSetItem(key, value);
+  });
+  try {
+    get<HTMLButtonElement>('button[aria-label="Resume: Other"]').click();
+    expect(get('#play-tracking-status').textContent).toContain('Last played time could not be recorded');
+  } finally {
+    failedWrite.mockRestore();
+  }
+
+  get<HTMLButtonElement>('header button').click();
+  get<HTMLButtonElement>('#open-saves').click();
+  get<HTMLButtonElement>('button[aria-label="Resume: Deleted"]').click();
+  store.remove(deletedId);
+  get<HTMLInputElement>('#play-command').value = 'look';
+  get<HTMLFormElement>('.play-command').requestSubmit();
+  expect(get('#play-tracking-status').textContent).toContain('This save was deleted in another tab');
+  get<HTMLFormElement>('.save-form').requestSubmit();
+  await vi.waitFor(() => expect(get('#save-status').textContent).toContain('deleted'));
+  get<HTMLFormElement>('.save-form').requestSubmit();
+
+  expect(get('#play-tracking-status').textContent).toContain('Last played time could not be recorded');
+  expect(get('#play-tracking-status').textContent).not.toContain('This save was deleted in another tab');
+  const recovered = store.list().find((entry) => entry.id !== otherId);
+  expect(recovered).toMatchObject({ status: 'ready', lastPlayedAt: expect.any(String) });
+});
+
 it('does not record a queued command after the save changes while the lock waits', () => {
   const waiting: (() => void)[] = [];
   Object.defineProperty(navigator, 'locks', {

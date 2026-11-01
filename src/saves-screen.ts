@@ -288,7 +288,8 @@ export interface SavesScreenOptions {
  * Replaces the contents of `target` with the list of saves, most recently
  * played first. Each save shows its name, genre, length, last played time and
  * last saved time, with Resume, Export and Delete. Unrecorded play times are
- * labelled "Not recorded", not shown as saved times.
+ * labelled "Not recorded"; unreadable play-time metadata is shown as
+ * unavailable, not shown as saved times.
  *
  * @remarks
  * Delete confirms the exact listed save under a shared lock; changed saves
@@ -442,7 +443,12 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
       item.append(details([
         ['Genre', genreLabels[entry.settings.genre]],
         ['Length', lengthLabels[entry.settings.length]],
-        ['Last played', entry.lastPlayedAt ? formatSaveTime(entry.lastPlayedAt) : 'Not recorded'],
+        [
+          'Last played',
+          entry.lastPlayedUnavailable
+            ? 'Unavailable (could not read)'
+            : entry.lastPlayedAt ? formatSaveTime(entry.lastPlayedAt) : 'Not recorded',
+        ],
         ['Last saved', formatSaveTime(entry.updatedAt)],
       ]));
       actions.append(button('Resume', name, () => {
