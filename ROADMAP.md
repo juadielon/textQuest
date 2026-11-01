@@ -71,6 +71,11 @@ New adventures now use separately versioned seeded placement
 Version 2 share words end in `2` and recreate the same starting world;
 version 1 words and saves retain their original rules. Both versions have
 exhaustive share-word round-trip tests. Browser save/load remains planned.
+Shareable links ([issue #80](https://github.com/juadielon/textQuest/issues/80))
+now open the exact versioned starting adventure without player progress.
+They keep the hosting sub-path and report invalid or unsupported words through
+the start screen. A labelled link field, clipboard feedback and a normal
+new-tab link keep sharing usable when clipboard access is unavailable.
 
 ### 4. Stories, places and puzzles
 
@@ -190,6 +195,9 @@ keyboard, announces responses to screen readers and fits narrow and wide
 screens. New adventures and share words open play directly; play shows the
 share word and a way back to start. Navigation focuses the new heading.
 Returning to start ends the session, and reopening a word starts fresh.
+Play also offers an adventure link with accessible copy feedback and manual
+copying. Incoming links open fresh play, never a save. Production assets use
+relative URLs for static sub-path hosting.
 Invalid settings or worlds show the accessible unplayable message; unexpected
 errors while opening play are rethrown
 ([issue #74](https://github.com/juadielon/textQuest/issues/74)).

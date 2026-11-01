@@ -24,7 +24,7 @@ import type { CommandReplayMode } from './engine/play';
 export const saveFormatVersion = 2;
 
 /** The longest save file, in characters, that will be stored or imported. */
-export const MAX_SAVE_FILE_LENGTH = 1_000_000;
+export const MAX_SAVE_FILE_LENGTH = 1_200_000;
 
 /** The most typed commands one save can hold. */
 export const MAX_SAVE_COMMANDS = 10_000;
@@ -173,11 +173,16 @@ function isCommandReplayMode(value: unknown): value is CommandReplayMode {
 }
 
 function readCommandModes(value: unknown, commandCount: number, legacy: boolean): CommandReplayMode[] {
-  if (legacy && value === undefined) return Array.from({ length: commandCount }, () => 'id' as const);
-  if (!Array.isArray(value) || value.length !== commandCount || !value.every(isCommandReplayMode)) {
+  if (legacy) return Array.from({ length: commandCount }, () => 'id' as const);
+  if (!Array.isArray(value) || value.length !== commandCount) {
     throw damaged('the command replay modes are not valid.');
   }
-  return value;
+  return Array.from(value, (mode) => {
+    if (!isCommandReplayMode(mode)) {
+      throw damaged('the command replay modes are not valid.');
+    }
+    return mode;
+  });
 }
 
 function readTime(value: unknown, label: string): string {

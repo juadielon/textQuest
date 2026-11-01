@@ -14,6 +14,7 @@ const settings = Array.from({ length: 100 }, (_, seed) =>
 
 beforeEach(async () => {
   vi.resetModules();
+  window.history.replaceState(null, '', '/');
   app = document.createElement('main');
   app.id = 'app';
   document.body.append(app);
@@ -22,6 +23,8 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  window.history.replaceState(null, '', '/');
   document.body.replaceChildren();
 });
 
@@ -51,7 +54,7 @@ function expectPlay(settings: adventureSettings.AdventureSettings): void {
   expect(shownDetails()).toEqual({
     'Share word': adventureSettings.encodeShareWord(settings),
     Genre: summariseAdventure(settings).genreLabel,
-    Length: 'Short',
+    Length: summariseAdventure(settings).lengthLabel,
   });
   expect(document.activeElement).toBe(get('h1'));
   expect(app.querySelectorAll('h1')).toHaveLength(1);
@@ -169,4 +172,123 @@ it('shows a generation error and still lets the player return to start', async (
   get<HTMLButtonElement>('header button').click();
   expect(get('#new-adventure')).not.toBeNull();
   expect(document.activeElement).toBe(get('h1'));
+});
+
+async function openLink(word: string, path = '/textQuest/'): Promise<void> {
+  const url = new URL(path, window.location.href);
+  url.searchParams.set('adventure', word);
+  window.history.replaceState(null, '', url);
+  vi.resetModules();
+  await import('./main');
+}
+
+it.each([1, 2])('opens version %i links in fresh play for all genres and lengths', async (version) => {
+  for (const genre of adventureSettings.adventureGenres) {
+    for (const length of adventureSettings.adventureLengths) {
+      const shared = Array.from({ length: 100 }, (_, seed) =>
+        adventureSettings.createAdventureSettings(seed, length, version))
+        .find((value) => value.genre === genre)!;
+      await openLink(` ${adventureSettings.encodeShareWord(shared).toUpperCase()}- `);
+      expectPlay(shared);
+      expect(get('.play-log').children).toHaveLength(0);
+      expect(get('.play-sidebar > p:last-child').textContent).toBe('Turns taken: 0');
+      const link = new URL(get<HTMLInputElement>('#adventure-link').value);
+      expect(link.pathname).toBe('/textQuest/');
+      expect(link.searchParams.get('adventure')).toBe(adventureSettings.encodeShareWord(shared));
+    }
+  }
+});
+
+it.each(['', 'nope', 'silverlantern3', '<img src=x onerror=alert(1)>'])(
+  'keeps the incoming word %j in an accessible error field', async (word) => {
+    await openLink(word);
+    expect(get<HTMLInputElement>('#share-word').value).toBe(word);
+    expect(get('#share-word').getAttribute('aria-invalid')).toBe('true');
+    expect(get('#share-word-error').getAttribute('role')).toBe('alert');
+    expect(get('#share-word-error').textContent).not.toBe('');
+    if (word === 'silverlantern3') expect(get('#share-word-error').textContent).toContain('version 3');
+    expect(document.activeElement).toBe(get('#share-word'));
+    expect(app.querySelector('.play-screen')).toBeNull();
+    expect(app.querySelector('img')).toBeNull();
+    openAdventure(adventureSettings.encodeShareWord(settings));
+    expectPlay(settings);
+  },
+);
+
+it('copies the link and announces success without including any progress', async () => {
+  const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
+  const word = adventureSettings.encodeShareWord(settings);
+  await openLink(word, '/games/textQuest/index.html?save=private#progress');
+  const originalLink = get<HTMLInputElement>('#adventure-link').value;
+  get<HTMLInputElement>('#play-command').value = 'look';
+  get<HTMLFormElement>('.play-command').requestSubmit();
+  get<HTMLButtonElement>('.share-link button').click();
+  await vi.waitFor(() => expect(get('[role="status"]').textContent).toBe('Adventure link copied.'));
+  expect(writeText).toHaveBeenCalledExactlyOnceWith(originalLink);
+  const link = new URL(originalLink);
+  expect(link.pathname).toBe('/games/textQuest/index.html');
+  expect([...link.searchParams]).toEqual([['adventure', word]]);
+  expect(link.hash).toBe('');
+  const open = get<HTMLAnchorElement>('.share-link a');
+  expect(open.href).toBe(originalLink);
+  expect(open.target).toBe('_blank');
+  expect(open.rel).toBe('noopener');
+  expect(open.textContent).toContain('new tab');
+  await openLink(link.searchParams.get('adventure')!, link.pathname);
+  expect(get('.play-log').children).toHaveLength(0);
+  expectPlay(settings);
+});
+
+it.each(['missing', 'denied'] as const)('offers an accessible manual link when clipboard is %s', async (failure) => {
+  if (failure === 'missing') {
+    vi.stubGlobal('navigator', { clipboard: undefined });
+  } else {
+    vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new DOMException('Blocked', 'NotAllowedError'));
+  }
+  openAdventure(adventureSettings.encodeShareWord(settings));
+  const link = get<HTMLInputElement>('#adventure-link');
+  expect(link.readOnly).toBe(true);
+  expect(get('label[for="adventure-link"]').textContent).toBe('Adventure link');
+  expect(link.getAttribute('aria-describedby')).toBe('adventure-link-hint');
+  get<HTMLButtonElement>('.share-link button').click();
+  await vi.waitFor(() => expect(get('[role="status"]').textContent).toContain('Could not copy'));
+  expect(document.activeElement).toBe(link);
+  expect(link.selectionStart).toBe(0);
+  expect(link.selectionEnd).toBe(link.value.length);
+  expect(get<HTMLAnchorElement>('.share-link a').href).toBe(link.value);
+});
+
+it('does not move focus back to an ended session when clipboard permission is refused later', async () => {
+  let rejectCopy!: (reason: Error) => void;
+  vi.spyOn(navigator.clipboard, 'writeText').mockReturnValue(new Promise((_resolve, reject) => {
+    rejectCopy = reject;
+  }));
+  openAdventure(adventureSettings.encodeShareWord(settings));
+  get<HTMLButtonElement>('.share-link button').click();
+  get<HTMLButtonElement>('header button').click();
+  rejectCopy(new Error('Permission refused'));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(document.activeElement).toBe(get('h1'));
+  expect(get('h1').textContent).toBe('textQuest');
+});
+
+it('clears the incoming adventure on return to start so reloading does not restart it', async () => {
+  await openLink(adventureSettings.encodeShareWord(settings));
+  get<HTMLButtonElement>('header button').click();
+  expect(new URL(window.location.href).searchParams.has('adventure')).toBe(false);
+  expect(window.location.pathname).toBe('/textQuest/');
+  vi.resetModules();
+  await import('./main');
+  expect(get('h1').textContent).toBe('textQuest');
+  expect(document.activeElement).toBe(get('h1'));
+});
+
+it('opens an adventure link without reading or overwriting existing player saves', async () => {
+  const getItem = vi.spyOn(Storage.prototype, 'getItem');
+  const setItem = vi.spyOn(Storage.prototype, 'setItem');
+  const removeItem = vi.spyOn(Storage.prototype, 'removeItem');
+  await openLink(adventureSettings.encodeShareWord(settings));
+  expect(getItem).not.toHaveBeenCalled();
+  expect(setItem).not.toHaveBeenCalled();
+  expect(removeItem).not.toHaveBeenCalled();
 });

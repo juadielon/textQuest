@@ -31,6 +31,28 @@ again with no progress. There is no save or load interface yet.
 Focus moves to the new screen's heading on navigation. Both screens work by
 keyboard and screen reader, on narrow and wide screens.
 
+## Shareable adventure links
+
+[Issue #80](https://github.com/juadielon/textQuest/issues/80) adds an
+**Adventure link** field and **Copy link** button below the play screen's
+share word. A link such as `https://example.com/textQuest/?adventure=sunlitsaucer2`
+opens that exact starting adventure, with its original version, genre and
+length. It never includes commands, save data or player progress.
+Version 1 and version 2 words still use their existing rules.
+
+The link stays at the app's current path, including a hosting sub-path or
+`index.html`. Other query values and fragments are left out. Invalid, blank
+or unsupported words open the start screen with a clear error and focus on
+the share-word field, where the player can correct the word. **Back to start**
+removes the incoming word from the address, so a reload stays on start.
+
+Copying announces success or failure to screen readers. If clipboard access
+is missing or refused, the link is selected for manual copying. The labelled,
+read-only field is always available by keyboard; **Open starting adventure
+(new tab)** also provides a normal link without ending the current session.
+Use a public hosted address when sharing with other people; a localhost link
+only reaches the recipient's own computer.
+
 ## Version 1 authored content
 
 [Issue #26](https://github.com/juadielon/textQuest/issues/26) adds a typed
@@ -323,14 +345,15 @@ save format yet; the saves screen is planned in
 [Issue #34](https://github.com/juadielon/textQuest/issues/34) adds a
 versioned save format in `src/saves.ts`. A save holds an adventure name, the
 starting settings, every command the player typed, its replay mode and two
-timestamps. Save format 2 reads format 1 files as ID-based command histories.
-Progress will be rebuilt by replaying the commands, which is a later step.
-Saves never contain puzzle solutions.
+timestamps. Save format 2 reads format 1 files as ID-based command histories,
+matching the released player UI. Format 1 did not record naming mode, so
+programmatically created histories that used authored names cannot always be
+inferred and are replayed as ID-based. Saves never contain puzzle solutions.
 
 `createSaveStore(storage)` lists, adds, updates, loads and deletes saves in
 any `Storage`-like object, such as `localStorage`. Each save has its own key,
 so a failed write never damages another save. Export gives JSON text. Import
-treats the file as untrusted, rejects damaged, oversized (over 1,000,000
+treats the file as untrusted, rejects damaged, oversized (over 1,200,000
 characters) or newer-version files with a clear message, and stores a good
 file as a new save. A full or blocked storage is reported clearly. There are
 no save screens in the browser yet.
@@ -415,10 +438,14 @@ keeping the `assets/` folder next to `index.html`.
 
 ### Host on a sub-path
 
-By default the build expects to be served from the site root, such as
-`https://example.com/`. To serve it from a folder, such as
-`https://example.com/textQuest/`, pass Vite's `--base` option with leading
-and trailing slashes:
+By default the build uses relative asset URLs, so the same `dist/` can be
+served from the site root or a folder such as `https://example.com/textQuest/`.
+Serve `index.html` at that path and keep `assets/` beside it. Shared links use
+a query parameter, not a separate route, so no route rewrite is needed.
+The server must still serve the app when a query is present.
+
+To pin asset URLs to one hosting folder instead, pass Vite's `--base` option
+with leading and trailing slashes:
 
 ```sh
 docker compose run --rm app npm run build -- --base=/textQuest/
@@ -439,9 +466,8 @@ docker compose --profile production up --build production
 This builds a fresh copy inside the image, so it does not use your `dist/`.
 It always serves from the root.
 
-To preview the `dist/` you built, including a sub-path build, run Vite's
-preview server. Use the same `--base` you built with, or leave it out for a
-root build:
+To preview the `dist/` you built, run Vite's preview server. Give it the
+hosting sub-path as `--base`, or leave the option out to preview at the root:
 
 ```sh
 docker compose run --rm --service-ports app npx vite preview --host 0.0.0.0 --port 5173 --strictPort --base=/textQuest/

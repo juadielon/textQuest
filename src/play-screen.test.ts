@@ -62,7 +62,7 @@ const tinyPack: ContentPack = {
   }],
   items: [
     { id: 'brass-key', placeId: 'gate', name: 'brass key', description: [] },
-    { id: 'hidden-gem', placeId: 'old-tower', name: 'quiet gem', description: ['It glimmers softly.'] },
+    { id: 'hidden-gem', placeId: 'remote-room', name: 'quiet gem', description: ['It glimmers softly.'] },
   ],
   clues: [
     { id: 'carved-note', placeId: 'gate', name: 'carved note', text: [] },
@@ -336,19 +336,34 @@ describe('renderPlayScreen', () => {
     expect(target.querySelector('form')).not.toBeNull();
   });
 
-  it.each([1, 2])('shows item and clue text only after discovery in version %i', (version) => {
+  it.each([1, 2])('uses the generated item location for prose references in version %i', (version) => {
     const target = renderTiny(version);
-
     expect(target.querySelector('.play-introduction')?.textContent).toBe('Find something and a clue.');
     expect(target.textContent).not.toContain('quiet gem');
-    expect(target.textContent).not.toContain('hidden note');
+
     type(target, 'take brass key');
     type(target, 'use brass key');
     type(target, 'go old tower');
     expect(target.querySelector('.play-items-here')?.textContent).toContain('It glimmers softly.');
     expect(text(target, '.play-sidebar ul').join('')).toContain('It names the unseen garden.');
+    type(target, 'go gate');
     expect(target.querySelector('.play-introduction')?.textContent)
       .toBe('Find quiet gem and hidden note.');
+  });
+
+  it.each([1, 2])('does not reveal a moved item at its authored pack location in version %i', (version) => {
+    vi.mocked(generateAdventureWorld).mockReturnValueOnce({
+      ...tinyWorld,
+      items: tinyWorld.items.map((item) =>
+        item.id === 'hidden-gem' ? { ...item, placeId: 'old-tower' } : item),
+    });
+    vi.mocked(adventurePack).mockReturnValueOnce(tinyPack);
+    const target = document.createElement('main');
+    document.body.append(target);
+    renderPlayScreen(target, settingsFor('light-fantasy', version));
+
+    expect(target.querySelector('.play-introduction')?.textContent).toBe('Find something and a clue.');
+    expect(target.querySelector('.play-introduction')?.textContent).not.toContain('quiet gem');
   });
 
   it('shows a person’s motive only after the player talks to them', () => {
