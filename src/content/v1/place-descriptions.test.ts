@@ -17,10 +17,13 @@ const mentions = (text: string, name: string) => words(name).filter((nameWord) =
 // Lists each place description that mentions a starting item or clue, which
 // the generator may move to another place.
 function movableMentions(pack: ContentPack): string[] {
-  const movable = [...pack.items, ...pack.clues].filter(({ placeId }) => placeId !== undefined);
+  const movable = [
+    ...pack.items.map((thing) => ({ ...thing, kind: 'item' })),
+    ...pack.clues.map((thing) => ({ ...thing, kind: 'clue' })),
+  ].filter(({ placeId }) => placeId !== undefined);
   return pack.places.flatMap(({ id, description }: { id: string; description: Prose }) =>
     movable.filter((thing) => description.some((part) =>
-      typeof part === 'string' ? mentions(part, thing.name) : part.id === thing.id))
+      typeof part === 'string' ? mentions(part, thing.name) : part.kind === thing.kind && part.id === thing.id))
       .map((thing) => `${id} mentions ${thing.name}`));
 }
 
@@ -44,5 +47,21 @@ describe('version 1 place descriptions', () => {
     const log = { id: 'crew-log', placeId: 'mill', name: 'Crew log', text: [] };
     expect(movableMentions({ ...lightFantasy, places: [cabin], items: [], clues: [map, log] }))
       .toEqual(['cabin mentions Dated river map', 'cabin mentions Crew log']);
+  });
+
+  it('catches an exact name made only of short words', () => {
+    const shed = { id: 'shed', name: 'Shed', description: ['An ash peg rests here.'] };
+    const peg = { id: 'peg', placeId: 'well', name: 'Ash peg', description: [] };
+    expect(movableMentions({ ...lightFantasy, places: [shed], items: [peg], clues: [] }))
+      .toEqual(['shed mentions Ash peg']);
+  });
+
+  it('compares the kind of a typed reference as well as its id', () => {
+    const refs: Prose = [{ kind: 'character', id: 'peg' }, { kind: 'item', id: 'peg' }];
+    const hut = { id: 'hut', name: 'Hut', description: refs };
+    const peg = { id: 'peg', placeId: 'well', name: 'Qux', description: [] };
+    expect(movableMentions({ ...lightFantasy, places: [hut], items: [peg], clues: [] })).toEqual(['hut mentions Qux']);
+    expect(movableMentions({ ...lightFantasy, places: [{ ...hut, description: [refs[0]] }], items: [peg], clues: [] }))
+      .toEqual([]);
   });
 });
