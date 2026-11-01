@@ -1,13 +1,15 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { createAdventureSettings } from '../adventure-settings';
 import type { AdventureWorld } from '../adventure-world';
+import { lightFantasy } from '../content/v1/light-fantasy';
+import { worldNamesFrom } from '../content/v1/world-names';
 import { generateAdventureWorld } from '../generate-world';
 import { checkWinnability } from '../winnability';
 import { commandHelp } from './commands';
 import {
   discoveredTargets, playCommand, replayCommands, runAction, startPlay,
 } from './play';
-import type { PlayState } from './play';
+import type { PlayState, PlayWorld } from './play';
 
 // The same world the winnability tests use, so play and checker agree on one example.
 function sampleWorld(): AdventureWorld {
@@ -49,6 +51,49 @@ const winningCommands = [
   'go to study', 'take token', 'use token', 'go entry', 'use key on door', 'go finish',
 ];
 
+it('can reach a place when its grammar-safe fallback name is occupied', () => {
+  const world: AdventureWorld = {
+    version: 1, startPlaceId: 'entry',
+    places: [{ id: 'entry' }, { id: 'to-room' }, { id: 'place-2' }],
+    exits: [{ id: 'path', fromPlaceId: 'entry', toPlaceId: 'to-room', locked: false }],
+    items: [], clues: [],
+    solution: { steps: [], goal: { placeId: 'to-room', conditions: {} } },
+  };
+  const start = startPlay(world);
+  const target = discoveredTargets(world, start).find(({ id }) => id === 'to-room')!;
+  expect(playCommand(world, start, `go ${target.name}`).state.goalReached).toBe(true);
+});
+
+it('keeps item use unambiguous after a visible place is renamed', () => {
+  const itemId = 'badge-on-north-(place-2)';
+  const world: AdventureWorld = {
+    version: 1, startPlaceId: 'entry',
+    places: [{ id: 'entry' }, { id: 'north' }],
+    exits: [{ id: 'path', fromPlaceId: 'entry', toPlaceId: 'north', locked: false }],
+    items: [{ id: 'badge', placeId: 'entry' }, { id: itemId, placeId: 'entry' }],
+    clues: [],
+    solution: {
+      steps: [{ id: 'finish', placeId: 'entry', conditions: { itemsHeld: [itemId] }, effects: [] }],
+      goal: { placeId: 'entry', conditions: { stepsDone: ['finish'] } },
+    },
+  };
+  const start = startPlay(world);
+  const target = discoveredTargets(world, start).find(({ id }) => id === itemId)!;
+  const taken = playCommand(world, start, `take ${target.name}`).state;
+  expect(playCommand(world, taken, `use ${target.name}`).state.goalReached).toBe(true);
+});
+
+it('suggests a winning place named too-large instead of search-limit advice', () => {
+  const world: AdventureWorld = {
+    version: 1, startPlaceId: 'entry',
+    places: [{ id: 'entry' }, { id: 'too-large' }],
+    exits: [{ id: 'path', fromPlaceId: 'entry', toPlaceId: 'too-large', locked: false }],
+    items: [], clues: [],
+    solution: { steps: [], goal: { placeId: 'too-large', conditions: {} } },
+  };
+  expect(playCommand(world, startPlay(world), 'hint').message).toBe('Try going to the too large.');
+});
+
 function play(world: AdventureWorld, inputs: readonly string[]) {
   let state = startPlay(world);
   const messages: string[] = [];
@@ -83,6 +128,21 @@ describe('startPlay', () => {
 });
 
 describe('playing with typed commands', () => {
+  it('keeps leading articles in ID-derived names', () => {
+    const world: AdventureWorld = {
+      version: 1,
+      startPlaceId: 'the-garden',
+      places: [{ id: 'the-garden' }],
+      exits: [],
+      items: [],
+      clues: [],
+      solution: { steps: [], goal: { placeId: 'the-garden', conditions: {} } },
+    };
+
+    expect(playCommand(world, startPlay(world), 'look').message)
+      .toBe('You are at the the garden. There is no way out.');
+  });
+
   it('wins a hand-built world from start to goal using typed commands only', () => {
     const world = deepFreeze(sampleWorld());
     const commands = ['go study', 'take token', 'use token', 'go to entry', 'use key on door', 'go finish'];
@@ -93,7 +153,7 @@ describe('playing with typed commands', () => {
     expect(state.stepsDone).toEqual(['open-door', 'find-key', 'read-note']);
     expect(state.unlockedExits).toEqual(['door']);
     expect(messages[0]).toBe('You are at the study. You can see the token. Clues here: the note. '
-      + 'Ways out: the to entry to the entry. You found the note clue. '
+      + 'Ways out: the exit 5 to the entry. You found the note clue. '
       + 'Something changes here. You found the answer clue.');
     expect(messages[2]).toBe('You use the token. You now have the key.');
     expect(messages[4]).toBe('You use the key on the door. The door is now open.');
@@ -133,7 +193,7 @@ describe('discoveredTargets', () => {
     expect(discoveredTargets(world, startPlay(world))).toEqual([
       { id: 'entry', name: 'entry', kind: 'place' },
       { id: 'study', name: 'study', kind: 'place' },
-      { id: 'to-study', name: 'to study', kind: 'exit' },
+      { id: 'to-study', name: 'exit 4', kind: 'exit', aliases: ['to study'] },
       { id: 'door', name: 'door', kind: 'exit' },
       { id: 'pebble', name: 'pebble', kind: 'item' },
     ]);
@@ -243,6 +303,56 @@ describe('discoveredTargets', () => {
     expect(playCommand(world, start, 'hint').message).toBe(`Try going to the ${target.name}.`);
     expect(playCommand(world, start, `go ${target.name}`).state.goalReached).toBe(true);
   });
+
+  it('round-trips displayed movement names beginning with to to the exact target', () => {
+    const world: AdventureWorld = {
+      version: 1, startPlaceId: 'entry',
+      places: [{ id: 'entry' }, { id: 'to-red-room' }, { id: 'red-room' }],
+      exits: [
+        { id: 'to-path', fromPlaceId: 'entry', toPlaceId: 'to-red-room', locked: false },
+        { id: 'path', fromPlaceId: 'entry', toPlaceId: 'red-room', locked: false },
+      ],
+      items: [], clues: [],
+      solution: { steps: [], goal: { placeId: 'to-red-room', conditions: {} } },
+    };
+    const start = startPlay(world);
+    for (const target of discoveredTargets(world, start)) {
+      const turn = playCommand(world, start, `go ${target.name}`);
+      const expected = target.kind === 'exit'
+        ? world.exits.find(({ id }) => id === target.id)!.toPlaceId : target.id;
+      expect(turn.state.placeId).toBe(expected);
+    }
+    const target = discoveredTargets(world, start).find(({ id }) => id === 'to-red-room')!;
+    expect(playCommand(world, start, 'hint').message).toBe(`Try going to the ${target.name}.`);
+    expect(playCommand(world, start, `go ${target.name}`).state.goalReached).toBe(true);
+  });
+
+  it('wins using the displayed name of an item that overlaps an item-on-target command', () => {
+    const world: AdventureWorld = {
+      version: 1, startPlaceId: 'entry',
+      places: [{ id: 'entry' }, { id: 'ribbon' }],
+      exits: [{ id: 'door', fromPlaceId: 'entry', toPlaceId: 'ribbon', locked: true }],
+      items: [{ id: 'badge-on-ribbon', placeId: 'entry' }, { id: 'badge', placeId: 'entry' }],
+      clues: [],
+      solution: {
+        steps: [{
+          id: 'open', placeId: 'entry', conditions: { itemsHeld: ['badge-on-ribbon'] },
+          effects: [{ kind: 'unlock-exit', exitId: 'door' }],
+        }],
+        goal: { placeId: 'ribbon', conditions: {} },
+      },
+    };
+    expect(checkWinnability(world).winnable).toBe(true);
+    const start = deepFreeze(startPlay(world));
+    const target = discoveredTargets(world, start).find(({ id }) => id === 'badge-on-ribbon')!;
+    expect(playCommand(world, start, 'look').message).toContain(target.name);
+    const taken = playCommand(world, start, `take ${target.name}`).state;
+    expect(playCommand(world, taken, 'inventory').message).toContain(target.name);
+    const used = playCommand(world, taken, `use ${target.name}`).state;
+    expect(used.stepsDone).toEqual(['open']);
+    expect(playCommand(world, used, 'go ribbon').state.goalReached).toBe(true);
+    expect(playByHints(world).goalReached).toBe(true);
+  });
 });
 
 describe('runAction responses', () => {
@@ -253,12 +363,12 @@ describe('runAction responses', () => {
     expect(runAction(world, start, { kind: 'look' })).toEqual({
       state: start,
       message: 'You are at the entry. You can see the pebble. Ways out: '
-        + 'the to study to the study, the door (locked).',
+        + 'the exit 4 to the study, the door (locked).',
     });
     expect(runAction(world, start, { kind: 'examine', targetId: 'door', targetKind: 'exit' }).message)
       .toBe('The door is locked.');
     expect(runAction(world, start, { kind: 'examine', targetId: 'to-study', targetKind: 'exit' }).message)
-      .toBe('The to study leads to the study.');
+      .toBe('The exit 4 leads to the study.');
     expect(runAction(world, start, { kind: 'examine', targetId: 'pebble', targetKind: 'item' }).message)
       .toBe('The pebble is here. You could take it.');
     expect(runAction(world, start, { kind: 'examine', targetId: 'study', targetKind: 'place' }).message)
@@ -343,20 +453,31 @@ describe('undo', () => {
 });
 
 describe('replaying a long save', () => {
-  // Regression: naming targets used to be redone for every command, so a long
-  // world took about 75 ms per command and big saves were slow to resume.
-  it('replays thousands of commands on a long generated world quickly', () => {
+  // Regression: repeated target resolution made large saves slow to resume.
+  it('replays thousands of commands on a long named world quickly', () => {
     let settings = createAdventureSettings(0, 'long');
     while (settings.genre !== 'light-fantasy') settings = createAdventureSettings(settings.seed + 1, 'long');
-    const world = generateAdventureWorld(settings);
+    const generated = generateAdventureWorld(settings);
+    const world: PlayWorld = { ...generated, names: worldNamesFrom(lightFantasy, generated) };
     const started = Date.now();
     expect(replayCommands(world, Array<string>(2000).fill('look'))).toEqual(startPlay(world));
-    // The slow version took minutes, so a generous limit still catches it.
     expect(Date.now() - started).toBeLessThan(10_000);
   }, 20_000);
 });
 
 describe('hints', () => {
+  it('does not recommend undo in an unwinnable initial state', () => {
+    const world: AdventureWorld = {
+      ...sampleWorld(), exits: [],
+      solution: { steps: [], goal: { placeId: 'finish', conditions: {} } },
+    };
+    const start = startPlay(world);
+    expect(checkWinnability(world).winnable).toBe(false);
+    expect(playCommand(world, start, 'hint')).toEqual({
+      state: start, message: 'There seems to be no way forward from here.',
+    });
+  });
+
   it('point at the next useful step without naming puzzle answers', () => {
     const world = sampleWorld();
     const hints = (inputs: string[]) => playCommand(world, replayCommands(world, inputs), 'hint').message;
@@ -395,7 +516,7 @@ describe('hints', () => {
 
 // A simple player that only types what the hints suggest. If the checker calls
 // a world winnable, following the hints must win it with typed commands.
-function playByHints(world: AdventureWorld): PlayState {
+function playByHints(world: PlayWorld): PlayState {
   let state = startPlay(world);
   for (let guard = 0; guard < 200 && !state.goalReached; guard++) {
     const message = playCommand(world, state, 'hint').message;
@@ -408,7 +529,9 @@ function playByHints(world: AdventureWorld): PlayState {
         .filter((target) => target.kind === 'item' && !state.itemsHeld.includes(target.id))
         .map((target) => `take ${target.name}`);
     } else if (message.includes('could be useful here')) {
-      inputs = state.itemsHeld.map((id) => `use ${id.replace(/-/g, ' ')}`);
+      inputs = discoveredTargets(world, state)
+        .filter((target) => target.kind === 'item' && state.itemsHeld.includes(target.id))
+        .map((target) => `use ${target.name}`);
     } else {
       break;
     }
@@ -457,4 +580,228 @@ describe('agreement with the winnability checker', () => {
     expect(checkWinnability(world).winnable).toBe(false);
     expect(playByHints(world).goalReached).toBe(false);
   });
+});
+
+// The sample world with pack-style names, a person and some aliases that must be ignored.
+function namedWorld(): PlayWorld {
+  return {
+    ...sampleWorld(),
+    names: {
+      places: [
+        { id: 'entry', name: 'Front hall' },
+        { id: 'study', name: 'Quiet study', aliases: ['study', 'north'] },
+        { id: 'finish', name: 'The garden' },
+      ],
+      items: [
+        { id: 'key', name: 'Brass key', aliases: ['key', 'quiet study'] },
+        { id: 'token', name: 'Silver token', aliases: ['token'] },
+        { id: 'pebble', name: 'Round pebble' },
+      ],
+      clues: [{ id: 'note', name: 'Torn note' }, { id: 'answer', name: 'Hidden answer' }],
+      people: [
+        { id: 'guard', name: 'The old guard', placeId: 'entry', aliases: ['guard'] },
+        { id: 'ghost', name: 'Ghost', placeId: 'elsewhere' },
+      ],
+    },
+  };
+}
+
+describe('play with content-pack names', () => {
+  it('describes places with pack names and people, without naming unknown places', () => {
+    const world = namedWorld();
+    const look = playCommand(world, startPlay(world), 'look').message;
+    expect(look).toBe('You are at the front hall. The old guard is here. You can see the round pebble. '
+      + 'Ways out: the way to the quiet study, the locked way.');
+    expect(JSON.stringify(discoveredTargets(world, startPlay(world)))).not.toMatch(/garden|finish/);
+  });
+
+  it('wins with pack names and aliases, naming the way once it opens', () => {
+    const { state, messages } = play(namedWorld(), [
+      'go study', 'take token', 'use silver token', 'go front hall', 'use key on locked way', 'go garden',
+    ]);
+    expect(state.goalReached).toBe(true);
+    expect(messages[0]).toBe('You are at the quiet study. You can see the silver token. Clues here: the torn note. '
+      + 'Ways out: the way to the front hall. You found the torn note clue. '
+      + 'Something changes here. You found the hidden answer clue.');
+    expect(messages[2]).toBe('You use the silver token. You now have the brass key.');
+    expect(messages[4]).toBe('You use the brass key on the locked way. The way to the garden is now open.');
+  });
+
+  it('drops aliases that clash with a name or read as a direction', () => {
+    const targets = discoveredTargets(namedWorld(), startPlay(namedWorld()));
+    expect(targets.find(({ id }) => id === 'study')).toEqual(
+      { id: 'study', kind: 'place', name: 'Quiet study', aliases: ['study'] });
+    expect(targets.find(({ id }) => id === 'guard')).toEqual(
+      { id: 'guard', kind: 'person', name: 'The old guard', aliases: ['guard'] });
+    expect(targets.some(({ id }) => id === 'ghost')).toBe(false);
+  });
+
+  it('disambiguates generated exits against discovered names and aliases', () => {
+    const base = namedWorld();
+    const world: PlayWorld = {
+      ...base,
+      names: {
+        ...base.names!,
+        items: base.names!.items.map((item) =>
+          item.id === 'pebble' ? { ...item, name: 'Locked way' } : item),
+      },
+    };
+    const state = startPlay(world);
+    const targets = discoveredTargets(world, state);
+    const item = targets.find(({ id, kind }) => id === 'pebble' && kind === 'item')!;
+    const exit = targets.find(({ id, kind }) => id === 'door' && kind === 'exit')!;
+
+    expect(exit.name).not.toBe(item.name);
+    expect(playCommand(world, state, `examine ${item.name}`).message).toContain('is here.');
+    expect(playCommand(world, state, `examine ${exit.name}`).message).toContain('is locked.');
+    expect(playCommand(world, state, 'look').message).toContain(`the ${exit.name}`);
+  });
+
+  it('disambiguates generated exits using the parser punctuation rules', () => {
+    const base = namedWorld();
+    const world: PlayWorld = {
+      ...base,
+      names: {
+        ...base.names!,
+        items: base.names!.items.map((item) =>
+          item.id === 'pebble' ? { ...item, name: 'Locked way.' } : item),
+      },
+    };
+    const state = startPlay(world);
+    const targets = discoveredTargets(world, state);
+    const item = targets.find(({ id, kind }) => id === 'pebble' && kind === 'item')!;
+    const exit = targets.find(({ id, kind }) => id === 'door' && kind === 'exit')!;
+
+    expect(exit.name).not.toBe(item.name);
+    expect(playCommand(world, state, 'examine Locked way.').message).toContain('is here.');
+    expect(playCommand(world, state, `examine ${exit.name}`).message).toContain('is locked.');
+  });
+
+  it.each([['key', 'pebble'], ['pebble', 'key']])(
+    'keeps state-resolved item names stable when taking %j then %j', (...order: string[]) => {
+      const base = namedWorld();
+      const world: PlayWorld = {
+        ...base,
+        items: base.items.map((item) => item.id === 'key' ? { ...item, placeId: 'entry' } : item),
+        names: {
+          ...base.names!,
+          items: base.names!.items.map((item) => item.id === 'key' ? { ...item, name: 'Badge' }
+            : item.id === 'pebble' ? { ...item, name: 'Badge on locked way' } : item),
+        },
+        solution: {
+          steps: [{
+            id: 'finish', placeId: 'entry', conditions: { itemsHeld: ['pebble'] }, effects: [],
+          }],
+          goal: { placeId: 'entry', conditions: { stepsDone: ['finish'] } },
+        },
+      };
+      const start = startPlay(world);
+      const targets = discoveredTargets(world, start);
+      const badge = targets.find(({ id, kind }) => id === 'key' && kind === 'item')!;
+      const overlapping = targets.find(({ id, kind }) => id === 'pebble' && kind === 'item')!;
+      let holding = start;
+      for (const id of order) {
+        const item = id === 'key' ? badge : overlapping;
+        const taken = playCommand(world, holding, `take ${item.name}`);
+        expect(taken.message.toLowerCase()).toContain(item.name.toLowerCase());
+        holding = taken.state;
+      }
+
+      expect(overlapping.name).not.toBe('Badge on locked way');
+      expect(playCommand(world, start, 'look').message.toLowerCase()).toContain(overlapping.name.toLowerCase());
+      expect(playCommand(world, holding, 'inventory').message.toLowerCase())
+        .toContain(overlapping.name.toLowerCase());
+      expect(playCommand(world, holding, `use ${overlapping.name}`).state.goalReached).toBe(true);
+    });
+
+  it('does not name an undiscovered destination when a remote exit opens', () => {
+    const base = namedWorld();
+    const world: PlayWorld = {
+      ...base,
+      items: base.items.map((item) => item.id === 'key' ? { ...item, placeId: 'entry' } : item),
+      exits: [
+        { id: 'to-study', fromPlaceId: 'entry', toPlaceId: 'study', locked: false },
+        { id: 'to-entry', fromPlaceId: 'study', toPlaceId: 'entry', locked: false },
+        { id: 'secret-door', fromPlaceId: 'study', toPlaceId: 'finish', locked: true },
+      ],
+      solution: {
+        steps: [{
+          id: 'open-remote', placeId: 'entry', conditions: { itemsHeld: ['key'] },
+          effects: [{ kind: 'unlock-exit', exitId: 'secret-door' }],
+        }],
+        goal: { placeId: 'finish', conditions: { stepsDone: ['open-remote'] } },
+      },
+      names: {
+        ...base.names!,
+        places: base.names!.places.map((place) =>
+          place.id === 'finish' ? { ...place, name: 'Secret vault' } : place),
+      },
+    };
+    const start = startPlay(world);
+    const holding = playCommand(world, start, 'take brass key').state;
+    const opened = playCommand(world, holding, 'use brass key');
+
+    expect(opened.message).not.toContain('secret vault');
+    expect(opened.message).toContain('A way is now open.');
+    expect(discoveredTargets(world, opened.state).some(({ id }) => id === 'finish')).toBe(false);
+    expect(playCommand(world, opened.state, 'go quiet study').message).toContain('secret vault');
+  });
+
+  it('keeps ID-only remote unlock wording unchanged', () => {
+    const world: AdventureWorld = {
+      version: 1,
+      startPlaceId: 'entry',
+      places: [{ id: 'entry' }, { id: 'vault' }],
+      exits: [{ id: 'secret-door', fromPlaceId: 'vault', toPlaceId: 'entry', locked: true }],
+      items: [{ id: 'key', placeId: 'entry' }],
+      clues: [],
+      solution: {
+        steps: [{
+          id: 'open-remote', placeId: 'entry', conditions: { itemsHeld: ['key'] },
+          effects: [{ kind: 'unlock-exit', exitId: 'secret-door' }],
+        }],
+        goal: { placeId: 'entry', conditions: { stepsDone: ['open-remote'] } },
+      },
+    };
+
+    const holding = playCommand(world, startPlay(world), 'take key').state;
+    expect(playCommand(world, holding, 'use key').message)
+      .toContain('You use the key. The secret door is now open.');
+  });
+
+  it('lets the player talk to and examine people only where they are', () => {
+    const world = namedWorld();
+    const start = startPlay(world);
+    expect(playCommand(world, start, 'talk to guard')).toEqual({ state: start, message: 'The old guard greets you.' });
+    expect(playCommand(world, start, 'examine old guard').message).toBe('The old guard is here.');
+    expect(runAction(world, start, { kind: 'talk', targetId: 'pebble', targetKind: 'item' }).message)
+      .toBe('You can only talk to people.');
+    const study = playCommand(world, start, 'go study').state;
+    expect(discoveredTargets(world, study).some(({ kind }) => kind === 'person')).toBe(false);
+    expect(runAction(world, study, { kind: 'talk', targetId: 'guard', targetKind: 'person' }).message)
+      .toBe('There is no one here to talk to.');
+    const finished = { ...start, goalReached: true };
+    expect(playCommand(world, finished, 'talk to guard').message).toBe('The old guard greets you.');
+  });
+
+  it('keeps the same state as ID names for the same moves', () => {
+    const named = replayCommands(namedWorld(), ['go study', 'take token', 'use token']);
+    expect(named).toEqual(replayCommands(sampleWorld(), ['go study', 'take token', 'use token']));
+  });
+
+  it('wins generated light fantasy worlds by hints using only pack names', () => {
+    const seeds = Array.from({ length: 64 }, (_, seed) => seed)
+      .filter((seed) => createAdventureSettings(seed, 'short').genre === 'light-fantasy').slice(0, 3);
+    expect(seeds).toHaveLength(3);
+    for (const seed of seeds) {
+      const base = generateAdventureWorld(createAdventureSettings(seed, 'short'));
+      const world: PlayWorld = { ...base, names: worldNamesFrom(lightFantasy, base) };
+      expect(playByHints(world).goalReached).toBe(true);
+      const packNames = new Set([...lightFantasy.places, ...lightFantasy.items, ...lightFantasy.clues,
+        ...lightFantasy.characters].map(({ name }) => name));
+      for (const target of discoveredTargets(world, startPlay(world)).filter(({ kind }) => kind !== 'exit')) {
+        expect(packNames).toContain(target.name);
+      }
+    }
+  }, 20_000);
 });
