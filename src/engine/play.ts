@@ -263,31 +263,42 @@ function stateTargets(world: PlayWorld, progress: Progress): CommandTarget[] {
     ...world.names
       ? exits.map((exit): CommandTarget => ({ id: exit.id, kind: 'exit', name: rawExitName(world, progress, exit) }))
       : exits.map(({ id }) => id).map(target('exit')),
-    ...[...progress.itemsHeld, ...itemsHere(world, progress)].map(target('item')),
+    ...(world.names
+      ? inWorldOrder(world.items, new Set([...progress.itemsHeld, ...itemsHere(world, progress)]))
+      : [...progress.itemsHeld, ...itemsHere(world, progress)]).map(target('item')),
     ...[...progress.cluesRevealed].map(target('clue')),
     ...peopleHere(world, progress).map(target('person')),
   ];
   return world.names ? disambiguateExitTargets(targets) : targets;
 }
 
-function stateNameOf(world: PlayWorld, progress: Progress, kind: Target['kind'], id: string): string {
-  return stateTargets(world, progress).find((target) => target.kind === kind && target.id === id)?.name
+function stateNameOf(
+  world: PlayWorld, progress: Progress, kind: Target['kind'], id: string,
+  targets = stateTargets(world, progress),
+): string {
+  return targets.find((target) => target.kind === kind && target.id === id)?.name
     ?? nameOf(world, kind, id);
 }
 
-function stateThe(world: PlayWorld, progress: Progress, kind: Target['kind'], id: string): string {
-  return withThe(stateNameOf(world, progress, kind, id), Boolean(world.names));
+function stateThe(
+  world: PlayWorld, progress: Progress, kind: Target['kind'], id: string,
+  targets = stateTargets(world, progress),
+): string {
+  return withThe(stateNameOf(world, progress, kind, id, targets), Boolean(world.names));
 }
 
 function stateListNames(
   world: PlayWorld, progress: Progress, kind: Target['kind'], ids: readonly string[],
 ): string {
-  return listOf(ids.map((id) => stateThe(world, progress, kind, id)));
+  const targets = stateTargets(world, progress);
+  return listOf(ids.map((id) => stateThe(world, progress, kind, id, targets)));
 }
 
-function exitName(world: PlayWorld, progress: Progress, exit: Exit): string {
+function exitName(
+  world: PlayWorld, progress: Progress, exit: Exit, targets?: readonly CommandTarget[],
+): string {
   if (!world.names) return nameOf(world, 'exit', exit.id);
-  return stateTargets(world, progress).find(({ kind, id }) => kind === 'exit' && id === exit.id)?.name
+  return (targets ?? stateTargets(world, progress)).find(({ kind, id }) => kind === 'exit' && id === exit.id)?.name
     ?? rawExitName(world, progress, exit);
 }
 
@@ -353,27 +364,35 @@ function arrive(world: PlayWorld, progress: Progress, placeId: string): string[]
   return found;
 }
 
-function completeStep(world: PlayWorld, progress: Progress, step: PuzzleStep): string[] {
+function completeStep(world: PlayWorld, progress: Progress, step: PuzzleStep, includeMessages = true): string[] {
   progress.stepsDone.add(step.id);
-  return step.effects.map((effect) => {
+  const messages: string[] = [];
+  for (const effect of step.effects) {
     switch (effect.kind) {
       case 'unlock-exit': {
         progress.unlockedExits.add(effect.exitId);
-        const exit = world.exits.find(({ id }) => id === effect.exitId)!;
-        if (world.names && exit.fromPlaceId !== progress.placeId
-          && !progress.placesVisited.has(exit.toPlaceId)) {
-          return 'A way is now open.';
+        if (includeMessages) {
+          const exit = world.exits.find(({ id }) => id === effect.exitId)!;
+          if (world.names && exit.fromPlaceId !== progress.placeId
+            && !progress.placesVisited.has(exit.toPlaceId)) {
+            messages.push('A way is now open.');
+          } else {
+            messages.push(`${capitalise(withThe(exitName(world, progress, exit)))} is now open.`);
+          }
         }
-        return `${capitalise(withThe(exitName(world, progress, exit)))} is now open.`;
+        break;
       }
       case 'give-item':
         progress.itemsHeld.add(effect.itemId);
-        return `You now have ${stateListNames(world, progress, 'item', [effect.itemId])}.`;
+        if (includeMessages) messages.push(`You now have ${stateListNames(world, progress, 'item', [effect.itemId])}.`);
+        break;
       case 'reveal-clue':
         progress.cluesRevealed.add(effect.clueId);
-        return `You found ${stateListNames(world, progress, 'clue', [effect.clueId])} clue.`;
+        if (includeMessages) messages.push(`You found ${stateListNames(world, progress, 'clue', [effect.clueId])} clue.`);
+        break;
     }
-  });
+  }
+  return messages;
 }
 
 function stepsReadyHere(world: PlayWorld, progress: Progress): PuzzleStep[] {
@@ -440,17 +459,22 @@ export function discoveredTargets(world: PlayWorld, state: PlayState): CommandTa
 }
 
 function describePlace(world: PlayWorld, progress: Progress): string {
-  const parts = [`You are at ${stateThe(world, progress, 'place', progress.placeId)}.`];
+  const targets = stateTargets(world, progress);
+  const parts = [`You are at ${stateThe(world, progress, 'place', progress.placeId, targets)}.`];
   const people = peopleHere(world, progress).map((id) =>
-    stateNameOf(world, progress, 'person', id).replace(/^The\s/, 'the '));
+    stateNameOf(world, progress, 'person', id, targets).replace(/^The\s/, 'the '));
   if (people.length) parts.push(`${capitalise(listOf(people))} ${people.length > 1 ? 'are' : 'is'} here.`);
   const items = itemsHere(world, progress);
-  if (items.length) parts.push(`You can see ${stateListNames(world, progress, 'item', items)}.`);
+  if (items.length) {
+    parts.push(`You can see ${listOf(items.map((id) => stateThe(world, progress, 'item', id, targets)))}.`);
+  }
   const clues = world.clues.filter((clue) => clue.placeId === progress.placeId).map(({ id }) => id);
-  if (clues.length) parts.push(`Clues here: ${stateListNames(world, progress, 'clue', clues)}.`);
+  if (clues.length) {
+    parts.push(`Clues here: ${listOf(clues.map((id) => stateThe(world, progress, 'clue', id, targets)))}.`);
+  }
   const exits = exitsFrom(world, progress.placeId).map((exit) => {
     if (world.names) {
-      const name = withThe(exitName(world, progress, exit));
+      const name = withThe(exitName(world, progress, exit, targets));
       return isOpen(progress, exit) || name === 'the locked way' ? name : `${name} (locked)`;
     }
     return isOpen(progress, exit)
@@ -462,12 +486,13 @@ function describePlace(world: PlayWorld, progress: Progress): string {
 }
 
 function examine(world: PlayWorld, progress: Progress, { kind, id }: Target): string {
+  if (kind === 'place' && id === progress.placeId) return describePlace(world, progress);
+  const targets = stateTargets(world, progress);
   const name = kind === 'person'
-    ? stateNameOf(world, progress, kind, id)
-    : stateThe(world, progress, kind, id);
+    ? stateNameOf(world, progress, kind, id, targets)
+    : stateThe(world, progress, kind, id, targets);
   switch (kind) {
     case 'place':
-      if (id === progress.placeId) return describePlace(world, progress);
       return progress.placesVisited.has(id)
         ? `You remember ${name}. Go there to look around.`
         : `${capitalise(name)} is nearby. Go there to look around.`;
@@ -511,7 +536,8 @@ function talk(world: PlayWorld, progress: Progress, { kind, id }: Target): strin
   if (!people.length) return 'There is no one here to talk to.';
   if (kind !== 'person') return 'You can only talk to people.';
   if (!people.includes(id)) return 'They are not here.';
-  return `${capitalise(stateNameOf(world, progress, 'person', id).replace(/^The\s/, 'the '))} greets you.`;
+  const targets = stateTargets(world, progress);
+  return `${capitalise(stateNameOf(world, progress, 'person', id, targets).replace(/^The\s/, 'the '))} greets you.`;
 }
 
 interface Change {
@@ -528,6 +554,7 @@ function move(
     return { done: false, message: 'This adventure does not mark compass directions yet. Try go <place>.' };
   }
   const { targetKind: kind, targetId: id } = action;
+  const targets = stateTargets(world, progress);
   const exits = exitsFrom(world, progress.placeId);
   let exit: Exit | undefined;
   if (kind === 'exit') {
@@ -539,7 +566,7 @@ function move(
     if (!ways.length) {
       return {
         done: false,
-        message: `You cannot get to ${stateThe(world, progress, 'place', id)} directly from here.`,
+        message: `You cannot get to ${stateThe(world, progress, 'place', id, targets)} directly from here.`,
       };
     }
     exit = ways.find((entry) => isOpen(progress, entry)) ?? ways[0];
@@ -592,15 +619,17 @@ function use(
     && entry.effects.some((effect) => effect.kind === 'unlock-exit' && effect.exitId === target.id))
     ?? ready[0];
   if (!step) return { done: false, message: 'Nothing happens.' };
+  const targets = stateTargets(world, progress);
   const onTarget = !target ? ''
     : target.kind === 'person'
-      ? ` on ${stateNameOf(world, progress, 'person', target.id).replace(/^The\s/, 'the ')}`
-      : target.kind === 'exit' ? ` on ${withThe(exitName(world, progress, world.exits.find(({ id }) => id === target.id)!))}`
-        : ` on ${stateThe(world, progress, target.kind, target.id)}`;
+      ? ` on ${stateNameOf(world, progress, 'person', target.id, targets).replace(/^The\s/, 'the ')}`
+      : target.kind === 'exit'
+        ? ` on ${withThe(exitName(world, progress, world.exits.find(({ id }) => id === target.id)!, targets))}`
+        : ` on ${stateThe(world, progress, target.kind, target.id, targets)}`;
   return {
     done: true,
     message: [
-      `You use ${stateThe(world, progress, 'item', id)}${onTarget}.`,
+      `You use ${stateThe(world, progress, 'item', id, targets)}${onTarget}.`,
       ...completeStep(world, progress, step),
     ].join(' '),
   };
@@ -617,7 +646,7 @@ function settleGreedily(world: PlayWorld, progress: Progress): void {
       changed = true;
     }
     for (const step of stepsReadyHere(world, progress)) {
-      completeStep(world, progress, step);
+      completeStep(world, progress, step, false);
       changed = true;
     }
   }

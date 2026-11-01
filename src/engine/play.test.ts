@@ -453,15 +453,14 @@ describe('undo', () => {
 });
 
 describe('replaying a long save', () => {
-  // Regression: naming targets used to be redone for every command, so a long
-  // world took about 75 ms per command and big saves were slow to resume.
-  it('replays thousands of commands on a long generated world quickly', () => {
+  // Regression: repeated target resolution made large saves slow to resume.
+  it('replays thousands of commands on a long named world quickly', () => {
     let settings = createAdventureSettings(0, 'long');
     while (settings.genre !== 'light-fantasy') settings = createAdventureSettings(settings.seed + 1, 'long');
-    const world = generateAdventureWorld(settings);
+    const generated = generateAdventureWorld(settings);
+    const world: PlayWorld = { ...generated, names: worldNamesFrom(lightFantasy, generated) };
     const started = Date.now();
     expect(replayCommands(world, Array<string>(2000).fill('look'))).toEqual(startPlay(world));
-    // The slow version took minutes, so a generous limit still catches it.
     expect(Date.now() - started).toBeLessThan(10_000);
   }, 20_000);
 });
@@ -678,36 +677,42 @@ describe('play with content-pack names', () => {
     expect(playCommand(world, state, `examine ${exit.name}`).message).toContain('is locked.');
   });
 
-  it('keeps an item named like an item-on-exit command usable', () => {
-    const base = namedWorld();
-    const world: PlayWorld = {
-      ...base,
-      items: base.items.map((item) => item.id === 'key' ? { ...item, placeId: 'entry' } : item),
-      names: {
-        ...base.names!,
-        items: base.names!.items.map((item) => item.id === 'key' ? { ...item, name: 'Badge' }
-          : item.id === 'pebble' ? { ...item, name: 'Badge on locked way' } : item),
-      },
-      solution: {
-        steps: [{
-          id: 'finish', placeId: 'entry', conditions: { itemsHeld: ['pebble'] }, effects: [],
-        }],
-        goal: { placeId: 'entry', conditions: { stepsDone: ['finish'] } },
-      },
-    };
-    const start = startPlay(world);
-    const targets = discoveredTargets(world, start);
-    const badge = targets.find(({ id, kind }) => id === 'key' && kind === 'item')!;
-    const overlapping = targets.find(({ id, kind }) => id === 'pebble' && kind === 'item')!;
-    const holding = playCommand(world, playCommand(world, start, `take ${badge.name}`).state,
-      `take ${overlapping.name}`).state;
+  it.each([['key', 'pebble'], ['pebble', 'key']])(
+    'keeps state-resolved item names stable when taking %j then %j', (...order: string[]) => {
+      const base = namedWorld();
+      const world: PlayWorld = {
+        ...base,
+        items: base.items.map((item) => item.id === 'key' ? { ...item, placeId: 'entry' } : item),
+        names: {
+          ...base.names!,
+          items: base.names!.items.map((item) => item.id === 'key' ? { ...item, name: 'Badge' }
+            : item.id === 'pebble' ? { ...item, name: 'Badge on locked way' } : item),
+        },
+        solution: {
+          steps: [{
+            id: 'finish', placeId: 'entry', conditions: { itemsHeld: ['pebble'] }, effects: [],
+          }],
+          goal: { placeId: 'entry', conditions: { stepsDone: ['finish'] } },
+        },
+      };
+      const start = startPlay(world);
+      const targets = discoveredTargets(world, start);
+      const badge = targets.find(({ id, kind }) => id === 'key' && kind === 'item')!;
+      const overlapping = targets.find(({ id, kind }) => id === 'pebble' && kind === 'item')!;
+      let holding = start;
+      for (const id of order) {
+        const item = id === 'key' ? badge : overlapping;
+        const taken = playCommand(world, holding, `take ${item.name}`);
+        expect(taken.message.toLowerCase()).toContain(item.name.toLowerCase());
+        holding = taken.state;
+      }
 
-    expect(overlapping.name).not.toBe('Badge on locked way');
-    expect(playCommand(world, start, 'look').message.toLowerCase()).toContain(overlapping.name.toLowerCase());
-    expect(playCommand(world, holding, 'inventory').message.toLowerCase())
-      .toContain(overlapping.name.toLowerCase());
-    expect(playCommand(world, holding, `use ${overlapping.name}`).state.goalReached).toBe(true);
-  });
+      expect(overlapping.name).not.toBe('Badge on locked way');
+      expect(playCommand(world, start, 'look').message.toLowerCase()).toContain(overlapping.name.toLowerCase());
+      expect(playCommand(world, holding, 'inventory').message.toLowerCase())
+        .toContain(overlapping.name.toLowerCase());
+      expect(playCommand(world, holding, `use ${overlapping.name}`).state.goalReached).toBe(true);
+    });
 
   it('does not name an undiscovered destination when a remote exit opens', () => {
     const base = namedWorld();
