@@ -169,9 +169,9 @@ regenerated version 1 and version 2 worlds is covered by unit tests, including
 successful and failed commands and undo. Players save during play, see their
 saves listed and resume one by replaying its commands. Delete asks first, and
 unreadable saves are listed and kept. Exporting and importing save files in
-the browser is not implemented. The list shows Last saved; actual last-played
-tracking remains unfinished under issue #43 and requires safe separate metadata
-handling without changing stored progress on Resume.
+the browser is not implemented. The list shows Last played and Last saved,
+most recently played first. Last played is kept in separate browser metadata,
+so Resume and play never change stored progress or exported files.
 
 ### 7. Browser game
 

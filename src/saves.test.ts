@@ -9,6 +9,7 @@ import {
   MAX_SAVE_COMMANDS,
   MAX_SAVE_FILE_LENGTH,
   MAX_SAVE_NAME_LENGTH,
+  PLAYED_KEY_PREFIX,
   SAVE_KEY_PREFIX,
   SaveError,
   createSave,
@@ -296,6 +297,7 @@ describe('save store', () => {
         commandCount: 0,
         createdAt: '2026-10-13T00:00:00.000Z',
         updatedAt: '2026-10-13T00:00:00.000Z',
+        lastPlayedAt: '2026-10-13T00:00:00.000Z',
       },
       {
         id: first,
@@ -306,6 +308,7 @@ describe('save store', () => {
         commandCount: 2,
         createdAt: '2026-10-12T04:00:00.000Z',
         updatedAt: '2026-10-12T04:00:00.000Z',
+        lastPlayedAt: '2026-10-12T04:00:00.000Z',
       },
     ]);
 
@@ -472,5 +475,105 @@ describe('save store', () => {
     const { storage, store } = setUp();
     expect(problemOf(() => store.add({ ...sampleSave(), name: '' }))).toBe('malformed');
     expect(storage.items.size).toBe(0);
+  });
+
+  describe('last played', () => {
+    const played = new Date('2026-10-20T08:00:00.000Z');
+
+    it('keeps the time apart, so the save, its snapshot, export and replace check never change', () => {
+      const { storage, store } = setUp();
+      const save = sampleSave();
+      const id = store.add(save);
+      const text = storage.items.get(SAVE_KEY_PREFIX + id);
+      const file = store.exportSave(id);
+
+      store.markPlayed(id, played);
+
+      expect(storage.items.get(SAVE_KEY_PREFIX + id)).toBe(text);
+      expect(storage.items.get(PLAYED_KEY_PREFIX + id)).toBe(played.toISOString());
+      expect(store.load(id)).toEqual(save);
+      expect(store.exportSave(id)).toBe(file);
+      expect(store.list()).toEqual([expect.objectContaining({
+        id, snapshot: text, updatedAt: save.updatedAt, lastPlayedAt: played.toISOString(),
+      })]);
+      // Another tab's open save form still updates, since progress did not change.
+      const next = { ...save, commands: ['look'] };
+      store.replace(id, save, next);
+      expect(store.load(id)).toEqual(next);
+      // Import makes a new save with no play recorded.
+      const copy = store.importSave(file);
+      expect(storage.items.has(PLAYED_KEY_PREFIX + copy)).toBe(false);
+      expect(store.list().find((entry) => entry.id === copy)).toMatchObject({ lastPlayedAt: save.updatedAt });
+    });
+
+    it('never moves back, even when another tab or the clock records an earlier time', () => {
+      const { storage, store } = setUp();
+      const id = store.add(sampleSave());
+      store.markPlayed(id, played);
+      store.markPlayed(id, new Date('2026-10-19T00:00:00.000Z'));
+      expect(storage.items.get(PLAYED_KEY_PREFIX + id)).toBe(played.toISOString());
+      const later = new Date('2026-10-21T00:00:00.000Z');
+      store.markPlayed(id, later);
+      expect(storage.items.get(PLAYED_KEY_PREFIX + id)).toBe(later.toISOString());
+    });
+
+    it('falls back to the saved time for older saves, damaged times and times before the last save', () => {
+      const { storage, store } = setUp();
+      const id = store.add(sampleSave());
+      const listed = () => store.list()[0];
+      expect(listed()).toMatchObject({ status: 'ready', lastPlayedAt: createdTime.toISOString() });
+      for (const text of ['broken', '2026-02-31T00:00:00.000Z', '2026-10-01T00:00:00.000Z']) {
+        storage.items.set(PLAYED_KEY_PREFIX + id, text);
+        expect(listed()).toMatchObject({ status: 'ready', lastPlayedAt: createdTime.toISOString() });
+      }
+      // A damaged time is replaced by the next real one.
+      storage.items.set(PLAYED_KEY_PREFIX + id, 'broken');
+      store.markPlayed(id, played);
+      expect(listed()).toMatchObject({ lastPlayedAt: played.toISOString() });
+    });
+
+    it('lists the most recently played save first', () => {
+      const { store } = setUp();
+      const older = store.add(sampleSave('Older'));
+      const newer = store.add(createSave('Newer', settings, [], new Date('2026-10-13T00:00:00.000Z')));
+      expect(store.list().map((entry) => entry.id)).toEqual([newer, older]);
+      store.markPlayed(older, played);
+      expect(store.list().map((entry) => entry.id)).toEqual([older, newer]);
+    });
+
+    it('records nothing for a save deleted elsewhere and treats odd IDs as not found', () => {
+      const { storage, store } = setUp();
+      store.markPlayed(idFor(9), played);
+      expect(storage.items.size).toBe(0);
+      expect(problemOf(() => store.markPlayed('../other-key', played))).toBe('not-found');
+      expect(storage.items.size).toBe(0);
+    });
+
+    it('does not block a checked deletion and is removed with the save', () => {
+      const { storage, store } = setUp();
+      const id = store.add(sampleSave());
+      const [listed] = store.list();
+      store.markPlayed(id, played);
+      store.remove(id, listed.snapshot);
+      expect(storage.items.size).toBe(0);
+    });
+
+    it('reports a full storage and leaves the save as it was', () => {
+      const { storage, store } = setUp();
+      const id = store.add(sampleSave());
+      const before = new Map(storage.items);
+      storage.failWrites = quotaError();
+      expect(problemOf(() => store.markPlayed(id, played))).toBe('storage-full');
+      expect(storage.items).toEqual(before);
+    });
+
+    it('stays out of the way of unreadable saves', () => {
+      const { storage, store } = setUp();
+      storage.items.set(SAVE_KEY_PREFIX + idFor(7), 'broken');
+      store.markPlayed(idFor(7), played);
+      expect(store.list()).toEqual([
+        { id: idFor(7), snapshot: 'broken', status: 'unreadable', message: expect.stringMatching(/damaged/) },
+      ]);
+    });
   });
 });

@@ -19,10 +19,10 @@ export const noSavesMessage = 'You have no saves yet. Save during an adventure t
 const controlCharacterPattern = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
 
 /**
- * Turns a save's last-saved ISO time into a short, readable local date and time,
- * such as "12 Oct 2026, 3:40 pm".
+ * Turns an ISO save time, such as last played or last saved, into a short,
+ * readable local date and time, such as "12 Oct 2026, 3:40 pm".
  */
-export function formatLastSaved(isoTime: string): string {
+export function formatSaveTime(isoTime: string): string {
   return new Intl.DateTimeFormat('en-AU', { dateStyle: 'medium', timeStyle: 'short' })
     .format(new Date(isoTime));
 }
@@ -76,6 +76,11 @@ export interface SaveFormOptions {
   readonly locks?: SaveLocks;
   /** Keeps navigation in play while any submitted save is waiting or being written. */
   readonly onPendingChange?: (pending: boolean) => void;
+  /**
+   * Told which stored save this adventure now belongs to after each successful
+   * save, or `undefined` after a conflict, so play time goes to the right save.
+   */
+  readonly onStoredChange?: (saved: StoredSave | undefined) => void;
 }
 
 /**
@@ -170,10 +175,12 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
           const save = { ...fresh, createdAt, updatedAt: fresh.updatedAt < updatedAt ? updatedAt : fresh.updatedAt };
           options.store.replace(current.id, current.save, save);
           current = { id: current.id, save };
+          options.onStoredChange?.(current);
           if (pending === 1 && validationAtSubmit === validationCount) savedMessage = `Saved “${name}”.`;
         } else {
           const copied = current !== undefined;
           current = { id: options.store.add(fresh), save: fresh };
+          options.onStoredChange?.(current);
           if (pending === 1 && validationAtSubmit === validationCount) {
             savedMessage = copied ? `Saved “${name}” as a new save. ${noLocksMessage}` : `Saved “${name}”.`;
           }
@@ -183,6 +190,7 @@ export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
         if (conflict) {
           current = undefined;
           conflictCount += 1;
+          options.onStoredChange?.(undefined);
         }
         reportFailure(conflict ?? messageFor(error));
       } finally {
@@ -222,8 +230,9 @@ export interface SavesScreenOptions {
 }
 
 /**
- * Replaces the contents of `target` with the list of saves. Each save shows
- * its name, genre, length and last saved time, with Resume and Delete.
+ * Replaces the contents of `target` with the list of saves, most recently
+ * played first. Each save shows its name, genre, length, last played time and
+ * last saved time, with Resume and Delete.
  *
  * @remarks
  * Delete confirms the exact listed save under a shared lock; changed saves
@@ -308,7 +317,8 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
       item.append(details([
         ['Genre', genreLabels[entry.settings.genre]],
         ['Length', lengthLabels[entry.settings.length]],
-        ['Last saved', formatLastSaved(entry.updatedAt)],
+        ['Last played', formatSaveTime(entry.lastPlayedAt)],
+        ['Last saved', formatSaveTime(entry.updatedAt)],
       ]));
       actions.append(button('Resume', name, () => {
         let save: AdventureSave;

@@ -361,7 +361,8 @@ Progress is rebuilt by replaying the commands.
 Saves never contain puzzle solutions.
 
 `createSaveStore(storage)` lists, adds, updates, loads and deletes saves in
-any `Storage`-like object, such as `localStorage`. Each save has its own key,
+any `Storage`-like object, such as `localStorage`, and records when each was
+last played. Each save has its own key,
 so a failed write never damages another save. Export gives JSON text. Import
 treats the file as untrusted, rejects damaged, oversized (over 1,000,000
 characters) or newer-version files with a clear message, and stores a good
@@ -405,8 +406,8 @@ without making their progress too large to save. Existing near-limit saves
 with shorter names still replay and can be saved unchanged.
 
 **Your saves** on the start screen
-lists every save with its name, genre, length and last saved time, newest
-first. While a deletion waits for storage, Back and Resume are unavailable,
+lists every save with its name, genre, length, last played time and last
+saved time, most recently played first. While a deletion waits for storage, Back and Resume are unavailable,
 but Keep still cancels it. When another deletion refreshes the list, other
 live confirmations retain their original Keep controls and focus. Their
 confirmed snapshots are still checked when the lock arrives.
@@ -418,9 +419,18 @@ when its unchanged row is replaced; results receive focus only if the old
 focused control has gone and has no suitable replacement.
 Overlapping deletion results are kept together, so a later success cannot
 hide an earlier conflict or lock failure.
-Last saved changes only when Save is pressed successfully, not on Resume
-or unsaved play. Tracking when a save was last played remains unfinished
-under issue #43 and needs a separate safe follow-up.
+Last saved changes only when Save is pressed successfully. Last played also
+changes when a save is resumed and after each command played from it, even
+if that play is never saved, so a Last played time later than Last saved
+means some play was not saved. It is kept under its own
+`textquest:played:<id>` key, never inside the save, so Resume and play never
+change stored progress, deletion snapshots, conflict checks or exported files.
+Each tab only moves the time forward, and nothing is recorded for a save
+deleted elsewhere. Deleting a save removes its time too. Older and imported
+saves, and saves with a damaged or earlier time, show their last saved time
+as Last played until they are played. After a save conflict, play is no longer
+recorded against that save. If the browser cannot store the time, play carries
+on and only the time is missed.
 
 An update only goes ahead if the stored save is still exactly the version
 that tab last loaded or wrote. Updates and deletes take turns through a Web

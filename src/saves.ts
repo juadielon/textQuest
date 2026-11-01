@@ -167,13 +167,15 @@ function readCommands(value: unknown): string[] {
   });
 }
 
-function readTime(value: unknown, label: string): string {
-  if (typeof value !== 'string' || !isoTimePattern.test(value)) {
-    throw damaged(`the ${label} time is not valid.`);
-  }
+function isIsoTime(value: unknown): value is string {
+  if (typeof value !== 'string' || !isoTimePattern.test(value)) return false;
   const time = new Date(value);
   // Rejects impossible dates such as 31 February, which Date would roll over.
-  if (Number.isNaN(time.getTime()) || time.toISOString() !== value) {
+  return !Number.isNaN(time.getTime()) && time.toISOString() === value;
+}
+
+function readTime(value: unknown, label: string): string {
+  if (!isIsoTime(value)) {
     throw damaged(`the ${label} time is not valid.`);
   }
   return value;
@@ -306,6 +308,12 @@ export type SaveListEntry =
       readonly commandCount: number;
       readonly createdAt: string;
       readonly updatedAt: string;
+      /**
+       * When the save was last played in this browser, as an ISO 8601 UTC
+       * time. Never earlier than `updatedAt`, which it falls back to when no
+       * play has been recorded, such as for older or imported saves.
+       */
+      readonly lastPlayedAt: string;
     }
   | {
       /** A stored save that can't be read. It is left in place, never deleted. */
@@ -323,10 +331,17 @@ type ReadySave = Extract<SaveListEntry, { status: 'ready' }>;
  */
 export interface SaveStore {
   /**
-   * Lists every stored save, most recently updated first. Saves that can't be
+   * Lists every stored save, most recently played first. Saves that can't be
    * read come last and are kept, so they are never lost.
    */
   list(): SaveListEntry[];
+  /**
+   * Records that the save with this ID was played at `now`, defaulting to the
+   * clock. The time is kept under its own key, so the save, its snapshot and
+   * its export never change. An earlier time never replaces a later one, and
+   * nothing is written if the save has gone.
+   */
+  markPlayed(id: string, now?: Date): void;
   /** Stores a new save and returns its new ID. */
   add(save: AdventureSave): string;
   /** Stores a save under this ID, replacing any earlier version. On failure the old version is kept. */
@@ -344,7 +359,8 @@ export interface SaveStore {
   /**
    * Deletes a save, optionally only if its stored text still matches the listed
    * snapshot. A mismatch throws `changed` and keeps it. Already deleted saves
-   * are ignored. Use a shared lock around checked deletions.
+   * are ignored. Its last-played time is removed too. Use a shared lock
+   * around checked deletions.
    */
   remove(id: string, snapshot?: string): void;
   /** Returns export file text for the save with this ID. */
@@ -355,6 +371,12 @@ export interface SaveStore {
 
 /** The storage key prefix for saves. Never change it, or stored saves are lost. */
 export const SAVE_KEY_PREFIX = 'textquest:save:';
+
+/**
+ * The storage key prefix for last-played times, kept apart from saves so
+ * playing never changes stored progress. Never change it.
+ */
+export const PLAYED_KEY_PREFIX = 'textquest:played:';
 
 const idPattern = /^[0-9a-f]{32}$/;
 
@@ -420,6 +442,26 @@ export function createSaveStore(
       throw notFound();
     }
     return `${SAVE_KEY_PREFIX}${id}`;
+  }
+
+  function playedKeyFor(id: string): string {
+    keyFor(id);
+    return `${PLAYED_KEY_PREFIX}${id}`;
+  }
+
+  // A damaged or missing time is ignored; it never makes the save unreadable.
+  function readPlayed(id: string): string | undefined {
+    const text = read(playedKeyFor(id));
+    return isIsoTime(text) ? text : undefined;
+  }
+
+  function markPlayed(id: string, now: Date = new Date()): void {
+    // Checked first, so a save deleted in another tab is not given a time.
+    if (read(keyFor(id)) === null) return;
+    const time = now.toISOString();
+    const recorded = readPlayed(id);
+    if (!isIsoTime(time) || (recorded !== undefined && recorded >= time)) return;
+    write(playedKeyFor(id), time);
   }
 
   function newId(): string {
@@ -498,32 +540,38 @@ export function createSaveStore(
       for (const id of storedIds()) {
         const snapshot = read(keyFor(id));
         if (snapshot === null) continue;
+        let save: AdventureSave;
         try {
-          const save = importSaveFile(snapshot);
-          ready.push({
-            id,
-            snapshot,
-            status: 'ready',
-            name: save.name,
-            settings: save.settings,
-            commandCount: save.commands.length,
-            createdAt: save.createdAt,
-            updatedAt: save.updatedAt,
-          });
+          save = importSaveFile(snapshot);
         } catch (error) {
           if (error instanceof SaveError && error.problem === 'storage-unavailable') {
             throw error;
           }
           const message = error instanceof SaveError ? error.message : 'This save could not be read.';
           unreadable.push({ id, snapshot, status: 'unreadable', message });
+          continue;
         }
+        const played = readPlayed(id);
+        ready.push({
+          id,
+          snapshot,
+          status: 'ready',
+          name: save.name,
+          settings: save.settings,
+          commandCount: save.commands.length,
+          createdAt: save.createdAt,
+          updatedAt: save.updatedAt,
+          // Saving happens during play, so a later save counts as playing too.
+          lastPlayedAt: played !== undefined && played > save.updatedAt ? played : save.updatedAt,
+        });
       }
       // Plain comparisons, not localeCompare, keep the order the same everywhere.
       const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-      ready.sort((a, b) => compare(b.updatedAt, a.updatedAt) || compare(a.id, b.id));
+      ready.sort((a, b) => compare(b.lastPlayedAt, a.lastPlayedAt) || compare(a.id, b.id));
       unreadable.sort((a, b) => compare(a.id, b.id));
       return [...ready, ...unreadable];
     },
+    markPlayed,
     add,
     put,
     replace,
@@ -541,6 +589,11 @@ export function createSaveStore(
         storage.removeItem(key);
       } catch (error) {
         throw storageError(error);
+      }
+      try {
+        storage.removeItem(playedKeyFor(id));
+      } catch {
+        // The save is already gone; a leftover time is never listed.
       }
     },
     exportSave(id) {

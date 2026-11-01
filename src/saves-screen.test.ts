@@ -5,7 +5,7 @@ import {
   createSave, createSaveStore, SAVE_KEY_PREFIX, type SaveStore, type StorageLike,
 } from './saves';
 import {
-  buildSaveForm, formatLastSaved, noLocksMessage, noSavesMessage, renderSavesScreen, SAVE_LOCK_NAME,
+  buildSaveForm, formatSaveTime, noLocksMessage, noSavesMessage, renderSavesScreen, SAVE_LOCK_NAME,
   saveNameMessage, type SaveLocks,
 } from './saves-screen';
 import { genreLabels, lengthLabels } from './start-screen-model';
@@ -64,9 +64,9 @@ const texts = (selector: string) => [...app.querySelectorAll(selector)].map((nod
 const buttonNamed = (name: string) =>
   app.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)!;
 
-describe('formatLastSaved', () => {
+describe('formatSaveTime', () => {
   it('shows a readable Australian date and time', () => {
-    expect(formatLastSaved(later.toISOString())).toBe(
+    expect(formatSaveTime(later.toISOString())).toBe(
       new Intl.DateTimeFormat('en-AU', { dateStyle: 'medium', timeStyle: 'short' }).format(later),
     );
   });
@@ -201,6 +201,28 @@ describe('buildSaveForm', () => {
     expect(status.textContent).toBe('Saved “Trip”.');
     expect(store.load(id)).toEqual(elsewhere);
     expect(store.list().map((entry) => entry.id)).toHaveLength(2);
+  });
+
+  it('reports which stored save play belongs to after each save and conflict', async () => {
+    const save = createSave('Trip', settings, ['look'], earlier);
+    const id = store.add(save);
+    const onStoredChange = vi.fn();
+    const { form } = mountForm(['look', 'hint'], { resumed: { id, save }, now: () => later, onStoredChange });
+
+    form.requestSubmit();
+    await lock.settled();
+    expect(onStoredChange).toHaveBeenLastCalledWith({ id, save: store.load(id) });
+
+    store.put(id, { ...save, name: 'Other tab' });
+    form.requestSubmit();
+    await lock.settled();
+    expect(onStoredChange).toHaveBeenLastCalledWith(undefined);
+
+    form.requestSubmit();
+    await lock.settled();
+    const copy = store.list().find((entry) => entry.id !== id)!;
+    expect(onStoredChange).toHaveBeenLastCalledWith({ id: copy.id, save: store.load(copy.id) });
+    expect(onStoredChange).toHaveBeenCalledTimes(3);
   });
 
   it('does not bring back a save deleted elsewhere', async () => {
@@ -351,8 +373,8 @@ describe('renderSavesScreen', () => {
     expect(onBack).toHaveBeenCalledOnce();
   });
 
-  it('lists name, genre, length and last saved time, newest first', () => {
-    store.add(createSave('First', settings, [], earlier));
+  it('lists name, genre, length, last played and last saved time, most recently played first', () => {
+    const firstId = store.add(createSave('First', settings, [], earlier));
     store.add(createSave('<b>Second</b>', createAdventureSettings(3, 'short'), [], later));
 
     render();
@@ -363,9 +385,21 @@ describe('renderSavesScreen', () => {
     expect([...first.querySelectorAll('dt, dd')].map((node) => node.textContent)).toEqual([
       'Genre', genreLabels[settings.genre],
       'Length', lengthLabels.long,
-      'Last saved', formatLastSaved(earlier.toISOString()),
+      'Last played', formatSaveTime(earlier.toISOString()),
+      'Last saved', formatSaveTime(earlier.toISOString()),
     ]);
     expect(first.getAttribute('aria-labelledby')).toBe(first.querySelector('h2')?.id);
+
+    const played = new Date('2026-10-03T08:15:00.000Z');
+    store.markPlayed(firstId, played);
+    render();
+
+    expect(texts('.save-item h2')).toEqual(['First', '<b>Second</b>']);
+    expect([...app.querySelectorAll('.save-item')[0].querySelectorAll('dd')].map((node) => node.textContent))
+      .toEqual([
+        genreLabels[settings.genre], lengthLabels.long,
+        formatSaveTime(played.toISOString()), formatSaveTime(earlier.toISOString()),
+      ]);
   });
 
   it('resumes a loaded save', () => {

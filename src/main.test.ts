@@ -4,8 +4,8 @@ import * as adventureSettings from './adventure-settings';
 import { discoveredTargets, replayCommands, startPlay } from './engine/play';
 import { generateAdventureWorld } from './generate-world';
 import { describePlay, playScreenTitle, unplayableMessage } from './play-screen';
-import { createSave, createSaveStore } from './saves';
-import { SAVE_LOCK_NAME } from './saves-screen';
+import { createSave, createSaveStore, PLAYED_KEY_PREFIX, SAVE_KEY_PREFIX } from './saves';
+import { formatSaveTime, SAVE_LOCK_NAME } from './saves-screen';
 import { summariseAdventure } from './start-screen-model';
 
 let app: HTMLElement;
@@ -562,20 +562,82 @@ async function openLink(word: string, path = '/textQuest/'): Promise<void> {
   await import('./main');
 }
 
-it('labels the stored timestamp Last saved without writing metadata on Resume or unsaved play', () => {
+it('records Last played on Resume and each command without changing the stored save', () => {
+  const store = createSaveStore(localStorage);
+  const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
+  const id = store.add(saved);
+  const text = localStorage.getItem(SAVE_KEY_PREFIX + id);
+  get<HTMLButtonElement>('#open-saves').click();
+  expect(shownDetails()['Last played']).toBe(formatSaveTime(saved.updatedAt));
+  expect(shownDetails()['Last saved']).toBe(formatSaveTime(saved.updatedAt));
+
+  const times = [new Date('2026-10-05T01:00:00.000Z'), new Date('2026-10-05T02:00:00.000Z')];
+  vi.useFakeTimers({ toFake: ['Date'], now: times[0] });
+  try {
+    get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
+    expect(localStorage.getItem(PLAYED_KEY_PREFIX + id)).toBe(times[0].toISOString());
+    vi.setSystemTime(times[1]);
+    get<HTMLInputElement>('#play-command').value = 'look';
+    get<HTMLFormElement>('.play-command').requestSubmit();
+    expect(localStorage.getItem(PLAYED_KEY_PREFIX + id)).toBe(times[1].toISOString());
+  } finally {
+    vi.useRealTimers();
+  }
+  get<HTMLButtonElement>('header button').click();
+  get<HTMLButtonElement>('#open-saves').click();
+
+  expect(localStorage.getItem(SAVE_KEY_PREFIX + id)).toBe(text);
+  expect(store.load(id)).toEqual(saved);
+  expect(shownDetails()['Last played']).toBe(formatSaveTime(times[1].toISOString()));
+  expect(shownDetails()['Last saved']).toBe(formatSaveTime(saved.updatedAt));
+});
+
+it('records play for a new save once saved, and stops after a conflict', async () => {
+  Object.defineProperty(navigator, 'locks', {
+    configurable: true,
+    value: { request: async (_name: string, task: () => void) => { task(); } },
+  });
+  openAdventure(adventureSettings.encodeShareWord(settings));
+  const play = (command: string) => {
+    get<HTMLInputElement>('#play-command').value = command;
+    get<HTMLFormElement>('.play-command').requestSubmit();
+  };
+  play('look');
+  expect(localStorage.length).toBe(0);
+  get<HTMLFormElement>('.save-form').requestSubmit();
+  await vi.waitFor(() => expect(get('#save-status').textContent).toContain('Saved'));
+  const store = createSaveStore(localStorage);
+  const [{ id }] = store.list();
+  play('inventory');
+  const recorded = localStorage.getItem(PLAYED_KEY_PREFIX + id);
+  expect(recorded).not.toBeNull();
+
+  const stored = store.load(id);
+  store.put(id, { ...stored, name: 'Other tab' });
+  localStorage.removeItem(PLAYED_KEY_PREFIX + id);
+  get<HTMLFormElement>('.save-form').requestSubmit();
+  await vi.waitFor(() => expect(get('#save-status').textContent).toContain('changed'));
+  play('look');
+  expect(localStorage.getItem(PLAYED_KEY_PREFIX + id)).toBeNull();
+  expect(store.load(id).name).toBe('Other tab');
+});
+
+it('keeps playing when the browser cannot record Last played', () => {
   const store = createSaveStore(localStorage);
   const saved = createSave('My trip', settings, [], new Date('2026-10-01T09:00:00.000Z'));
   const id = store.add(saved);
   get<HTMLButtonElement>('#open-saves').click();
-  expect(get('.save-item dl').textContent).toContain('Last saved');
-  expect(get('.save-item dl').textContent).not.toContain('Last played');
+  vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+    throw new DOMException('full', 'QuotaExceededError');
+  });
   get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
   get<HTMLInputElement>('#play-command').value = 'look';
   get<HTMLFormElement>('.play-command').requestSubmit();
-  get<HTMLButtonElement>('header button').click();
-  get<HTMLButtonElement>('#open-saves').click();
+
+  expect(get('h1').textContent).toBe(playScreenTitle);
+  expect([...app.querySelectorAll('.play-typed')].map((node) => node.textContent)).toEqual(['> look']);
+  expect(localStorage.getItem(PLAYED_KEY_PREFIX + id)).toBeNull();
   expect(store.load(id)).toEqual(saved);
-  expect(get('.save-item dl').textContent).toContain('Last saved');
 });
 
 it.each([1, 2])('opens version %i links in fresh play for all genres and lengths', async (version) => {

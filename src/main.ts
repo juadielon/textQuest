@@ -43,12 +43,23 @@ if (app) {
 
   const showPlay = (settings: AdventureSettings, resumed?: StoredSave): void => {
     let commands: readonly string[] = resumed?.save.commands ?? [];
+    let playing = resumed?.id;
+    const markPlayed = (): void => {
+      if (playing === undefined) return;
+      try {
+        store.markPlayed(playing);
+      } catch {
+        // A missed play time loses no progress, so play carries on.
+      }
+    };
     const playable = renderPlayScreen(app, settings, {
       commands,
       onCommand: (latest) => {
         commands = latest;
+        markPlayed();
       },
     });
+    if (playable) markPlayed();
 
     const header = document.createElement('header');
     const heading = app.querySelector('h1')!;
@@ -125,6 +136,7 @@ if (app) {
       header.append(buildSaveForm({
         store, settings, resumed, suggestedName: summary.shareWord, commands: () => commands,
         onPendingChange: (pending) => { back.disabled = pending; },
+        onStoredChange: (saved) => { playing = saved?.id; },
       }));
     }
     heading.after(header);
