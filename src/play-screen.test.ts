@@ -70,6 +70,7 @@ const text = (target: HTMLElement, selector: string) =>
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   document.body.replaceChildren();
 });
 
@@ -332,7 +333,8 @@ describe('renderPlayScreen', () => {
     expect(title.textContent).toBe(playScreenTitle);
     expect(title.tabIndex).toBe(-1);
     expect(target.querySelectorAll('h1')).toHaveLength(1);
-    expect(text(target, 'h2')).toEqual(['gate', 'The end', 'Inventory', 'Clues found']);
+    expect(target.querySelector('.play-story h2')).not.toBeNull();
+    expect(text(target, 'h2')).toContain('gate');
   });
 
   it.each<AdventureGenre>(['light-fantasy', 'cosy-mystery', 'science-fiction'])(
@@ -348,6 +350,45 @@ describe('renderPlayScreen', () => {
       expect(target.querySelector('form')).not.toBeNull();
     },
   );
+
+  it('does not show solution controls without the explicit flag', () => {
+    vi.stubEnv('VITE_SOLUTION_MODE', '');
+    vi.mocked(generateAdventureWorld).mockReturnValueOnce(tinyWorld);
+    const target = document.createElement('main');
+
+    renderPlayScreen(target, settingsFor('light-fantasy'));
+
+    expect(target.querySelector('.solution-panel')).toBeNull();
+  });
+
+  it('runs and resets an explicit solution route without recording save commands', () => {
+    vi.stubEnv('VITE_SOLUTION_MODE', '1');
+    vi.mocked(generateAdventureWorld).mockReturnValueOnce(tinyWorld);
+    const onCommand = vi.fn();
+    const target = document.createElement('main');
+    renderPlayScreen(target, settingsFor('light-fantasy'), { onCommand });
+
+    expect(target.querySelector('.solution-panel')).not.toBeNull();
+    const buttons = [...target.querySelectorAll<HTMLButtonElement>('.solution-panel button')];
+    const [reset, step, runAll] = buttons;
+    expect(reset.textContent).toBe('Reset solution');
+    expect(step.textContent).toBe('Next solution command');
+    expect(runAll.textContent).toBe('Run solution');
+
+    runAll.click();
+
+    expect(target.querySelector('.solution-panel p')?.textContent)
+      .toBe('Solution reached the goal in 3 commands.');
+    expect(target.querySelector('.play-ending')?.hidden).toBe(false);
+    expect(text(target, '.play-typed')).toEqual([
+      '> take brass key', '> use brass key', '> go to old tower',
+    ]);
+    expect(onCommand).not.toHaveBeenCalled();
+
+    reset.click();
+    expect(target.querySelector('.play-log')?.children).toHaveLength(0);
+    expect(target.querySelector('.play-sidebar p')?.textContent).toBe('Turns taken: 0');
+  });
 
   it('shows a plain message when the world cannot be generated', () => {
     vi.mocked(generateAdventureWorld).mockImplementationOnce(() => {

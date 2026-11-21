@@ -1,8 +1,12 @@
 import type { AdventureSettings } from './adventure-settings';
 import type { AdventureWorld } from './adventure-world';
+import { storyView } from './content/v1/story';
 import type { CommandTarget } from './engine/commands';
-import { discoveredTargets, playCommand, startPlay, type PlayState } from './engine/play';
-import { generateAdventureWorld } from './generate-world';
+import {
+  discoveredTargets, playCommand, startPlay, type PlayState, type PlayWorld,
+} from './engine/play';
+import { adventurePack, generateAdventureWorld } from './generate-world';
+import { findWinningCommands, solutionModeEnabled } from './solution';
 import {
   createSave, exportSaveFile, MAX_COMMAND_LENGTH, MAX_SAVE_COMMANDS, MAX_SAVE_NAME_LENGTH, SaveError,
 } from './saves';
@@ -97,6 +101,14 @@ export function renderPlayScreen(
     return false;
   }
 
+  const pack = adventurePack(settings.version, settings.genre);
+  const story = storyView(pack, settings);
+  const storyTitle = element('h2', undefined, story.title);
+  const storyBrief = element('p', undefined, story.introduction);
+  const objective = element('p', 'play-objective', `Objective: ${story.objective}`);
+  const storySection = element('section', 'play-story', storyTitle, storyBrief, objective);
+  storySection.setAttribute('aria-label', 'Adventure purpose');
+
   const placeName = element('h2', 'play-place-name');
   placeName.id = 'play-place-name';
   const placeText = element('p');
@@ -142,20 +154,82 @@ export function renderPlayScreen(
     fillList(clues, view.clues, 'No clues found yet.');
     turns.textContent = `Turns taken: ${view.turns}`;
     ending.hidden = !view.ended;
-    endingText.textContent = `You reached your goal in ${view.turns} `
-      + `${view.turns === 1 ? 'turn' : 'turns'}. Type undo to go back a turn.`;
+    const currentStory = storyView(pack, settings, state);
+    endingText.textContent = currentStory.ending
+      ? `${currentStory.ending} You reached your goal in ${view.turns} `
+        + `${view.turns === 1 ? 'turn' : 'turns'}. Type undo to go back a turn.`
+      : `You reached your goal in ${view.turns} `
+        + `${view.turns === 1 ? 'turn' : 'turns'}. Type undo to go back a turn.`;
   };
 
   const commands: string[] = [];
-  const run = (command: string): string => {
+  const run = (command: string, record = true): string => {
     const turn = playCommand(world, state, command);
     state = turn.state;
-    commands.push(command);
+    if (record) {
+      commands.push(command);
+      options.onCommand?.([...commands]);
+    }
     log.append(element('li', 'play-entry',
       element('p', 'play-typed', `> ${command}`), element('p', undefined, turn.message)));
     return turn.message;
   };
-  options.commands?.forEach((command) => run(command));
+  options.commands?.forEach((command) => run(command, false));
+
+  let solutionPanel: HTMLElement | undefined;
+  if (solutionModeEnabled()) {
+    const solutionWorld: PlayWorld = world;
+    const route = findWinningCommands(solutionWorld);
+    let routeIndex = 0;
+    const solutionStatus = element('p', undefined, route.length
+      ? `Winning route: ${route.length} commands.`
+      : 'No winning route found.');
+    const reset = element('button', undefined, 'Reset solution');
+    reset.type = 'button';
+    const step = element('button', undefined, 'Next solution command');
+    step.type = 'button';
+    const runAll = element('button', undefined, 'Run solution');
+    runAll.type = 'button';
+    reset.addEventListener('click', () => {
+      state = startPlay(world);
+      routeIndex = 0;
+      log.replaceChildren();
+      solutionStatus.textContent = route.length
+        ? `Solution reset. ${route.length} commands remain.`
+        : 'No winning route found.';
+      update();
+      input.focus();
+    });
+    step.addEventListener('click', () => {
+      if (routeIndex >= route.length) return;
+      run(route[routeIndex], false);
+      routeIndex += 1;
+      solutionStatus.textContent = state.goalReached
+        ? `Solution reached the goal in ${routeIndex} commands.`
+        : `${routeIndex} of ${route.length} solution commands run.`;
+      update();
+      log.scrollTop = log.scrollHeight;
+    });
+    runAll.addEventListener('click', () => {
+      while (routeIndex < route.length && !state.goalReached) {
+        run(route[routeIndex], false);
+        routeIndex += 1;
+      }
+      solutionStatus.textContent = state.goalReached
+        ? `Solution reached the goal in ${routeIndex} commands.`
+        : `${routeIndex} of ${route.length} solution commands run.`;
+      update();
+      log.scrollTop = log.scrollHeight;
+    });
+    step.disabled = route.length === 0;
+    runAll.disabled = route.length === 0;
+    solutionPanel = element('aside', 'solution-panel',
+      element('h2', undefined, 'Solution mode'),
+      solutionStatus,
+      reset,
+      step,
+      runAll);
+  }
 
   form.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -200,11 +274,12 @@ export function renderPlayScreen(
     input.value = '';
     input.focus();
     update();
-    options.onCommand?.([...commands]);
   });
 
   update();
-  const screen = element('div', 'play-screen', place, ending, log, form, announcer, sidebar);
+  const screen = element('div', 'play-screen',
+    ...(solutionPanel ? [solutionPanel] : []),
+    storySection, place, ending, log, form, announcer, sidebar);
   target.replaceChildren(title, screen);
   return true;
 }

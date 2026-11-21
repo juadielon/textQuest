@@ -148,8 +148,9 @@ names supplied by its caller. It handles the planned verbs and common short
 forms without changing state. A pure play module runs those actions against a
 world with turn counting, hints and undo, following the winnability checker's
 rules. It can show and accept content-pack names and aliases, and lets the
-player talk to people at their place. Suggestions and checkpoints are not
-implemented.
+player talk to people at their place. An explicit Docker solution flag can
+run or step through a deterministic winning route through the real parser
+and play state. Suggestions and checkpoints are not implemented.
 
 ### 6. Saves
 

@@ -41,6 +41,33 @@ main {
   gap: 1rem;
 }
 
+.solution-panel {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}
+
+.solution-panel button {
+  margin-right: 0.5rem;
+}
+
+.play-story {
+  padding: 0.75rem 1rem;
+  border-left: 4px solid var(--accent);
+  background: rgb(128 128 128 / 8%);
+}
+
+.play-story h2,
+.play-story p {
+  margin-bottom: 0.5rem;
+}
+
+.play-story p:last-child,
+.play-objective {
+  margin-bottom: 0;
+  font-weight: 600;
+}
+
 .play-log {
   max-height: 20rem;
   margin: 0;

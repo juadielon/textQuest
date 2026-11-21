@@ -493,7 +493,20 @@ docker compose run --rm app npm ci
 docker compose up app
 ```
 
-Open <http://localhost:5173>. Run the checks in containers:
+Open <http://localhost:5173>.
+
+To run the game in explicit development solution mode, expose the container
+port and set the opt-in flag:
+
+```sh
+docker compose run --rm --service-ports -e VITE_SOLUTION_MODE=1 app npm run dev
+```
+
+Solution mode shows controls that reset, step through or run a deterministic
+winning route through the real parser and play state. It does not add solution
+commands to player saves. A normal Docker start has ordinary player mode.
+
+Run the checks in containers:
 
 ```sh
 docker compose run --rm app npm test

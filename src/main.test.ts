@@ -26,6 +26,7 @@ beforeEach(async () => {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   Reflect.deleteProperty(navigator, 'locks');
   window.history.replaceState(null, '', '/');
   document.body.replaceChildren();
@@ -236,6 +237,15 @@ it.each([1, 2])('saves and resumes version %i from a share link without sharing 
   get<HTMLButtonElement>('button[aria-label="Resume: My trip"]').click();
   expect([...app.querySelectorAll('.play-typed')].map((node) => node.textContent))
     .toEqual([...commands, 'inventory'].map((command) => `> ${command}`));
+});
+
+it('uses solution mode explicitly and does not offer save controls', () => {
+  vi.stubEnv('VITE_SOLUTION_MODE', '1');
+  openAdventure(adventureSettings.encodeShareWord(settings));
+
+  expect(get('.solution-panel')).not.toBeNull();
+  expect(app.querySelector('.save-form')).toBeNull();
+  expect(get('header > .hint').textContent).toContain('Progress in this screen is not saved');
 });
 
 it('offers no save form when the world cannot be played', async () => {
