@@ -9,6 +9,7 @@ import type { EntityReference, PlotStructure, Prose } from './content/v1/format'
 import { aliasesFor, worldNamesFrom } from './content/v1/world-names';
 import { createSeededRandom } from './seeded-random';
 import { adventurePack, generateAdventureWorld } from './generate-world';
+import { storyView } from './content/v1/story';
 import { genreLabels } from './start-screen-model';
 import { findWinningCommands, solutionModeEnabled } from './solution';
 import {
@@ -124,7 +125,7 @@ export function renderPlayScreen(
   placeName.id = 'play-place-name';
   const introduction = element('p', 'play-introduction');
   const objective = element('p', 'play-objective');
-  objective.textContent = `Objective: ${plot.name}`;
+  objective.textContent = `Objective: ${storyView(pack, settings).objective}`;
   const description = element('p', 'play-description');
   const placeText = element('p');
   const peopleHeading = element('h3', undefined, 'People here');

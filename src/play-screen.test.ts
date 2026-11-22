@@ -212,7 +212,7 @@ describe('renderPlayScreen', () => {
   it('shows the plotted objective on the play screen', () => {
     const target = renderTiny();
     expect(target.querySelector('.play-objective')?.textContent)
-      .toBe('Objective: Tiny adventure');
+      .toBe('Objective: Complete the required clues and reach the agreed goal.');
   });
   it('resets, steps and runs an explicit solution route', () => {
     vi.stubEnv('VITE_SOLUTION_MODE', '1');
