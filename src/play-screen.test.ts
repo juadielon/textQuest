@@ -209,6 +209,11 @@ describe('describePlay', () => {
 });
 
 describe('renderPlayScreen', () => {
+  it('shows the plotted objective on the play screen', () => {
+    const target = renderTiny();
+    expect(target.querySelector('.play-objective')?.textContent)
+      .toBe('Objective: Tiny adventure');
+  });
   it('resets, steps and runs an explicit solution route', () => {
     vi.stubEnv('VITE_SOLUTION_MODE', '1');
     vi.mocked(generateAdventureWorld).mockReturnValueOnce(tinyWorld);

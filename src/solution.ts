@@ -54,16 +54,18 @@ function deriveCommands(world: PlayWorld, start: PlayState): readonly string[] {
 }
 
 function candidateCommands(world: PlayWorld, state: PlayState): readonly string[] {
-  const commands: string[] = [];
+  const moves: string[] = [];
+  const items: string[] = [];
+  const choices: string[] = [];
   for (const target of discoveredTargets(world, state)) {
-    if (target.kind === 'place') commands.push(`go to ${target.name}`);
+    if (target.kind === 'place' && target.id !== state.placeId) moves.push(`go to ${target.name}`);
     if (target.kind === 'item') {
-      if (!state.itemsHeld.includes(target.id)) commands.push(`take ${target.name}`);
-      else commands.push(`use ${target.name}`);
+      if (!state.itemsHeld.includes(target.id)) items.push(`take ${target.name}`);
+      else items.push(`use ${target.name}`);
     }
-    if (target.kind === 'choice') commands.push(`choose ${target.name}`);
+    if (target.kind === 'choice') choices.push(`choose ${target.name}`);
   }
-  return [...new Set(commands)];
+  return [...new Set([...choices, ...items, ...moves])];
 }
 
 function stateKey(state: PlayState): string {

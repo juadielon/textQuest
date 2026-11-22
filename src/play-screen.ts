@@ -123,6 +123,8 @@ export function renderPlayScreen(
   const placeName = element('h2', 'play-place-name');
   placeName.id = 'play-place-name';
   const introduction = element('p', 'play-introduction');
+  const objective = element('p', 'play-objective');
+  objective.textContent = `Objective: ${plot.name}`;
   const description = element('p', 'play-description');
   const placeText = element('p');
   const peopleHeading = element('h3', undefined, 'People here');
@@ -131,7 +133,7 @@ export function renderPlayScreen(
   const itemsHere = element('ul', 'play-items-here');
   const storyHeading = element('h3', undefined, 'Story');
   const story = element('ul', 'play-story');
-  const place = element('section', 'play-place', placeName, introduction, description,
+  const place = element('section', 'play-place', placeName, introduction, objective, description,
     placeText, peopleHeading, people, itemsHeading, itemsHere, storyHeading, story);
   place.setAttribute('aria-labelledby', placeName.id);
 
@@ -349,7 +351,7 @@ export function renderPlayScreen(
   let solutionRouteIndex = 0;
   let updateSolutionControls: (() => void) | undefined;
   if (solutionModeEnabled()) {
-    solutionRoute = findWinningCommands(world);
+    solutionRoute = findWinningCommands(world, state);
     solutionStatus = element('p', undefined, solutionRoute.length
       ? `Winning route: ${solutionRoute.length} commands.`
       : 'No winning route found.');
@@ -368,7 +370,7 @@ export function renderPlayScreen(
     };
     reset.addEventListener('click', () => {
       state = startPlay(world);
-      solutionRoute = findWinningCommands(world);
+      solutionRoute = findWinningCommands(world, state);
       solutionRouteIndex = 0;
       log.replaceChildren();
       solutionStatus!.textContent = solutionRoute.length

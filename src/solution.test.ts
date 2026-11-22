@@ -4,6 +4,7 @@ import type { AdventureWorld } from './adventure-world';
 import type { PlayWorld } from './engine/play';
 import { createAdventureSettings } from './adventure-settings';
 import { generateAdventureWorld } from './generate-world';
+import { replayCommands } from './engine/play';
 import {
   findWinningCommands, SOLUTION_SEARCH_LIMIT, solutionModeEnabled,
 } from './solution';
@@ -98,5 +99,6 @@ describe('solution mode', () => {
     const world = generateAdventureWorld(settings);
     const route = findWinningCommands(world);
     expect(route.length).toBeGreaterThan(0);
-  }, 30_000);
+    expect(replayCommands(world, route).goalReached).toBe(true);
+  });
 });
