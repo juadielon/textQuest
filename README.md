@@ -172,7 +172,13 @@ Node.js, npm or the project dependencies on your computer.
 
 Solution mode enables Reset, Next and Run controls for the generated
 winning route. It is development-only and is disabled in normal runs.
-Start it in Docker with:
+If dependencies are not installed yet, install them in Docker:
+
+```sh
+docker compose run --rm app npm ci
+```
+
+Then start it in Docker with:
 
 ```sh
 docker compose run --rm --service-ports -e VITE_SOLUTION_MODE=1 app npm run dev
