@@ -171,7 +171,8 @@ Node.js, npm or the project dependencies on your computer.
 ### Run in solution mode
 
 Solution mode enables Reset, Next and Run controls for the generated
-winning route. It is development-only and is disabled in normal runs.
+winning route. It is opt-in for builds made with `VITE_SOLUTION_MODE=1`
+and remains disabled in normal development and production builds.
 If dependencies are not installed yet, install them in Docker:
 
 ```sh
