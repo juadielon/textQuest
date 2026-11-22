@@ -318,13 +318,17 @@ export function renderPlayScreen(
       input.focus();
       return;
     }
+    const beforeState = state;
     const message = run(command, 'content');
     commands.push(command);
     commandModes.push('content');
     announcer.className = 'visually-hidden';
     log.scrollTop = log.scrollHeight;
     // A fresh node is announced even when the text repeats the last response.
-    announcer.replaceChildren(element('span', undefined, message));
+    const endingNow = state.goalReached
+      ? ` You reached your goal in ${state.turns} ${state.turns === 1 ? 'turn' : 'turns'}.`
+      : '';
+    announcer.replaceChildren(element('span', undefined, `${message}${endingNow}`));
     input.value = '';
     input.focus();
     update();
