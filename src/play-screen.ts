@@ -318,7 +318,6 @@ export function renderPlayScreen(
       input.focus();
       return;
     }
-    const beforeState = state;
     const message = run(command, 'content');
     commands.push(command);
     commandModes.push('content');
