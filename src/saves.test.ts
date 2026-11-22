@@ -2,13 +2,16 @@ import { describe, expect, it } from 'vitest';
 import {
   adventureLengths, createAdventureSettings, encodeShareWord, parseShareWord, type RandomValueSource,
 } from './adventure-settings';
-import { generateAdventureWorld } from './generate-world';
-import { replayCommands } from './engine/play';
+import type { AdventureWorld } from './adventure-world';
+import { adventurePack, generateAdventureWorld } from './generate-world';
+import { playCommand, replayCommands, type CommandReplayMode } from './engine/play';
+import { worldNamesFrom } from './content/v1/world-names';
 import {
   MAX_COMMAND_LENGTH,
   MAX_SAVE_COMMANDS,
   MAX_SAVE_FILE_LENGTH,
   MAX_SAVE_NAME_LENGTH,
+  PLAYED_KEY_PREFIX,
   SAVE_KEY_PREFIX,
   SaveError,
   createSave,
@@ -33,6 +36,8 @@ class MemoryStorage implements StorageLike {
   readonly items = new Map<string, string>();
   failWrites: unknown = null;
   failReads: unknown = null;
+  failReadKey: string | null = null;
+  failRemoveKey: string | null = null;
 
   get length() {
     return this.items.size;
@@ -43,7 +48,7 @@ class MemoryStorage implements StorageLike {
   }
 
   getItem(key: string) {
-    if (this.failReads) throw this.failReads;
+    if (this.failReads || key === this.failReadKey) throw this.failReads ?? new DOMException('blocked', 'SecurityError');
     return this.items.get(key) ?? null;
   }
 
@@ -53,6 +58,7 @@ class MemoryStorage implements StorageLike {
   }
 
   removeItem(key: string) {
+    if (key === this.failRemoveKey) throw new DOMException('blocked', 'SecurityError');
     if (this.failWrites) throw this.failWrites;
     this.items.delete(key);
   }
@@ -98,17 +104,35 @@ function messageOf(action: () => unknown): string {
   throw new Error('Expected an error.');
 }
 
+function commandsToPlace(world: AdventureWorld, destination: string): string[] {
+  const paths = new Map<string, string[]>([[world.startPlaceId, [world.startPlaceId]]]);
+  const queue = [world.startPlaceId];
+  for (let index = 0; index < queue.length; index += 1) {
+    const placeId = queue[index];
+    if (placeId === destination) {
+      return paths.get(placeId)!.slice(1).map((id) => `go ${id.replace(/[-_]+/g, ' ')}`);
+    }
+    for (const exit of world.exits) {
+      if (exit.fromPlaceId !== placeId || exit.locked || paths.has(exit.toPlaceId)) continue;
+      paths.set(exit.toPlaceId, [...paths.get(placeId)!, exit.toPlaceId]);
+      queue.push(exit.toPlaceId);
+    }
+  }
+  throw new Error(`No open route to ${destination}.`);
+}
+
 describe('save format', () => {
   it('holds a version, name, settings, commands and timestamps', () => {
     expect(sampleSave()).toEqual({
-      formatVersion: 1,
+      formatVersion: 2,
       name: 'Lighthouse trip',
       settings,
       commands: ['look', 'go north'],
+      commandModes: ['id', 'id'],
       createdAt: '2026-10-12T04:00:00.000Z',
       updatedAt: '2026-10-12T04:00:00.000Z',
     });
-    expect(saveFormatVersion).toBe(1);
+    expect(saveFormatVersion).toBe(2);
   });
 
   it('trims the name and rejects blank or overlong names', () => {
@@ -134,6 +158,52 @@ describe('save format', () => {
   it('round-trips through export and import', () => {
     const save = sampleSave();
     expect(importSaveFile(exportSaveFile(save))).toEqual(save);
+  });
+
+  it('migrates old command histories to ID replay and keeps mixed modes when re-saving', () => {
+    for (const version of [1, 2]) {
+      const old = JSON.parse(exportSaveFile(createSave(
+        'Older save', createAdventureSettings(1234, 'medium', version), ['look', 'go north'], createdTime,
+      ))) as Record<string, unknown>;
+      delete old.commandModes;
+      old.formatVersion = 1;
+      const imported = importSaveFile(JSON.stringify(old));
+      const resaved = importSaveFile(exportSaveFile(imported));
+
+      expect(imported.formatVersion).toBe(saveFormatVersion);
+      expect(imported.commandModes).toEqual(['id', 'id']);
+      expect(resaved.commandModes).toEqual(imported.commandModes);
+    }
+
+    const mixed = createSave('Mixed history', settings, ['look', 'go north'], createdTime, ['id', 'content']);
+    expect(importSaveFile(exportSaveFile(mixed)).commandModes).toEqual(['id', 'content']);
+  });
+
+  it('ignores legacy replay-mode extras and copies validated mode arrays', () => {
+    const original = JSON.parse(exportSaveFile(sampleSave())) as Record<string, unknown>;
+    original.formatVersion = 1;
+    for (const extraModes of [['content', 'content'], { mode: 'content' }]) {
+      const imported = importSaveFile(JSON.stringify({ ...original, commandModes: extraModes }));
+      expect(imported.commandModes).toEqual(['id', 'id']);
+    }
+
+    const createModes: CommandReplayMode[] = ['id', 'content'];
+    const created = createSave('Copied modes', settings, ['look', 'go north'], createdTime, createModes);
+    createModes[0] = 'content';
+    expect(created.commandModes).toEqual(['id', 'content']);
+
+    const validateModes: CommandReplayMode[] = ['content', 'id'];
+    const validated = validateSave({ ...sampleSave(), commandModes: validateModes });
+    validateModes[0] = 'id';
+    expect(validated.commandModes).toEqual(['content', 'id']);
+  });
+
+  it('rejects sparse replay-mode arrays', () => {
+    const modes = new Array<CommandReplayMode>(1);
+    expect(problemOf(() => createSave('Sparse modes', settings, ['look'], createdTime, modes)))
+      .toBe('malformed');
+    expect(problemOf(() => validateSave({ ...sampleSave(), commands: ['look'], commandModes: modes })))
+      .toBe('malformed');
   });
 
   it.each(['\u0080', '\u0085', '\u009f', '\u2028', '\u2029'])(
@@ -166,7 +236,7 @@ describe('save format', () => {
     const extra = `{"__proto__":{"polluted":true},"solution":{"secret":true},${file.slice(1)}`;
     const imported = importSaveFile(extra);
     expect(Object.keys(imported).sort()).toEqual(
-      ['commands', 'createdAt', 'formatVersion', 'name', 'settings', 'updatedAt'],
+      ['commandModes', 'commands', 'createdAt', 'formatVersion', 'name', 'settings', 'updatedAt'],
     );
     expect(Object.keys(imported.settings).sort()).toEqual(['genre', 'length', 'seed', 'version']);
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
@@ -193,6 +263,9 @@ describe('importing untrusted save files', () => {
     })],
     ['commands that are not a list', JSON.stringify({ ...good(), commands: 'look' })],
     ['a command that is not text', JSON.stringify({ ...good(), commands: ['look', 7] })],
+    ['command modes with the wrong length', JSON.stringify({ ...good(), commandModes: ['id'] })],
+    ['missing command modes', JSON.stringify({ ...good(), commandModes: undefined })],
+    ['an unknown command mode', JSON.stringify({ ...good(), commandModes: ['id', 'legacy'] })],
     ['a command with a line break', JSON.stringify({ ...good(), commands: ['look\nnorth'] })],
     ['an overlong command', JSON.stringify({ ...good(), commands: ['x'.repeat(MAX_COMMAND_LENGTH + 1)] })],
     ['a missing time', JSON.stringify({ ...good(), createdAt: undefined })],
@@ -257,6 +330,58 @@ describe('save store', () => {
     return { storage, store: createSaveStore(storage, countingSource()) };
   }
 
+  it.each([1, 2])(
+    'preserves old, failed and mixed-name commands for adventure version %i',
+    (version) => {
+      const settings = createAdventureSettings(0, 'long', version);
+      const pack = adventurePack(version, settings.genre);
+      const generated = generateAdventureWorld(settings);
+      const world = { ...generated, names: worldNamesFrom(pack, generated) };
+      expect(settings.genre).toBe('light-fantasy');
+      expect(world.places.some(({ id }) => id === 'coal-shed')).toBe(true);
+
+      const route = commandsToPlace(world, 'coal-shed');
+      const routeModes: CommandReplayMode[] = route.map(() => 'id');
+      const atShed = replayCommands(world, route, routeModes);
+      expect(atShed.placeId).toBe('coal-shed');
+      expect(playCommand(world, atShed, 'go hill path').state.placeId).toBe('coal-shed');
+      expect(playCommand({ ...world, names: undefined }, atShed, 'go heather path').state.placeId)
+        .toBe('coal-shed');
+      expect(playCommand(world, atShed, 'go heather path').state.placeId).toBe('hill-path');
+      expect(playCommand({ ...world, names: undefined }, atShed, 'go hill path').state.placeId)
+        .toBe('hill-path');
+
+      const commands = [...route, 'go heather path', 'go heather path'];
+      const modes: CommandReplayMode[] = [...routeModes, 'id', 'content'];
+      const expected = replayCommands(world, commands, modes);
+      expect(expected.placeId).toBe('hill-path');
+
+      const save = createSave('Mixed commands', settings, commands, createdTime, modes);
+      const restored = importSaveFile(exportSaveFile(save));
+      expect(restored.commandModes).toEqual(modes);
+      expect(replayCommands(world, restored.commands, restored.commandModes)).toEqual(expected);
+    },
+  );
+
+  it.each([1, 2])('keeps coal-shed failed commands in ID mode when a legacy file has extra modes for version %i', (version) => {
+    const settings = createAdventureSettings(0, 'long', version);
+    const pack = adventurePack(version, settings.genre);
+    const generated = generateAdventureWorld(settings);
+    const world = { ...generated, names: worldNamesFrom(pack, generated) };
+    const route = commandsToPlace(world, 'coal-shed');
+    const commands = [...route, 'go heather path'];
+    const legacy = JSON.parse(exportSaveFile(createSave(
+      'Old route', settings, commands, createdTime,
+    ))) as Record<string, unknown>;
+    legacy.formatVersion = 1;
+    legacy.commandModes = commands.map(() => 'content');
+
+    const restored = importSaveFile(JSON.stringify(legacy));
+    const state = replayCommands(world, restored.commands, restored.commandModes);
+    expect(restored.commandModes).toEqual(commands.map(() => 'id'));
+    expect(state.placeId).toBe('coal-shed');
+  });
+
   it('stores both adventure versions and imports copies without changing existing saves', () => {
     const { storage, store } = setUp();
     for (const version of [1, 2]) for (const seed of [0, 1, 17000]) for (const length of adventureLengths) {
@@ -272,8 +397,11 @@ describe('save store', () => {
       for (const [key, text] of before) expect(storage.items.get(key)).toBe(text);
       const restored = store.load(copy);
       expect(parseShareWord(encodeShareWord(restored.settings))).toEqual(settings);
-      expect(replayCommands(generateAdventureWorld(restored.settings), restored.commands))
-        .toEqual(replayCommands(generateAdventureWorld(settings), save.commands));
+      expect(replayCommands(
+        generateAdventureWorld(restored.settings), restored.commands, restored.commandModes,
+      )).toEqual(replayCommands(
+        generateAdventureWorld(settings), save.commands, save.commandModes,
+      ));
     }
     expect(store.list()).toHaveLength(36);
   });
@@ -288,16 +416,6 @@ describe('save store', () => {
     expect(store.load(first)).toEqual(sampleSave('First'));
     expect(store.list()).toEqual([
       {
-        id: second,
-        snapshot: storage.items.get(SAVE_KEY_PREFIX + second),
-        status: 'ready',
-        name: 'Second',
-        settings,
-        commandCount: 0,
-        createdAt: '2026-10-13T00:00:00.000Z',
-        updatedAt: '2026-10-13T00:00:00.000Z',
-      },
-      {
         id: first,
         snapshot: storage.items.get(SAVE_KEY_PREFIX + first),
         status: 'ready',
@@ -306,6 +424,16 @@ describe('save store', () => {
         commandCount: 2,
         createdAt: '2026-10-12T04:00:00.000Z',
         updatedAt: '2026-10-12T04:00:00.000Z',
+      },
+      {
+        id: second,
+        snapshot: storage.items.get(SAVE_KEY_PREFIX + second),
+        status: 'ready',
+        name: 'Second',
+        settings,
+        commandCount: 0,
+        createdAt: '2026-10-13T00:00:00.000Z',
+        updatedAt: '2026-10-13T00:00:00.000Z',
       },
     ]);
 
@@ -318,7 +446,12 @@ describe('save store', () => {
   it('updates a save in place', () => {
     const { store } = setUp();
     const id = store.add(sampleSave());
-    const updated = { ...store.load(id), commands: ['look', 'go north', 'take lamp'], updatedAt: '2026-10-12T05:00:00.000Z' };
+    const updated = {
+      ...store.load(id),
+      commands: ['look', 'go north', 'take lamp'],
+      commandModes: ['id', 'id', 'content'] as const,
+      updatedAt: '2026-10-12T05:00:00.000Z',
+    };
     store.put(id, updated);
     expect(store.load(id)).toEqual(updated);
     expect(store.list()).toHaveLength(1);
@@ -328,16 +461,18 @@ describe('save store', () => {
     const { storage, store } = setUp();
     const original = sampleSave();
     const id = store.add(original);
-    const mine = { ...original, commands: ['look', 'go north'] };
+    const mine = { ...original, commands: ['look', 'go north'], commandModes: ['id', 'id'] as const };
     store.replace(id, original, mine);
     expect(store.load(id)).toEqual(mine);
 
     // Another tab saved different commands with the very same timestamp.
-    const theirs = { ...mine, commands: ['look', 'go south'] };
+    const theirs = { ...mine, commands: ['look', 'go south'], commandModes: ['id', 'content'] as const };
     store.put(id, theirs);
     const key = SAVE_KEY_PREFIX + id;
     const before = storage.items.get(key);
-    expect(problemOf(() => store.replace(id, mine, { ...mine, commands: ['look'] }))).toBe('changed');
+    expect(problemOf(() => store.replace(id, mine, {
+      ...mine, commands: ['look'], commandModes: ['id'],
+    }))).toBe('changed');
     expect(storage.items.get(key)).toBe(before);
 
     storage.items.set(key, '{not json');
@@ -362,7 +497,7 @@ describe('save store', () => {
     const id = store.add(save);
     const key = SAVE_KEY_PREFIX + id;
     const [listed] = store.list();
-    store.put(id, { ...save, commands: ['look', 'hint'] });
+    store.put(id, { ...save, commands: ['look', 'hint'], commandModes: ['id', 'id'] });
     const changed = storage.items.get(key);
 
     expect(problemOf(() => store.remove(id, listed.snapshot))).toBe('changed');
@@ -392,7 +527,7 @@ describe('save store', () => {
     storage.setItem('theme', 'dark');
     storage.setItem(SAVE_KEY_PREFIX + 'not-an-id', '{}');
     storage.setItem(SAVE_KEY_PREFIX + idFor(7), 'broken');
-    storage.setItem(SAVE_KEY_PREFIX + idFor(8), JSON.stringify({ ...sampleSave(), formatVersion: 2 }));
+    storage.setItem(SAVE_KEY_PREFIX + idFor(8), JSON.stringify({ ...sampleSave(), formatVersion: 3 }));
     const good = store.add(sampleSave());
 
     expect(store.list()).toEqual([
@@ -416,6 +551,31 @@ describe('save store', () => {
     expect(storage.items.get(SAVE_KEY_PREFIX + id)).toBe(before.get(SAVE_KEY_PREFIX + id));
   });
 
+  it('imports, exports and resaves an in-limit legacy file after mode migration', () => {
+    const { store } = setUp();
+    const legacy = {
+      formatVersion: 1,
+      name: 'Large legacy history',
+      settings: createAdventureSettings(0, 'long', 1),
+      commands: Array(10_000).fill('x'.repeat(90)),
+      createdAt: '2026-10-12T04:00:00.000Z',
+      updatedAt: '2026-10-12T04:00:00.000Z',
+    };
+    const legacyText = JSON.stringify(legacy, null, 2);
+    expect(legacyText.length).toBeLessThan(1_000_000);
+
+    const id = store.importSave(legacyText);
+    const migratedText = store.exportSave(id);
+    expect(migratedText.length).toBeGreaterThan(1_000_000);
+    expect(migratedText.length).toBeLessThanOrEqual(MAX_SAVE_FILE_LENGTH);
+
+    const reloaded = store.load(id);
+    expect(reloaded.commands).toEqual(legacy.commands);
+    expect(reloaded.commandModes).toEqual(Array(10_000).fill('id'));
+    const resavedId = store.add(reloaded);
+    expect(store.load(resavedId)).toEqual(reloaded);
+  });
+
   it('leaves storage untouched when an import is rejected', () => {
     const { storage, store } = setUp();
     store.add(sampleSave());
@@ -432,7 +592,9 @@ describe('save store', () => {
     const before = new Map(storage.items);
     storage.failWrites = quotaError();
 
-    expect(problemOf(() => store.put(id, { ...sampleSave(), commands: ['look'] }))).toBe('storage-full');
+    expect(problemOf(() => store.put(id, {
+      ...sampleSave(), commands: ['look'], commandModes: ['id'],
+    }))).toBe('storage-full');
     expect(problemOf(() => store.add(sampleSave()))).toBe('storage-full');
     expect(problemOf(() => store.importSave(store.exportSave(id)))).toBe('storage-full');
     expect(messageOf(() => store.add(sampleSave()))).toBe(
@@ -472,5 +634,145 @@ describe('save store', () => {
     const { storage, store } = setUp();
     expect(problemOf(() => store.add({ ...sampleSave(), name: '' }))).toBe('malformed');
     expect(storage.items.size).toBe(0);
+  });
+
+  describe('last played', () => {
+    const played = new Date('2026-10-20T08:00:00.000Z');
+
+    it('keeps the time apart, so the save, its snapshot, export and replace check never change', () => {
+      const { storage, store } = setUp();
+      const save = sampleSave();
+      const id = store.add(save);
+      const text = storage.items.get(SAVE_KEY_PREFIX + id);
+      const file = store.exportSave(id);
+
+      store.markPlayed(id, played);
+
+      expect(storage.items.get(SAVE_KEY_PREFIX + id)).toBe(text);
+      expect(storage.items.get(PLAYED_KEY_PREFIX + id)).toBe(played.toISOString());
+      expect(store.load(id)).toEqual(save);
+      expect(store.exportSave(id)).toBe(file);
+      expect(store.list()).toEqual([expect.objectContaining({
+        id, snapshot: text, updatedAt: save.updatedAt, lastPlayedAt: played.toISOString(),
+      })]);
+      // Another tab's open save form still updates, since progress did not change.
+      const next = { ...save, commands: ['look'], commandModes: ['id'] as const };
+      store.replace(id, save, next);
+      expect(store.load(id)).toEqual(next);
+      // Import makes a new save with no play recorded.
+      const copy = store.importSave(file);
+      expect(storage.items.has(PLAYED_KEY_PREFIX + copy)).toBe(false);
+      expect(store.list().find((entry) => entry.id === copy)).not.toHaveProperty('lastPlayedAt');
+    });
+
+    it('never replaces a later time with an earlier one, such as from a clock set back', () => {
+      const { storage, store } = setUp();
+      const id = store.add(sampleSave());
+      store.markPlayed(id, played);
+      store.markPlayed(id, new Date('2026-10-19T00:00:00.000Z'));
+      expect(storage.items.get(PLAYED_KEY_PREFIX + id)).toBe(played.toISOString());
+      const later = new Date('2026-10-21T00:00:00.000Z');
+      store.markPlayed(id, later);
+      expect(storage.items.get(PLAYED_KEY_PREFIX + id)).toBe(later.toISOString());
+    });
+
+    it('leaves Last played unrecorded for older saves and damaged times', () => {
+      const { storage, store } = setUp();
+      const id = store.add(sampleSave());
+      const listed = () => store.list()[0];
+      expect(listed()).not.toHaveProperty('lastPlayedAt');
+      for (const text of ['broken', '2026-02-31T00:00:00.000Z']) {
+        storage.items.set(PLAYED_KEY_PREFIX + id, text);
+        expect(listed()).not.toHaveProperty('lastPlayedAt');
+      }
+      // A damaged time is replaced by the next real one.
+      storage.items.set(PLAYED_KEY_PREFIX + id, 'broken');
+      store.markPlayed(id, played);
+      expect(listed()).toMatchObject({ lastPlayedAt: played.toISOString() });
+      storage.items.set(PLAYED_KEY_PREFIX + id, '2026-10-01T00:00:00.000Z');
+      expect(listed()).toMatchObject({ lastPlayedAt: '2026-10-01T00:00:00.000Z' });
+    });
+
+    it('keeps readable saves listed when play-time metadata cannot be read and refuses to overwrite it', () => {
+      const { storage, store } = setUp();
+      const id = store.add(sampleSave());
+      const metadataKey = PLAYED_KEY_PREFIX + id;
+      const previousTime = '2026-10-19T00:00:00.000Z';
+      storage.items.set(metadataKey, previousTime);
+      storage.failReadKey = metadataKey;
+
+      expect(store.list()).toEqual([expect.objectContaining({
+        id,
+        status: 'ready',
+        lastPlayedUnavailable: true,
+      })]);
+      expect(store.list()[0]).not.toHaveProperty('lastPlayedAt');
+      expect(problemOf(() => store.markPlayed(id, played))).toBe('storage-unavailable');
+      expect(storage.items.get(metadataKey)).toBe(previousTime);
+    });
+
+    it('lists the most recently played save first', () => {
+      const { store } = setUp();
+      const older = store.add(sampleSave('Older'));
+      const newer = store.add(createSave('Newer', settings, [], new Date('2026-10-13T00:00:00.000Z')));
+      expect(store.list().map((entry) => entry.id)).toEqual([older, newer]);
+      store.markPlayed(older, played);
+      expect(store.list().map((entry) => entry.id)).toEqual([older, newer]);
+    });
+
+    it('records nothing for a save deleted elsewhere and treats odd IDs as not found', () => {
+      const { storage, store } = setUp();
+      expect(store.markPlayed(idFor(9), played)).toBe(false);
+      expect(storage.items.size).toBe(0);
+      expect(problemOf(() => store.markPlayed('../other-key', played))).toBe('not-found');
+      expect(storage.items.size).toBe(0);
+    });
+
+    it('does not block a checked deletion and is removed with the save', () => {
+      const { storage, store } = setUp();
+      const id = store.add(sampleSave());
+      const [listed] = store.list();
+      store.markPlayed(id, played);
+      store.remove(id, listed.snapshot);
+      expect(storage.items.size).toBe(0);
+    });
+
+    it('reports when deletion succeeded but play-time cleanup failed', () => {
+      const { storage, store } = setUp();
+      const id = store.add(sampleSave());
+      store.markPlayed(id, played);
+      storage.failRemoveKey = PLAYED_KEY_PREFIX + id;
+
+      let failure: unknown;
+      try {
+        store.remove(id);
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toMatchObject({
+        problem: 'metadata-cleanup',
+        message: expect.stringContaining('save was deleted'),
+      });
+      expect(storage.items.has(SAVE_KEY_PREFIX + id)).toBe(false);
+      expect(storage.items.has(PLAYED_KEY_PREFIX + id)).toBe(true);
+    });
+
+    it('reports a full storage and leaves the save as it was', () => {
+      const { storage, store } = setUp();
+      const id = store.add(sampleSave());
+      const before = new Map(storage.items);
+      storage.failWrites = quotaError();
+      expect(problemOf(() => store.markPlayed(id, played))).toBe('storage-full');
+      expect(storage.items).toEqual(before);
+    });
+
+    it('stays out of the way of unreadable saves', () => {
+      const { storage, store } = setUp();
+      storage.items.set(SAVE_KEY_PREFIX + idFor(7), 'broken');
+      store.markPlayed(idFor(7), played);
+      expect(store.list()).toEqual([
+        { id: idFor(7), snapshot: 'broken', status: 'unreadable', message: expect.stringMatching(/damaged/) },
+      ]);
+    });
   });
 });

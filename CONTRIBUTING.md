@@ -26,6 +26,13 @@ facts. Ask for them when they affect the work.
   to focus on.
 - Do not mix unrelated changes.
 
+## Keep old adventures working
+
+Released share-word lists, content and generation rules must stay unchanged.
+If a change would alter an adventure opened from an existing share word or
+resumed from an existing save, add a new version and keep the old version's
+rules working.
+
 ## Commit messages
 
 Use [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/):

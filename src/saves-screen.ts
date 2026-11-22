@@ -1,12 +1,15 @@
 import type { AdventureSettings } from './adventure-settings';
 import {
   createSave,
+  exportSaveFile,
+  MAX_SAVE_FILE_LENGTH,
   MAX_SAVE_NAME_LENGTH,
   SaveError,
   type AdventureSave,
   type SaveListEntry,
   type SaveStore,
 } from './saves';
+import type { CommandReplayMode } from './engine/play';
 import { genreLabels, lengthLabels } from './start-screen-model';
 
 /** Shown when a typed save name can't be used. */
@@ -19,10 +22,10 @@ export const noSavesMessage = 'You have no saves yet. Save during an adventure t
 const controlCharacterPattern = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
 
 /**
- * Turns a save's last-saved ISO time into a short, readable local date and time,
- * such as "12 Oct 2026, 3:40 pm".
+ * Turns an ISO save time, such as last played or last saved, into a short,
+ * readable local date and time, such as "12 Oct 2026, 3:40 pm".
  */
-export function formatLastSaved(isoTime: string): string {
+export function formatSaveTime(isoTime: string): string {
   return new Intl.DateTimeFormat('en-AU', { dateStyle: 'medium', timeStyle: 'short' })
     .format(new Date(isoTime));
 }
@@ -52,6 +55,59 @@ function browserLocks(): SaveLocks | undefined {
   return globalThis.navigator?.locks ?? undefined;
 }
 
+/** Options for {@link recordPlayed}. */
+export interface RecordPlayedOptions {
+  /** When the save was played. Defaults to the clock when called, not when the lock arrives. */
+  readonly now?: Date;
+  /** Locks shared between tabs. Defaults to the browser's Web Locks, if it has them. */
+  readonly locks?: SaveLocks;
+  /** Checks that this play still belongs to the save when its lock is granted. */
+  readonly isCurrent?: () => boolean;
+  /** Called after recording, or when the save is missing or tracking fails. */
+  readonly onResult?: (result: RecordPlayedResult) => void;
+}
+
+/** The result of trying to record a save's Last played time. */
+export type RecordPlayedResult = 'recorded' | 'missing' | 'failed';
+
+/**
+ * Records that the save with this ID was just played, so the saves list can
+ * show its Last played time.
+ *
+ * @remarks
+ * The time is written under the lock that saves and deletes already share
+ * across tabs, so two tabs can't both read the old time and then move it
+ * backwards, and a save deleted at the same moment never keeps a time.
+ * Browsers without Web Locks record nothing. Failures do not stop play; the
+ * caller is told so it can explain that Last played is unavailable. A queued
+ * write checks `isCurrent` again when its lock is granted.
+ *
+ * @param store - Where saves are kept.
+ * @param id - The ID of the save being played.
+ * @param options - The play time and locks to use.
+ * @returns Nothing; `onResult` reports whether it recorded, found the save
+ * missing or could not track the time.
+ */
+export function recordPlayed(store: SaveStore, id: string, options: RecordPlayedOptions = {}): void {
+  const time = options.now ?? new Date();
+  const locks = 'locks' in options ? options.locks : browserLocks();
+  if (!locks) {
+    options.onResult?.('failed');
+    return;
+  }
+  withSaveLock(locks, () => {
+    if (options.isCurrent && !options.isCurrent()) return;
+    let exists: boolean;
+    try {
+      exists = store.markPlayed(id, time);
+    } catch {
+      options.onResult?.('failed');
+      return;
+    }
+    options.onResult?.(exists ? 'recorded' : 'missing');
+  }, () => options.onResult?.('failed'));
+}
+
 /** A save the player is playing, and the ID it is stored under. */
 export interface StoredSave {
   readonly id: string;
@@ -66,6 +122,8 @@ export interface SaveFormOptions {
   readonly settings: AdventureSettings;
   /** Every command typed so far, oldest first. */
   readonly commands: () => readonly string[];
+  /** Replay mode for each command, oldest first. Defaults to legacy ID names. */
+  readonly commandModes?: () => readonly CommandReplayMode[];
   /** The save this adventure was resumed from, so saving updates it. */
   readonly resumed?: StoredSave;
   /** The name to suggest for a new save. */
@@ -76,14 +134,11 @@ export interface SaveFormOptions {
   readonly locks?: SaveLocks;
   /** Keeps navigation in play while any submitted save is waiting or being written. */
   readonly onPendingChange?: (pending: boolean) => void;
-}
-
-/** The save form from {@link buildSaveForm} and its autosave hook. */
-export interface SaveForm {
-  /** The form to show during play. */
-  readonly form: HTMLFormElement;
-  /** Saves the latest commands to this adventure's save, if it has one. Call it after each command. */
-  readonly autosave: () => void;
+  /**
+   * Told which stored save this adventure now belongs to after each successful
+   * save, or `undefined` after a conflict, so play time goes to the right save.
+   */
+  readonly onStoredChange?: (saved: StoredSave | undefined) => void;
 }
 
 /**
@@ -104,30 +159,17 @@ export interface SaveForm {
  * Success is announced only when no other save is waiting; errors remain visible.
  * Name errors and unacknowledged save failures remain visible together until
  * corrected and explicitly retried after the queue finishes.
- *
- * Autosave: once the adventure has a save, {@link SaveForm.autosave} updates
- * that save after each command, under the same lock and conflict checks. It
- * never adds a save, so it can't make copies or replace another save. It
- * stops after a conflict until the player saves again, and is off in
- * browsers without Web Locks. Autosave failures stay visible until a later
- * save works, and play carries on.
- *
- * @returns The form, and the autosave hook to call after each command.
  */
-export function buildSaveForm(options: SaveFormOptions): SaveForm {
+export function buildSaveForm(options: SaveFormOptions): HTMLFormElement {
   const now = options.now ?? (() => new Date());
   const locks = 'locks' in options ? options.locks : browserLocks();
   let current = options.resumed;
   let conflictCount = 0;
   let pending = 0;
-  let manualPending = 0;
   let validationCount = 0;
   let nameProblem = '';
   let failures: string[] = [];
-  let autosaveProblem = '';
   let savedMessage = '';
-  // The autosave still waiting for the lock. Later commands join it, so a slow lock can't build a queue.
-  let queuedAutosave: { commands: readonly string[]; time: Date } | undefined;
 
   const input = create('input', {
     type: 'text', id: 'save-name', maxLength: MAX_SAVE_NAME_LENGTH, autocomplete: 'off',
@@ -135,93 +177,18 @@ export function buildSaveForm(options: SaveFormOptions): SaveForm {
   });
   const status = create('p', { className: 'save-status', id: 'save-status' });
   status.setAttribute('role', 'status');
-  const hint = create('p', { className: 'hint', id: 'save-hint' }, locks ? autosaveHint : noAutosaveHint);
-  input.setAttribute('aria-describedby', `${hint.id} ${status.id}`);
+  input.setAttribute('aria-describedby', status.id);
   const form = create('form', { className: 'save-form', noValidate: true },
     create('label', { htmlFor: input.id }, 'Save name'), input,
-    create('button', { type: 'submit' }, 'Save adventure'), hint, status);
+    create('button', { type: 'submit' }, 'Save adventure'), status);
   const showStatus = (): void => {
-    const problems = [nameProblem, ...failures, autosaveProblem].filter(Boolean);
-    const text = problems.length ? problems.join(' ')
-      : manualPending > 0 ? 'Saving the commands from when Save was pressed. Stay here until saving finishes.'
+    const problems = [nameProblem, ...failures].filter(Boolean);
+    status.textContent = problems.length ? problems.join(' ')
+      : pending > 0 ? 'Saving the commands from when Save was pressed. Stay here until saving finishes.'
         : savedMessage;
-    // Unchanged text is left alone, so screen readers don't repeat it after every command.
-    if (status.textContent !== text) status.textContent = text;
   };
   const reportFailure = (message: string): void => {
     if (!failures.includes(message)) failures.push(message);
-  };
-  const begin = (manual: boolean): (() => void) => {
-    pending += 1;
-    if (manual) manualPending += 1;
-    options.onPendingChange?.(true);
-    showStatus();
-    let finished = false;
-    return () => {
-      if (finished) return;
-      finished = true;
-      pending -= 1;
-      if (manual) manualPending -= 1;
-      options.onPendingChange?.(pending > 0);
-      showStatus();
-    };
-  };
-  // Run under the shared lock with a current save; throws if it changed elsewhere.
-  const updateCurrent = (stored: StoredSave, name: string, commands: readonly string[], time: Date): void => {
-    const fresh = createSave(name, options.settings, commands, time);
-    // A clock set backwards must not make the update look older than the save.
-    const { createdAt, updatedAt } = stored.save;
-    const save = { ...fresh, createdAt, updatedAt: fresh.updatedAt < updatedAt ? updatedAt : fresh.updatedAt };
-    options.store.replace(stored.id, stored.save, save);
-    current = { id: stored.id, save };
-  };
-  const reportConflict = (error: unknown): boolean => {
-    const conflict = conflictMessage(error);
-    if (!conflict) return false;
-    current = undefined;
-    conflictCount += 1;
-    reportFailure(conflict);
-    return true;
-  };
-
-  const autosave = (): void => {
-    if (!locks || !current) return;
-    const commands = [...options.commands()];
-    const time = now();
-    if (queuedAutosave) {
-      queuedAutosave.commands = commands;
-      queuedAutosave.time = time;
-      return;
-    }
-    const job = { commands, time };
-    queuedAutosave = job;
-    const conflictsAtQueue = conflictCount;
-    const finish = begin(false);
-    const release = (): void => {
-      if (queuedAutosave === job) queuedAutosave = undefined;
-    };
-    withSaveLock(locks, () => {
-      release();
-      try {
-        const stored = current;
-        if (conflictsAtQueue !== conflictCount || !stored) return;
-        const saved = stored.save.commands;
-        if (saved.length === job.commands.length && saved.every((command, index) => command === job.commands[index])) {
-          return;
-        }
-        updateCurrent(stored, stored.save.name, job.commands, job.time);
-        autosaveProblem = '';
-        if (pending === 1) savedMessage = `Saved “${stored.save.name}” automatically.`;
-      } catch (error) {
-        if (!reportConflict(error)) autosaveProblem = `${autosaveFailedMessage} ${messageFor(error)}`;
-      } finally {
-        finish();
-      }
-    }, () => {
-      release();
-      if (conflictsAtQueue === conflictCount) autosaveProblem = `${autosaveFailedMessage} ${lockFailureMessage}`;
-      finish();
-    });
   };
 
   form.addEventListener('submit', (event) => {
@@ -237,34 +204,55 @@ export function buildSaveForm(options: SaveFormOptions): SaveForm {
     }
     input.removeAttribute('aria-invalid');
     nameProblem = '';
-    if (manualPending === 0) failures = [];
+    if (pending === 0) failures = [];
     savedMessage = '';
     // Take the commands now, so a save matches the moment the player chose.
     const commands = [...options.commands()];
+    const commandModes = [...(options.commandModes?.()
+      ?? commands.map((): CommandReplayMode => 'id'))];
     const time = now();
     const conflictsAtSubmit = conflictCount;
     const validationAtSubmit = validationCount;
-    // Later commands autosave after this save, so older progress never lands last.
-    queuedAutosave = undefined;
-    const finish = begin(true);
+    pending += 1;
+    options.onPendingChange?.(true);
+    showStatus();
+    let finished = false;
+    const finish = (): void => {
+      if (finished) return;
+      finished = true;
+      pending -= 1;
+      options.onPendingChange?.(pending > 0);
+      showStatus();
+    };
     withSaveLock(locks, () => {
       try {
         if (conflictsAtSubmit !== conflictCount) return;
+        const fresh = createSave(name, options.settings, commands, time, commandModes);
         if (current && locks) {
-          updateCurrent(current, name, commands, time);
+          // A clock set backwards must not make the update look older than the save.
+          const createdAt = current.save.createdAt;
+          const updatedAt = current.save.updatedAt;
+          const save = { ...fresh, createdAt, updatedAt: fresh.updatedAt < updatedAt ? updatedAt : fresh.updatedAt };
+          options.store.replace(current.id, current.save, save);
+          current = { id: current.id, save };
+          options.onStoredChange?.(current);
+          if (pending === 1 && validationAtSubmit === validationCount) savedMessage = `Saved “${name}”.`;
         } else {
-          const fresh = createSave(name, options.settings, commands, time);
           const copied = current !== undefined;
           current = { id: options.store.add(fresh), save: fresh };
-          if (pending === 1 && validationAtSubmit === validationCount && copied) {
-            savedMessage = `Saved “${name}” as a new save. ${noLocksMessage}`;
-            return;
+          options.onStoredChange?.(current);
+          if (pending === 1 && validationAtSubmit === validationCount) {
+            savedMessage = copied ? `Saved “${name}” as a new save. ${noLocksMessage}` : `Saved “${name}”.`;
           }
         }
-        autosaveProblem = '';
-        if (pending === 1 && validationAtSubmit === validationCount) savedMessage = `Saved “${name}”.`;
       } catch (error) {
-        if (!reportConflict(error)) reportFailure(messageFor(error));
+        const conflict = conflictMessage(error);
+        if (conflict) {
+          current = undefined;
+          conflictCount += 1;
+          options.onStoredChange?.(undefined);
+        }
+        reportFailure(conflict ?? messageFor(error));
       } finally {
         finish();
       }
@@ -275,17 +263,8 @@ export function buildSaveForm(options: SaveFormOptions): SaveForm {
       finish();
     });
   });
-  return { form, autosave };
+  return form;
 }
-
-/** Starts every message about an autosave that didn't work. */
-export const autosaveFailedMessage = 'Your latest progress was not saved automatically.';
-
-/** Shown under the save form when progress can be saved automatically. */
-export const autosaveHint = 'Once this adventure is saved, each command you type is saved to it automatically.';
-
-/** Shown under the save form when the browser can't save automatically. */
-export const noAutosaveHint = 'This browser can’t save automatically. Choose Save adventure to keep your progress.';
 
 /** Shown when a browser without Web Locks saves a resumed adventure as a new save. */
 export const noLocksMessage = 'This browser can’t safely update a save that may be open in another tab.';
@@ -311,8 +290,11 @@ export interface SavesScreenOptions {
 }
 
 /**
- * Replaces the contents of `target` with the list of saves. Each save shows
- * its name, genre, length and last saved time, with Resume and Delete.
+ * Replaces the contents of `target` with the list of saves, most recently
+ * played first. Each save shows its name, genre, length, last played time and
+ * last saved time, with Resume, Export and Delete. Unrecorded play times are
+ * labelled "Not recorded"; unreadable play-time metadata is shown as
+ * unavailable, not shown as saved times.
  *
  * @remarks
  * Delete confirms the exact listed save under a shared lock; changed saves
@@ -320,19 +302,82 @@ export interface SavesScreenOptions {
  * Keep cancels deletion even while it is waiting for the lock.
  * Refresh preserves live confirmations and focus. Pending deletes keep Back and Resume
  * unavailable, so failures remain visible until completion or cancellation.
- * Saves that can't be read are listed
- * with the reason and kept; only the player can delete them. All text goes in
- * through `textContent`. Focus moves to the heading.
+ * Saves that can't be read are listed with the reason and kept; only the
+ * player can delete them. All text goes in through `textContent`. Focus moves
+ * to the heading. Export downloads JSON; import validates files and adds new
+ * saves without changing existing ones. Results use separate status regions.
+ *
+ * @param target - The element to render into.
+ * @param options - The save store and navigation actions.
+ * @returns A focus-preserving refresh function for later metadata updates.
  */
-export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptions): void {
+export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptions): () => void {
   const locks = 'locks' in options ? options.locks : browserLocks();
   const heading = create('h1', { tabIndex: -1 }, 'Your saves');
-  const status = create('p', { className: 'saves-status', tabIndex: -1 });
+  const status = create('p', { className: 'saves-status', id: 'saves-status', tabIndex: -1 });
   status.setAttribute('role', 'status');
+  const exportStatus = create('p', { className: 'saves-status', id: 'export-status' });
+  exportStatus.setAttribute('role', 'status');
   const list = create('ul', { className: 'saves-list' });
   list.setAttribute('aria-label', 'Saved adventures');
   const back = create('button', { type: 'button' }, 'Back to start');
   back.addEventListener('click', options.onBack);
+  const fileInput = create('input', {
+    type: 'file', id: 'import-save', accept: '.json,application/json',
+  });
+  const importStatus = create('p', { className: 'saves-status', id: 'import-status', tabIndex: -1 });
+  importStatus.setAttribute('role', 'status');
+  fileInput.setAttribute('aria-describedby', importStatus.id);
+  const importButton = create('button', { type: 'submit' }, 'Import save');
+  const importForm = create('form', { className: 'save-form' },
+    create('label', { htmlFor: fileInput.id }, 'Save file'), fileInput, importButton, importStatus);
+  let importing = false;
+  importForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (importing) return;
+    const file = fileInput.files?.[0];
+    if (!file) {
+      importStatus.textContent = 'Choose a textQuest save file, then select Import save.';
+      fileInput.focus();
+      return;
+    }
+    importing = true;
+    fileInput.disabled = importButton.disabled = true;
+    let focusMoved = false;
+    const trackFocus = () => { focusMoved = true; };
+    target.ownerDocument.addEventListener('focusin', trackFocus);
+    importStatus.textContent = 'Reading your save file…';
+    try {
+      // UTF-8 can use three bytes per UTF-16 character. Keep valid non-ASCII saves.
+      if (file.size > MAX_SAVE_FILE_LENGTH * 3) {
+        throw new SaveError('too-large', 'This save file is too large for textQuest. Choose a smaller save file.');
+      }
+      let text: string;
+      try {
+        text = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer());
+      } catch {
+        throw new SaveError(
+          'malformed',
+          'This save file could not be read, or its text is damaged. Choose a textQuest save file and try again.',
+        );
+      }
+      // Navigation while reading must not import into a screen the player left.
+      if (!target.contains(importForm)) return;
+      options.store.importSave(text);
+      fileInput.value = '';
+      importStatus.textContent = refresh(document.activeElement, importStatus)
+        ? 'Imported the save as a new save.'
+        : `The save was imported, but the list could not be refreshed. ${importStatus.textContent}`;
+    } catch (error) {
+      importStatus.textContent = messageFor(error);
+    } finally {
+      target.ownerDocument.removeEventListener('focusin', trackFocus);
+      importing = false;
+      fileInput.disabled = importButton.disabled = false;
+      if (target.contains(importForm) && !focusMoved) importStatus.focus();
+    }
+  });
+
   const confirmations = new Map<string, HTMLLIElement>();
   let pendingDeletes = 0;
   let deletionOutcomes: string[] = [];
@@ -347,7 +392,9 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
     }
   };
 
-  const refresh = (focused: Element | null = document.activeElement): void => {
+  const refresh = (
+    focused: Element | null = document.activeElement, errorStatus = status,
+  ): boolean => {
     const focusId = focused instanceof HTMLElement ? focused.closest('.save-item')?.getAttribute('aria-labelledby') : null;
     const focusLabel = focused?.getAttribute('aria-label');
     const focusText = focused?.textContent;
@@ -355,11 +402,12 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
     try {
       entries = options.store.list();
     } catch (error) {
-      reportDeletion(messageFor(error));
+      if (errorStatus === status) reportDeletion(messageFor(error));
+      else errorStatus.textContent = messageFor(error);
       // Rows restored before this refresh need Resume to match pending deletes.
       updateNavigation();
       if (focused instanceof HTMLElement && !focused.isConnected) status.focus();
-      return;
+      return false;
     }
     const items = entries.map((entry) => confirmations.get(entry.id) ?? saveItem(entry));
     for (const [id, item] of confirmations) {
@@ -386,6 +434,7 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
         else status.focus();
       }
     }
+    return true;
   };
 
   const saveItem = (entry: SaveListEntry): HTMLLIElement => {
@@ -399,7 +448,13 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
       item.append(details([
         ['Genre', genreLabels[entry.settings.genre]],
         ['Length', lengthLabels[entry.settings.length]],
-        ['Last saved', formatLastSaved(entry.updatedAt)],
+        [
+          'Last played',
+          entry.lastPlayedUnavailable
+            ? 'Unavailable (could not read)'
+            : entry.lastPlayedAt ? formatSaveTime(entry.lastPlayedAt) : 'Not recorded',
+        ],
+        ['Last saved', formatSaveTime(entry.updatedAt)],
       ]));
       actions.append(button('Resume', name, () => {
         let save: AdventureSave;
@@ -411,6 +466,15 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
         }
         // Problems starting play are not save problems, so they are not caught here.
         options.onResume({ id: entry.id, save });
+      }));
+      actions.append(button('Export', name, () => {
+        try {
+          const save = options.store.load(entry.id);
+          downloadSave(exportSaveFile(save), save.name);
+          exportStatus.textContent = `Save file download started for “${save.name}”.`;
+        } catch (error) {
+          exportStatus.textContent = messageFor(error);
+        }
       }));
     } else {
       item.append(create('p', { className: 'error' }, entry.message),
@@ -459,7 +523,11 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
             item.remove();
             reportDeletion(`Deleted “${name}”.`);
           } catch (error) {
-            reportDeletion(messageFor(error));
+            const message = error instanceof SaveError && error.problem === 'metadata-cleanup'
+              ? `Deleted “${name}”, but its Last played time could not be removed. The leftover time is ignored.`
+              : messageFor(error);
+            if (error instanceof SaveError && error.problem === 'metadata-cleanup') item.remove();
+            reportDeletion(message);
           }
           refresh(focused);
         }, () => {
@@ -483,9 +551,24 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
     return item;
   };
 
-  target.replaceChildren(heading, status, list, back);
+  target.replaceChildren(heading, status, exportStatus, importForm, list, back);
   heading.focus();
   refresh();
+  return () => refresh();
+}
+
+function downloadSave(text: string, name: string): void {
+  const fileName = name.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '') || 'save';
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  const link = create('a', { href: url, download: `textquest-${fileName}.json` });
+  try {
+    document.body.append(link);
+    link.click();
+  } finally {
+    link.remove();
+    // Let the browser begin the download before releasing the file.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
 }
 
 function messageFor(error: unknown): string {
@@ -508,9 +591,13 @@ function button(label: string, saveName: string, onClick: () => void): HTMLButto
 function create<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   properties: Partial<HTMLElementTagNameMap[K]> = {},
-  ...children: (Node | string)[]
+  ...children: Node[] | [string]
 ): HTMLElementTagNameMap[K] {
   const element = Object.assign(document.createElement(tag), properties);
-  element.append(...children);
+  if (typeof children[0] === 'string') {
+    element.textContent = children[0];
+  } else {
+    element.append(...children);
+  }
   return element;
 }
