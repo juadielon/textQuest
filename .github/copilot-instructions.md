@@ -34,7 +34,8 @@
   code. Do not combine unrelated work or put the whole game into one pull
   request.
 - Use Conventional Commits, follow the repository PR template and link the
-  related issue.
+  related issue (or state `Documentation-only follow-up` when no tracking
+  issue applies).
 - Push and open a separate pull request after each completed logical step
   passes its checks. Do not accumulate later features into an existing pull
   request or merge without approval. Make dependencies clear and keep dependent
