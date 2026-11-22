@@ -8,6 +8,7 @@ Link the issue this pull request works on. Use `Closes #123` only if it
 completes the issue.
 
 If this depends on another pull request, link it and explain the order.
+For a documentation-only follow-up with no related issue, state that explicitly.
 
 ## Type of change
 
