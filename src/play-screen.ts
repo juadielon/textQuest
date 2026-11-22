@@ -163,18 +163,18 @@ export function renderPlayScreen(
   };
 
   const commands: string[] = [];
-  const run = (command: string, record = true): string => {
+  const run = (command: string, record = true, notify = true): string => {
     const turn = playCommand(world, state, command);
     state = turn.state;
     if (record) {
       commands.push(command);
-      options.onCommand?.([...commands]);
+      if (notify) options.onCommand?.([...commands]);
     }
     log.append(element('li', 'play-entry',
       element('p', 'play-typed', `> ${command}`), element('p', undefined, turn.message)));
     return turn.message;
   };
-  options.commands?.forEach((command) => run(command, false));
+  options.commands?.forEach((command) => run(command, true, false));
 
   let solutionPanel: HTMLElement | undefined;
   if (solutionModeEnabled()) {

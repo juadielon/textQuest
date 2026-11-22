@@ -3,6 +3,7 @@ import type { Conditions } from '../../adventure-world';
 import type { PlayState } from '../../engine/play';
 import { adventurePlot } from '../../generate-world';
 import type { ContentPack, ContentEnding, PlotStructure, Prose } from './format';
+import type { VersionTwoContentPack } from '../v2/place-wording';
 
 /** The story information the play screen can show for an adventure. */
 export interface StoryView {
@@ -31,7 +32,7 @@ export interface StoryState {
  * @param prose - Literal text and entity references.
  * @throws RangeError if a reference names an entity absent from the pack.
  */
-export function resolveProse(pack: Omit<ContentPack, 'version'>, prose: Prose): string {
+export function resolveProse(pack: ContentPack | VersionTwoContentPack, prose: Prose): string {
   const nameOf = (kind: 'place' | 'character' | 'item' | 'clue', id: string): string => {
     const entries = kind === 'place' ? pack.places
       : kind === 'character' ? pack.characters
@@ -52,7 +53,7 @@ export function resolveProse(pack: Omit<ContentPack, 'version'>, prose: Prose): 
  * @throws RangeError if the settings or story references are invalid.
  */
 export function storyView(
-  pack: Omit<ContentPack, 'version'>,
+  pack: ContentPack | VersionTwoContentPack,
   settings: AdventureSettings,
   state?: PlayState | StoryState,
 ): StoryView {
@@ -77,7 +78,7 @@ export function storyView(
  * @returns The matching ending, or undefined if none matches.
  */
 export function matchingEnding(
-  pack: ContentPack,
+  pack: ContentPack | VersionTwoContentPack,
   plot: PlotStructure,
   state: StoryState,
 ): ContentEnding | undefined {

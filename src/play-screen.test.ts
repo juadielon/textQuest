@@ -16,7 +16,7 @@ import {
 
 vi.mock('./generate-world', async (original) => {
   const actual = await original<typeof import('./generate-world')>();
-  return { generateAdventureWorld: vi.fn(actual.generateAdventureWorld) };
+  return { ...actual, generateAdventureWorld: vi.fn(actual.generateAdventureWorld) };
 });
 
 vi.mock('./engine/play', async (original) => {
@@ -379,7 +379,7 @@ describe('renderPlayScreen', () => {
 
     expect(target.querySelector('.solution-panel p')?.textContent)
       .toBe('Solution reached the goal in 3 commands.');
-    expect(target.querySelector('.play-ending')?.hidden).toBe(false);
+    expect(target.querySelector<HTMLElement>('.play-ending')?.hidden).toBe(false);
     expect(text(target, '.play-typed')).toEqual([
       '> take brass key', '> use brass key', '> go to old tower',
     ]);
