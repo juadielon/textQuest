@@ -10,6 +10,7 @@ import { aliasesFor, worldNamesFrom } from './content/v1/world-names';
 import { createSeededRandom } from './seeded-random';
 import { adventurePack, generateAdventureWorld } from './generate-world';
 import { genreLabels } from './start-screen-model';
+import { findWinningCommands, solutionModeEnabled } from './solution';
 import {
   createSave, exportSaveFile, MAX_COMMAND_LENGTH, MAX_SAVE_COMMANDS, MAX_SAVE_NAME_LENGTH, SaveError,
 } from './saves';
@@ -331,7 +332,71 @@ export function renderPlayScreen(
   });
 
   update();
-  const screen = element('div', 'play-screen', place, ending, log, form, announcer, sidebar);
+  let solutionPanel: HTMLElement | undefined;
+  if (solutionModeEnabled()) {
+    let route = findWinningCommands(world);
+    let routeIndex = 0;
+    const status = element('p', undefined, route.length
+      ? `Winning route: ${route.length} commands.`
+      : 'No winning route found.');
+    status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', 'polite');
+    const reset = element('button', undefined, 'Reset solution');
+    reset.type = 'button';
+    const step = element('button', undefined, 'Next solution command');
+    step.type = 'button';
+    const runAll = element('button', undefined, 'Run solution');
+    runAll.type = 'button';
+    reset.addEventListener('click', () => {
+      state = startPlay(world);
+      route = findWinningCommands(world);
+      routeIndex = 0;
+      log.replaceChildren();
+      status.textContent = route.length
+        ? `Solution reset. ${route.length} commands remain.`
+        : 'No winning route found.';
+      update();
+      input.focus();
+    });
+    step.addEventListener('click', () => {
+      if (routeIndex >= route.length) return;
+      const before = state;
+      const command = route[routeIndex];
+      run(command, 'content');
+      if (state === before) {
+        route = findWinningCommands(world, state);
+        routeIndex = 0;
+        status.textContent = `Solution command “${command}” could not change the state. Reset or continue manually.`;
+        return;
+      }
+      routeIndex += 1;
+      status.textContent = state.goalReached
+        ? `Solution reached the goal in ${routeIndex} commands.`
+        : `${routeIndex} of ${route.length} solution commands run.`;
+      update();
+      log.scrollTop = log.scrollHeight;
+    });
+    runAll.addEventListener('click', () => {
+      while (routeIndex < route.length && !state.goalReached) {
+        const before = state;
+        run(route[routeIndex], 'content');
+        if (state === before) break;
+        routeIndex += 1;
+      }
+      status.textContent = state.goalReached
+        ? `Solution reached the goal in ${routeIndex} commands.`
+        : `${routeIndex} of ${route.length} solution commands run.`;
+      update();
+      log.scrollTop = log.scrollHeight;
+    });
+    step.disabled = route.length === 0;
+    runAll.disabled = route.length === 0;
+    solutionPanel = element('aside', 'solution-panel',
+      element('h2', undefined, 'Solution mode'), status, reset, step, runAll);
+  }
+  const screen = element('div', 'play-screen',
+    ...(solutionPanel ? [solutionPanel] : []),
+    place, ending, log, form, announcer, sidebar);
   target.replaceChildren(title, screen);
   return true;
 }

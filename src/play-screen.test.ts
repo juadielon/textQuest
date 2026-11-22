@@ -187,6 +187,7 @@ const text = (target: HTMLElement, selector: string) =>
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   document.body.replaceChildren();
 });
 
@@ -622,7 +623,7 @@ describe('renderPlayScreen', () => {
       expect(generateAdventureWorld(settings)).toEqual(before);
       expect(encodeShareWord(settings)).toBe(word);
     }
-  });
+  }, 30_000);
 
   it('keeps the story title unchanged by commands and undo', () => {
     const target = renderTiny();

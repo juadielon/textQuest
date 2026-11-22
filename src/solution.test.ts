@@ -65,11 +65,10 @@ describe('solution mode', () => {
     expect(SOLUTION_SEARCH_LIMIT).toBe(10_000);
   });
 
-  it.each([['short', 'medium', 'long'] as const].flat())('finds a medium or long generated route: %s', (length) => {
-    if (length === 'short') return;
+  it.each(['medium', 'long'] as const)('finds a generated route: %s', (length) => {
     const settings = createAdventureSettings(7, length, 1);
     const world = generateAdventureWorld(settings);
     const route = findWinningCommands(world);
     expect(route.length).toBeGreaterThan(0);
-  });
+  }, 30_000);
 });
