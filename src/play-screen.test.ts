@@ -390,6 +390,11 @@ describe('renderPlayScreen', () => {
     reset.click();
     expect(target.querySelector('.play-log')?.children).toHaveLength(0);
     expect(target.querySelector('.play-sidebar p')?.textContent).toBe('Turns taken: 0');
+    step.click();
+    expect(target.querySelector('.solution-panel p')?.textContent)
+      .toContain('1 of 3 solution commands run');
+    expect(target.querySelector('.play-log')?.children).toHaveLength(1);
+    expect(onCommand).not.toHaveBeenCalled();
   });
 
   it('shows a plain message when the world cannot be generated', () => {

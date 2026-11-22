@@ -1,7 +1,7 @@
 import { discoveredTargets, playCommand, startPlay, type PlayState, type PlayWorld } from './engine/play';
 
 /** The largest number of states the solution runner will search. */
-export const SOLUTION_SEARCH_LIMIT = 10_000;
+export const SOLUTION_SEARCH_LIMIT = 100_000;
 
 /**
  * True only when the Vite environment explicitly enables solution mode.
@@ -21,26 +21,26 @@ export function solutionModeEnabled(): boolean {
  * This is a development route finder. It uses the real parser and play module,
  * never changes the world, and does not write commands into saves.
  */
-export function findWinningCommands(world: PlayWorld): readonly string[] {
+export function findWinningCommands(world: PlayWorld, from?: PlayState): readonly string[] {
   if (world.version !== 1) return [];
-  const start = startPlay(world);
+  return deriveCommands(world, from ?? startPlay(world));
+}
+
+function deriveCommands(world: PlayWorld, start: PlayState): readonly string[] {
   const queue: { readonly state: PlayState; readonly parent: number; readonly command: string }[] =
     [{ state: start, parent: -1, command: '' }];
   const seen = new Set([stateKey(start)]);
-
   for (let index = 0; index < queue.length && seen.size <= SOLUTION_SEARCH_LIMIT; index += 1) {
     const current = queue[index];
     if (current.state.goalReached) {
       const commands: string[] = [];
       let cursor = index;
       while (cursor > 0) {
-        const step = queue[cursor];
-        commands.push(step.command);
-        cursor = step.parent;
+        commands.push(queue[cursor].command);
+        cursor = queue[cursor].parent;
       }
       return commands.reverse();
     }
-
     for (const command of candidateCommands(world, current.state)) {
       const turn = playCommand(world, current.state, command);
       if (turn.state === current.state) continue;

@@ -163,6 +163,9 @@ export function renderPlayScreen(
   };
 
   const commands: string[] = [];
+  let solutionRouteIndex = 0;
+  let solutionStatus: HTMLParagraphElement | undefined;
+  let solutionRoute: readonly string[] = [];
   const run = (command: string, record = true, notify = true): string => {
     const before = state;
     const turn = playCommand(world, state, command);
@@ -183,10 +186,9 @@ export function renderPlayScreen(
   let solutionPanel: HTMLElement | undefined;
   if (solutionModeEnabled()) {
     const solutionWorld: PlayWorld = world;
-    const route = findWinningCommands(solutionWorld);
-    let routeIndex = 0;
-    const solutionStatus = element('p', undefined, route.length
-      ? `Winning route: ${route.length} commands.`
+    solutionRoute = findWinningCommands(solutionWorld);
+    solutionStatus = element('p', undefined, solutionRoute.length
+      ? `Winning route: ${solutionRoute.length} commands.`
       : 'No winning route found.');
     solutionStatus.setAttribute('role', 'status');
     solutionStatus.setAttribute('aria-live', 'polite');
@@ -198,37 +200,48 @@ export function renderPlayScreen(
     runAll.type = 'button';
     reset.addEventListener('click', () => {
       state = startPlay(world);
-      routeIndex = 0;
+      solutionRouteIndex = 0;
+      solutionRoute = findWinningCommands(world, state);
       log.replaceChildren();
-      solutionStatus.textContent = route.length
-        ? `Solution reset. ${route.length} commands remain.`
+      solutionStatus.textContent = solutionRoute.length
+        ? `Solution reset. ${solutionRoute.length} commands remain.`
         : 'No winning route found.';
       update();
       input.focus();
     });
     step.addEventListener('click', () => {
-      if (routeIndex >= route.length) return;
-      run(route[routeIndex], false);
-      routeIndex += 1;
+      if (solutionRouteIndex >= solutionRoute.length) return;
+      const before = state;
+      const command = solutionRoute[solutionRouteIndex];
+      run(command, false);
+      if (state === before) {
+        solutionStatus.textContent = `Solution command “${command}” could not change the state. Reset or continue manually.`;
+        solutionRoute = findWinningCommands(world, state);
+        solutionRouteIndex = 0;
+        return;
+      }
+      solutionRouteIndex += 1;
       solutionStatus.textContent = state.goalReached
-        ? `Solution reached the goal in ${routeIndex} commands.`
-        : `${routeIndex} of ${route.length} solution commands run.`;
+        ? `Solution reached the goal in ${solutionRouteIndex} commands.`
+        : `${solutionRouteIndex} of ${solutionRoute.length} solution commands run.`;
       update();
       log.scrollTop = log.scrollHeight;
     });
     runAll.addEventListener('click', () => {
-      while (routeIndex < route.length && !state.goalReached) {
-        run(route[routeIndex], false);
-        routeIndex += 1;
+      while (solutionRouteIndex < solutionRoute.length && !state.goalReached) {
+        const before = state;
+        run(solutionRoute[solutionRouteIndex], false);
+        if (state === before) break;
+        solutionRouteIndex += 1;
       }
       solutionStatus.textContent = state.goalReached
-        ? `Solution reached the goal in ${routeIndex} commands.`
-        : `${routeIndex} of ${route.length} solution commands run.`;
+        ? `Solution reached the goal in ${solutionRouteIndex} commands.`
+        : `${solutionRouteIndex} of ${solutionRoute.length} solution commands run.`;
       update();
       log.scrollTop = log.scrollHeight;
     });
-    step.disabled = route.length === 0;
-    runAll.disabled = route.length === 0;
+    step.disabled = solutionRoute.length === 0;
+    runAll.disabled = solutionRoute.length === 0;
     solutionPanel = element('aside', 'solution-panel',
       element('h2', undefined, 'Solution mode'),
       solutionStatus,
@@ -272,11 +285,22 @@ export function renderPlayScreen(
       input.focus();
       return;
     }
+    const beforeState = state;
     const message = run(command);
+    solutionRouteIndex = 0;
+    solutionRoute = findWinningCommands(world, state);
+    if (solutionStatus) {
+      solutionStatus.textContent = solutionRoute.length
+        ? `Solution route refreshed. ${solutionRoute.length} commands remain.`
+        : 'No winning route found.';
+    }
+    const completionText = puzzleCompletions(pack, beforeState, state);
+    const endingText = state.goalReached ? storyView(pack, settings, state).ending : undefined;
     announcer.className = 'visually-hidden';
     log.scrollTop = log.scrollHeight;
+    const liveMessage = [message, ...completionText, ...endingText ? [endingText] : []].join(' ');
     // A fresh node is announced even when the text repeats the last response.
-    announcer.replaceChildren(element('span', undefined, message));
+    announcer.replaceChildren(element('span', undefined, liveMessage));
     input.value = '';
     input.focus();
     update();

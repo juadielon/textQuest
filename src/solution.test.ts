@@ -2,6 +2,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AdventureWorld } from './adventure-world';
 import type { PlayWorld } from './engine/play';
+import { createAdventureSettings } from './adventure-settings';
+import { generateAdventureWorld } from './generate-world';
 import {
   findWinningCommands, SOLUTION_SEARCH_LIMIT, solutionModeEnabled,
 } from './solution';
@@ -61,5 +63,13 @@ describe('solution mode', () => {
 
   it('does not search beyond the documented state limit', () => {
     expect(SOLUTION_SEARCH_LIMIT).toBe(10_000);
+  });
+
+  it.each([['short', 'medium', 'long'] as const].flat())('finds a medium or long generated route: %s', (length) => {
+    if (length === 'short') return;
+    const settings = createAdventureSettings(7, length, 1);
+    const world = generateAdventureWorld(settings);
+    const route = findWinningCommands(world);
+    expect(route.length).toBeGreaterThan(0);
   });
 });
