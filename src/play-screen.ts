@@ -1,6 +1,6 @@
 import type { AdventureSettings } from './adventure-settings';
 import type { AdventureWorld } from './adventure-world';
-import { storyView } from './content/v1/story';
+import { puzzleCompletions, storyView } from './content/v1/story';
 import type { CommandTarget } from './engine/commands';
 import {
   discoveredTargets, playCommand, startPlay, type PlayState, type PlayWorld,
@@ -164,14 +164,18 @@ export function renderPlayScreen(
 
   const commands: string[] = [];
   const run = (command: string, record = true, notify = true): string => {
+    const before = state;
     const turn = playCommand(world, state, command);
     state = turn.state;
     if (record) {
       commands.push(command);
       if (notify) options.onCommand?.([...commands]);
     }
+    const completions = puzzleCompletions(pack, before, state);
     log.append(element('li', 'play-entry',
-      element('p', 'play-typed', `> ${command}`), element('p', undefined, turn.message)));
+      element('p', 'play-typed', `> ${command}`),
+      element('p', undefined, turn.message),
+      ...completions.map((completion) => element('p', 'story-completion', completion))));
     return turn.message;
   };
   options.commands?.forEach((command) => run(command, true, false));

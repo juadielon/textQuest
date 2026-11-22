@@ -26,6 +26,25 @@ export interface StoryState {
 }
 
 /**
+ * Returns authored completion text for puzzle steps newly completed by a turn.
+ *
+ * @param pack - Matching content pack.
+ * @param before - State before the turn.
+ * @param after - State after the turn.
+ * @returns Newly completed puzzle text in pack order.
+ */
+export function puzzleCompletions(
+  pack: ContentPack | VersionTwoContentPack,
+  before: StoryState,
+  after: StoryState,
+): readonly string[] {
+  const previous = new Set(before.stepsDone);
+  return [...pack.puzzles, ...pack.optionalDiscoveries]
+    .filter((puzzle) => after.stepsDone.includes(puzzle.id) && !previous.has(puzzle.id))
+    .map((puzzle) => resolveProse(pack, puzzle.completion));
+}
+
+/**
  * Resolves authored prose into one plain, accessible string.
  *
  * @param pack - Content pack that owns the entity names and prose.
@@ -64,9 +83,34 @@ export function storyView(
   return {
     title: plot.name,
     introduction: resolveProse(pack, plot.introduction),
-    objective: plot.name,
+    objective: objectiveFor(plot.id),
     ...(ending ? { ending: resolveProse(pack, ending.text) } : {}),
   };
+}
+
+function objectiveFor(plotId: string): string {
+  switch (plotId) {
+    case 'teapot-trail':
+      return 'Find who borrowed the Silver Teapot and return it before judging.';
+    case 'every-side':
+      return 'Compare every account and identify why the teapot moved.';
+    case 'two-threads':
+      return 'Join the teapot clues with the muddled delivery and explain both.';
+    case 'warning-chain':
+      return 'Restore each valley warning station and light the beacon.';
+    case 'missing-keeper':
+      return 'Find the keeper by matching both evidence trails.';
+    case 'renew-pact':
+      return 'Gather proof of goodwill and renew the valley pact.';
+    case 'overdue-ship':
+      return 'Repair the station, trace the ship and guide it home.';
+    case 'quiet-station':
+      return 'Restore each station system and wake the crew safely.';
+    case 'station-charter':
+      return 'Prove the crew keeps the charter and restore the station.';
+    default:
+      return 'Complete the required clues and reach the agreed goal.';
+  }
 }
 
 /**

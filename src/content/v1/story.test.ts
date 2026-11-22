@@ -4,7 +4,8 @@ import { createAdventureSettings } from '../../adventure-settings';
 import { startPlay } from '../../engine/play';
 import { adventurePlot, generateAdventureWorld } from '../../generate-world';
 import { lightFantasy } from './light-fantasy';
-import { matchingEnding, resolveProse, storyView } from './story';
+import { cosyMystery } from './cosy-mystery';
+import { matchingEnding, puzzleCompletions, resolveProse, storyView } from './story';
 
 describe('adventure story', () => {
   it('selects the same plot from settings and renders its prose with names', () => {
@@ -15,7 +16,7 @@ describe('adventure story', () => {
 
     expect(plot).toBe(lightFantasy.plots.find((candidate) => candidate.id === plot.id));
     expect(view.title).toBe(plot.name);
-    expect(view.objective).toBe(plot.name);
+    expect(view.objective).not.toBe(plot.name);
     expect(view.introduction).toBe(resolveProse(lightFantasy, plot.introduction));
     expect(view.introduction).not.toContain('{');
   });
@@ -42,5 +43,19 @@ describe('adventure story', () => {
     const view = storyView(lightFantasy, settings, startPlay(world));
 
     expect(view.ending).toBeUndefined();
+  });
+
+  it('shows only newly completed authored puzzle text', () => {
+    const before = {
+      itemsHeld: [] as string[],
+      placesVisited: [] as string[],
+      stepsDone: [] as string[],
+      cluesRevealed: [] as string[],
+    };
+    const after = { ...before, stepsDone: ['calm-baker'] };
+
+    expect(puzzleCompletions(cosyMystery, before, after)).toEqual([
+      'You return Spare apron; she remembers a bicycle bell outside the hall at dusk.',
+    ]);
   });
 });

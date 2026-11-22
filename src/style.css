@@ -82,6 +82,11 @@ main {
   white-space: pre-line;
 }
 
+.play-log .story-completion {
+  font-style: italic;
+  color: var(--muted);
+}
+
 .play-typed {
   font-weight: bold;
 }
