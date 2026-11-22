@@ -168,6 +168,25 @@ Open <http://localhost:5173>. Stop the server with `Ctrl+C`. Run `npm ci`
 again in Docker if the dependency files change. You do not need to install
 Node.js, npm or the project dependencies on your computer.
 
+### Run in solution mode
+
+Solution mode enables Reset, Next and Run controls for the generated
+winning route. It is development-only and is disabled in normal runs.
+Start it in Docker with:
+
+```sh
+docker compose run --rm --service-ports -e VITE_SOLUTION_MODE=1 app npm run dev
+```
+
+Open <http://localhost:5173>. Solution mode does not save progress or expose
+Save adventure controls.
+
+To build solution mode for a static host:
+
+```sh
+docker compose run --rm -e VITE_SOLUTION_MODE=1 app npm run build
+```
+
 ### Checks
 
 Run the project's tests, linter and build in Docker:
