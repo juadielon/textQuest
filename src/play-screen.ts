@@ -125,7 +125,6 @@ export function renderPlayScreen(
   placeName.id = 'play-place-name';
   const introduction = element('p', 'play-introduction');
   const objective = element('p', 'play-objective');
-  objective.textContent = `Objective: ${storyView(pack, settings).objective}`;
   const description = element('p', 'play-description');
   const placeText = element('p');
   const peopleHeading = element('h3', undefined, 'People here');
@@ -188,6 +187,9 @@ export function renderPlayScreen(
     const knownPlaces = knownPlacesByState.get(state) ?? currentPlaceTargets(state);
     placeName.textContent = view.placeName;
     introduction.textContent = renderProse(plot.introduction, pack, world, state, targets, knownPlaces);
+    objective.textContent = `Objective: ${hideUndiscoveredNames(
+      storyView(pack, settings).objective, pack, world, state, targets, knownPlaces,
+    )}`;
     const authoredPlace = pack.places.find(({ id }) => id === state.placeId);
     description.textContent = authoredPlace
       ? renderProse(authoredPlace.description, pack, world, state, targets, knownPlaces) : '';

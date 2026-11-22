@@ -214,6 +214,15 @@ describe('renderPlayScreen', () => {
     expect(target.querySelector('.play-objective')?.textContent)
       .toBe('Objective: Complete the required clues and reach the agreed goal.');
   });
+  it('keeps hidden names out of the generated objective', () => {
+    const target = document.createElement('main');
+    document.body.append(target);
+
+    renderPlayScreen(target, createAdventureSettings(0, 'long', 1));
+
+    expect(target.querySelector('.play-objective')?.textContent)
+      .not.toContain('Hill beacon');
+  });
   it('resets, steps and runs an explicit solution route', () => {
     vi.stubEnv('VITE_SOLUTION_MODE', '1');
     vi.mocked(generateAdventureWorld).mockReturnValueOnce(tinyWorld);
