@@ -9,6 +9,7 @@ completes the issue. For documentation-only follow-ups without a tracking
 issue, state `Documentation-only follow-up` instead.
 
 If this depends on another pull request, link it and explain the order.
+For a documentation-only follow-up with no related issue, state that explicitly.
 
 ## Type of change
 
