@@ -344,6 +344,25 @@ it('shows solution controls and suppresses save controls only with the explicit 
   expect(localStorage.length).toBe(0);
 }, 30_000);
 
+it('suppresses save controls when resuming in solution mode', () => {
+  vi.stubEnv('VITE_SOLUTION_MODE', '1');
+  const store = createSaveStore(localStorage);
+  store.add(createSave(
+    'Saved trip',
+    settings,
+    ['look'],
+    new Date('2026-10-01T09:00:00.000Z'),
+    ['id'],
+  ));
+
+  get<HTMLButtonElement>('#open-saves').click();
+  get<HTMLButtonElement>('button[aria-label="Resume: Saved trip"]').click();
+
+  expect(app.querySelector('.solution-panel')).not.toBeNull();
+  expect(app.querySelector('.save-form')).toBeNull();
+  expect(store.load(store.list()[0].id).commands).toEqual(['look']);
+});
+
 it('offers save controls in ordinary player mode', () => {
   vi.stubEnv('VITE_SOLUTION_MODE', '');
   openAdventure(adventureSettings.encodeShareWord(settings));
