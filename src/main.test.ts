@@ -54,7 +54,7 @@ function expectPlay(settings: adventureSettings.AdventureSettings): void {
   const named = { ...world, names: worldNamesFrom(adventurePack(settings.version, settings.genre), world) };
   const view = describePlay(named, startPlay(named));
   expect(get('.play-place-name').textContent).toBe(view.placeName);
-  expect(get('.play-place p:nth-of-type(3)').textContent).toBe(view.placeText);
+  expect(get('.play-place p:nth-of-type(4)').textContent).toBe(view.placeText);
   expect(shownDetails()).toEqual({
     'Share word': adventureSettings.encodeShareWord(settings),
     Genre: summariseAdventure(settings).genreLabel,
@@ -334,6 +334,55 @@ it.each([1, 2])('keeps a failed legacy character talk separate from new content 
   expect(responses()).toHaveLength(2);
   expect(responses()[0]).not.toContain(motive);
   expect(responses()[1]).toContain(motive);
+});
+
+it('shows solution controls and suppresses save controls only with the explicit flag', () => {
+  vi.stubEnv('VITE_SOLUTION_MODE', '1');
+  openAdventure(adventureSettings.encodeShareWord(settings));
+  expect(app.querySelector('.solution-panel')).not.toBeNull();
+  expect(app.querySelector('.save-form')).toBeNull();
+  expect(localStorage.length).toBe(0);
+}, 30_000);
+
+it('suppresses save controls when resuming in solution mode', () => {
+  vi.stubEnv('VITE_SOLUTION_MODE', '1');
+  const store = createSaveStore(localStorage);
+  store.add(createSave(
+    'Saved trip',
+    settings,
+    ['look'],
+    new Date('2026-10-01T09:00:00.000Z'),
+    ['id'],
+  ));
+
+  get<HTMLButtonElement>('#open-saves').click();
+  get<HTMLButtonElement>('button[aria-label="Resume: Saved trip"]').click();
+
+  expect(app.querySelector('.solution-panel')).not.toBeNull();
+  expect(app.querySelector('.save-form')).toBeNull();
+  expect(store.load(store.list()[0].id).commands).toEqual(['look']);
+});
+
+it('offers save controls in ordinary player mode', () => {
+  vi.stubEnv('VITE_SOLUTION_MODE', '');
+  openAdventure(adventureSettings.encodeShareWord(settings));
+  expect(app.querySelector('.solution-panel')).toBeNull();
+  expect(app.querySelector('.save-form')).not.toBeNull();
+});
+
+it('shows solution controls and suppresses save controls only with the explicit flag', () => {
+  vi.stubEnv('VITE_SOLUTION_MODE', '1');
+  openAdventure(adventureSettings.encodeShareWord(settings));
+  expect(app.querySelector('.solution-panel')).not.toBeNull();
+  expect(app.querySelector('.save-form')).toBeNull();
+  expect(localStorage.length).toBe(0);
+}, 30_000);
+
+it('offers save controls in ordinary player mode', () => {
+  vi.stubEnv('VITE_SOLUTION_MODE', '');
+  openAdventure(adventureSettings.encodeShareWord(settings));
+  expect(app.querySelector('.solution-panel')).toBeNull();
+  expect(app.querySelector('.save-form')).not.toBeNull();
 });
 
 it('offers no save form when the world cannot be played', async () => {

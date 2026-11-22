@@ -9,7 +9,9 @@ import type { EntityReference, PlotStructure, Prose } from './content/v1/format'
 import { aliasesFor, worldNamesFrom } from './content/v1/world-names';
 import { createSeededRandom } from './seeded-random';
 import { adventurePack, generateAdventureWorld } from './generate-world';
+import { storyView } from './content/v1/story';
 import { genreLabels } from './start-screen-model';
+import { findWinningCommands, solutionModeEnabled } from './solution';
 import {
   createSave, exportSaveFile, MAX_COMMAND_LENGTH, MAX_SAVE_COMMANDS, MAX_SAVE_NAME_LENGTH, SaveError,
 } from './saves';
@@ -122,6 +124,7 @@ export function renderPlayScreen(
   const placeName = element('h2', 'play-place-name');
   placeName.id = 'play-place-name';
   const introduction = element('p', 'play-introduction');
+  const objective = element('p', 'play-objective');
   const description = element('p', 'play-description');
   const placeText = element('p');
   const peopleHeading = element('h3', undefined, 'People here');
@@ -130,7 +133,7 @@ export function renderPlayScreen(
   const itemsHere = element('ul', 'play-items-here');
   const storyHeading = element('h3', undefined, 'Story');
   const story = element('ul', 'play-story');
-  const place = element('section', 'play-place', placeName, introduction, description,
+  const place = element('section', 'play-place', placeName, introduction, objective, description,
     placeText, peopleHeading, people, itemsHeading, itemsHere, storyHeading, story);
   place.setAttribute('aria-labelledby', placeName.id);
 
@@ -184,6 +187,9 @@ export function renderPlayScreen(
     const knownPlaces = knownPlacesByState.get(state) ?? currentPlaceTargets(state);
     placeName.textContent = view.placeName;
     introduction.textContent = renderProse(plot.introduction, pack, world, state, targets, knownPlaces);
+    objective.textContent = `Objective: ${hideUndiscoveredNames(
+      storyView(pack, settings).objective, pack, world, state, targets, knownPlaces,
+    )}`;
     const authoredPlace = pack.places.find(({ id }) => id === state.placeId);
     description.textContent = authoredPlace
       ? renderProse(authoredPlace.description, pack, world, state, targets, knownPlaces) : '';
@@ -323,7 +329,18 @@ export function renderPlayScreen(
     announcer.className = 'visually-hidden';
     log.scrollTop = log.scrollHeight;
     // A fresh node is announced even when the text repeats the last response.
-    announcer.replaceChildren(element('span', undefined, message));
+    const endingNow = state.goalReached
+      ? ` You reached your goal in ${state.turns} ${state.turns === 1 ? 'turn' : 'turns'}.`
+      : '';
+    announcer.replaceChildren(element('span', undefined, `${message}${endingNow}`));
+    if (solutionStatus) {
+      solutionRoute = findWinningCommands(world, state);
+      solutionRouteIndex = 0;
+      solutionStatus.textContent = solutionRoute.length
+        ? `Solution route refreshed. ${solutionRoute.length} commands remain.`
+        : 'No winning route found.';
+      updateSolutionControls?.();
+    }
     input.value = '';
     input.focus();
     update();
@@ -331,7 +348,85 @@ export function renderPlayScreen(
   });
 
   update();
-  const screen = element('div', 'play-screen', place, ending, log, form, announcer, sidebar);
+  let solutionPanel: HTMLElement | undefined;
+  let solutionStatus: HTMLParagraphElement | undefined;
+  let solutionRoute: readonly string[] = [];
+  let solutionRouteIndex = 0;
+  let updateSolutionControls: (() => void) | undefined;
+  if (solutionModeEnabled()) {
+    solutionRoute = findWinningCommands(world, state);
+    solutionStatus = element('p', undefined, solutionRoute.length
+      ? `Winning route: ${solutionRoute.length} commands.`
+      : 'No winning route found.');
+    solutionStatus.setAttribute('role', 'status');
+    solutionStatus.setAttribute('aria-live', 'polite');
+    const reset = element('button', undefined, 'Reset solution');
+    reset.type = 'button';
+    const step = element('button', undefined, 'Next solution command');
+    step.type = 'button';
+    const runAll = element('button', undefined, 'Run solution');
+    runAll.type = 'button';
+    updateSolutionControls = (): void => {
+      const exhausted = solutionRouteIndex >= solutionRoute.length;
+      step.disabled = solutionRoute.length === 0 || exhausted;
+      runAll.disabled = solutionRoute.length === 0 || exhausted;
+    };
+    reset.addEventListener('click', () => {
+      state = startPlay(world);
+      solutionRoute = findWinningCommands(world, state);
+      solutionRouteIndex = 0;
+      log.replaceChildren();
+      solutionStatus!.textContent = solutionRoute.length
+        ? `Solution reset. ${solutionRoute.length} commands remain.`
+        : 'No winning route found.';
+      updateSolutionControls?.();
+      update();
+      input.focus();
+    });
+    step.addEventListener('click', () => {
+      if (solutionRouteIndex >= solutionRoute.length) return;
+      const before = state;
+      const command = solutionRoute[solutionRouteIndex];
+      run(command, 'content');
+      if (state === before) {
+        solutionRoute = findWinningCommands(world, state);
+        solutionRouteIndex = 0;
+        solutionStatus!.textContent = `Solution command “${command}” could not change the state. Reset or continue manually.`;
+        updateSolutionControls?.();
+        return;
+      }
+      solutionRouteIndex += 1;
+      solutionStatus!.textContent = state.goalReached
+        ? `Solution reached the goal in ${solutionRouteIndex} commands.`
+        : `${solutionRouteIndex} of ${solutionRoute.length} solution commands run.`;
+      updateSolutionControls?.();
+      update();
+      log.scrollTop = log.scrollHeight;
+    });
+    runAll.addEventListener('click', () => {
+      solutionRoute = findWinningCommands(world, state);
+      solutionRouteIndex = 0;
+      while (solutionRouteIndex < solutionRoute.length && !state.goalReached) {
+        const before = state;
+        run(solutionRoute[solutionRouteIndex], 'content');
+        if (state === before) break;
+        solutionRouteIndex += 1;
+      }
+      solutionStatus!.textContent = state.goalReached
+        ? `Solution reached the goal in ${solutionRouteIndex} commands.`
+        : `${solutionRouteIndex} of ${solutionRoute.length} solution commands run.`;
+      updateSolutionControls?.();
+      update();
+      log.scrollTop = log.scrollHeight;
+    });
+    step.disabled = solutionRoute.length === 0;
+    runAll.disabled = solutionRoute.length === 0;
+    solutionPanel = element('aside', 'solution-panel',
+      element('h2', undefined, 'Solution mode'), solutionStatus!, reset, step, runAll);
+  }
+  const screen = element('div', 'play-screen',
+    ...(solutionPanel ? [solutionPanel] : []),
+    place, ending, log, form, announcer, sidebar);
   target.replaceChildren(title, screen);
   return true;
 }

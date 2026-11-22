@@ -5,7 +5,8 @@ What changed, and why?
 ## Related issues
 
 Link the issue this pull request works on. Use `Closes #123` only if it
-completes the issue.
+completes the issue. For documentation-only follow-ups without a tracking
+issue, state `Documentation-only follow-up` instead.
 
 If this depends on another pull request, link it and explain the order.
 For a documentation-only follow-up with no related issue, state that explicitly.

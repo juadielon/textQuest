@@ -6,6 +6,7 @@ import { createSaveStore, type StorageLike } from './saves';
 import { summariseAdventure } from './start-screen-model';
 import type { AdventureSettings } from './adventure-settings';
 import { createAdventureLink } from './share-links';
+import { solutionModeEnabled } from './solution';
 
 const app = document.querySelector<HTMLElement>('#app');
 
@@ -170,7 +171,9 @@ if (app) {
       ? 'Going back ends this play session. Save first to carry on later.'
       : 'Going back ends this play session. Keep the share word to start again.';
     header.append(details, back, notice, trackingStatus, sharing);
-    if (playable) {
+    if (playable && solutionModeEnabled()) {
+      notice.textContent = 'Solution mode is development-only. Progress in this screen is not saved.';
+    } else if (playable) {
       header.append(buildSaveForm({
         store, settings, resumed, suggestedName: summary.shareWord, commands: () => commands,
         commandModes: () => commandModes,

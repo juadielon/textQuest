@@ -1,6 +1,6 @@
 import { createAdventureSettings, type AdventureGenre, type AdventureSettings } from './adventure-settings';
 import type { AdventureWorld } from './adventure-world';
-import type { ContentPack } from './content/v1/format';
+import type { ContentPack, PlotStructure } from './content/v1/format';
 import { cosyMystery } from './content/v1/cosy-mystery';
 import { lightFantasy } from './content/v1/light-fantasy';
 import { scienceFiction } from './content/v1/science-fiction';
@@ -36,6 +36,31 @@ export function adventurePack(version: number, genre: AdventureGenre): ContentPa
   if (version === 1) return versionOnePacks[genre];
   if (version === 2) return versionTwoPacks[genre];
   throw new RangeError(`Adventure version ${version} is not supported.`);
+}
+
+/**
+ * Returns the plot selected for the settings, without generating or changing
+ * the adventure world.
+ *
+ * @param settings - Valid adventure settings.
+ * @param pack - Optional matching content pack. Defaults to the released pack
+ * for the settings.
+ * @throws RangeError if the settings or genre mismatch are invalid.
+ */
+export function adventurePlot(
+  settings: AdventureSettings,
+  pack: ContentPack | VersionTwoContentPack = adventurePack(settings.version, settings.genre),
+): PlotStructure {
+  const expected = createAdventureSettings(settings.seed, settings.length, settings.version);
+  if (settings.genre !== expected.genre) {
+    throw new RangeError('The genre does not match this seed and version.');
+  }
+  if (pack.genre !== settings.genre) {
+    throw new RangeError('The content pack does not match this adventure genre.');
+  }
+  const random = createSeededRandom(settings.seed);
+  random.nextUint32();
+  return pack.plots[random.pickIndex(pack.plots.length)];
 }
 
 /**

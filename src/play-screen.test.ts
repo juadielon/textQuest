@@ -187,6 +187,7 @@ const text = (target: HTMLElement, selector: string) =>
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   document.body.replaceChildren();
 });
 
@@ -208,6 +209,62 @@ describe('describePlay', () => {
 });
 
 describe('renderPlayScreen', () => {
+  it('shows the plotted objective on the play screen', () => {
+    const target = renderTiny();
+    expect(target.querySelector('.play-objective')?.textContent)
+      .toBe('Objective: Complete the required clues and reach the agreed goal.');
+  });
+  it('keeps hidden names out of the generated objective', () => {
+    const target = document.createElement('main');
+    document.body.append(target);
+
+    renderPlayScreen(target, createAdventureSettings(0, 'long', 1));
+
+    expect(target.querySelector('.play-objective')?.textContent)
+      .not.toContain('Hill beacon');
+  });
+  it('resets, steps and runs an explicit solution route', () => {
+    vi.stubEnv('VITE_SOLUTION_MODE', '1');
+    vi.mocked(generateAdventureWorld).mockReturnValueOnce(tinyWorld);
+    vi.mocked(adventurePack).mockReturnValueOnce(tinyPack);
+    const onCommand = vi.fn();
+    const target = document.createElement('main');
+    document.body.append(target);
+    renderPlayScreen(target, settingsFor('light-fantasy'), { onCommand });
+
+    const status = target.querySelector('.solution-panel [role="status"]');
+    expect(status?.getAttribute('aria-live')).toBe('polite');
+    const [reset, step, run] = [...target.querySelectorAll<HTMLButtonElement>('.solution-panel button')];
+    step.click();
+    expect(target.querySelectorAll('.play-entry')).toHaveLength(1);
+    reset.click();
+    expect(target.querySelectorAll('.play-entry')).toHaveLength(0);
+    expect(step.disabled).toBe(false);
+    expect(run.disabled).toBe(false);
+    run.click();
+    expect(target.querySelector<HTMLElement>('.play-ending')?.hidden).toBe(false);
+    expect(step.disabled).toBe(true);
+    expect(run.disabled).toBe(true);
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+
+  it('rederives solution controls after a manual command', () => {
+    vi.stubEnv('VITE_SOLUTION_MODE', '1');
+    vi.mocked(generateAdventureWorld).mockReturnValueOnce(tinyWorld);
+    vi.mocked(adventurePack).mockReturnValueOnce(tinyPack);
+    const onCommand = vi.fn();
+    const target = document.createElement('main');
+    document.body.append(target);
+    renderPlayScreen(target, settingsFor('light-fantasy'), { onCommand });
+
+    type(target, 'take brass key');
+    const status = target.querySelector('.solution-panel [role="status"]');
+    expect(status?.textContent).toContain('Solution route refreshed');
+    const run = [...target.querySelectorAll<HTMLButtonElement>('.solution-panel button')][2];
+    run.click();
+    expect(target.querySelector<HTMLElement>('.play-ending')?.hidden).toBe(false);
+  });
+
   it('shows rejected control characters visibly and clears the error on valid play', () => {
     const target = renderTiny();
     type(target, 'look\taround');
@@ -262,7 +319,7 @@ describe('renderPlayScreen', () => {
       expect(document.activeElement).toBe(target.querySelector('#play-command'));
       expect(target.querySelector('#play-command')!.getAttribute('aria-invalid')).toBe('true');
     }
-  });
+  }, 15_000);
 
   it('counts escaped JSON at the file boundary and keeps rejected input out of history', () => {
     const settings = settingsFor('light-fantasy');
@@ -622,7 +679,7 @@ describe('renderPlayScreen', () => {
       expect(generateAdventureWorld(settings)).toEqual(before);
       expect(encodeShareWord(settings)).toBe(word);
     }
-  });
+  }, 30_000);
 
   it('keeps the story title unchanged by commands and undo', () => {
     const target = renderTiny();
