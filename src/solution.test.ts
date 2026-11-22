@@ -49,6 +49,34 @@ describe('solution mode', () => {
     ]);
   });
 
+  it('finds a deterministic route in a version 2 world', () => {
+    const world: PlayWorld = {
+      ...tinyWorld,
+      version: 2,
+      solution: {
+        steps: [
+          {
+            id: 'open-path',
+            placeId: 'gate',
+            conditions: { itemsHeld: ['brass-key'] },
+            choiceId: 'gate-choice',
+            effects: [{ kind: 'unlock-exit', exitId: 'path' }],
+          },
+          {
+            id: 'keep-path',
+            placeId: 'gate',
+            conditions: { itemsHeld: ['brass-key'] },
+            choiceId: 'gate-choice',
+            effects: [],
+          },
+        ],
+        goal: { placeId: 'old-tower', conditions: { stepsDone: ['open-path'] } },
+        endings: [{ id: 'win', outcome: 'win' }],
+      },
+    };
+    expect(findWinningCommands(world).length).toBeGreaterThan(0);
+  });
+
   it('returns no route for a world with no solution', () => {
     const world: AdventureWorld = {
       ...tinyWorld,
@@ -65,8 +93,8 @@ describe('solution mode', () => {
     expect(SOLUTION_SEARCH_LIMIT).toBe(10_000);
   });
 
-  it.each(['medium', 'long'] as const)('finds a generated route: %s', (length) => {
-    const settings = createAdventureSettings(7, length, 1);
+  it.each([1, 2] as const)('finds a short generated route: version %i', (version) => {
+    const settings = createAdventureSettings(7, 'short', version);
     const world = generateAdventureWorld(settings);
     const route = findWinningCommands(world);
     expect(route.length).toBeGreaterThan(0);

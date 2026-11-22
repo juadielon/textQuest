@@ -209,6 +209,46 @@ describe('describePlay', () => {
 });
 
 describe('renderPlayScreen', () => {
+  it('resets, steps and runs an explicit solution route', () => {
+    vi.stubEnv('VITE_SOLUTION_MODE', '1');
+    vi.mocked(generateAdventureWorld).mockReturnValueOnce(tinyWorld);
+    vi.mocked(adventurePack).mockReturnValueOnce(tinyPack);
+    const onCommand = vi.fn();
+    const target = document.createElement('main');
+    document.body.append(target);
+    renderPlayScreen(target, settingsFor('light-fantasy'), { onCommand });
+
+    const status = target.querySelector('.solution-panel [role="status"]');
+    expect(status?.getAttribute('aria-live')).toBe('polite');
+    const [reset, step, run] = [...target.querySelectorAll<HTMLButtonElement>('.solution-panel button')];
+    step.click();
+    expect(target.querySelectorAll('.play-entry')).toHaveLength(1);
+    reset.click();
+    expect(target.querySelectorAll('.play-entry')).toHaveLength(0);
+    expect(step.disabled).toBe(false);
+    expect(run.disabled).toBe(false);
+    run.click();
+    expect(target.querySelector<HTMLElement>('.play-ending')?.hidden).toBe(false);
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+
+  it('rederives solution controls after a manual command', () => {
+    vi.stubEnv('VITE_SOLUTION_MODE', '1');
+    vi.mocked(generateAdventureWorld).mockReturnValueOnce(tinyWorld);
+    vi.mocked(adventurePack).mockReturnValueOnce(tinyPack);
+    const onCommand = vi.fn();
+    const target = document.createElement('main');
+    document.body.append(target);
+    renderPlayScreen(target, settingsFor('light-fantasy'), { onCommand });
+
+    type(target, 'take brass key');
+    const status = target.querySelector('.solution-panel [role="status"]');
+    expect(status?.textContent).toContain('Solution route refreshed');
+    const run = [...target.querySelectorAll<HTMLButtonElement>('.solution-panel button')][2];
+    run.click();
+    expect(target.querySelector<HTMLElement>('.play-ending')?.hidden).toBe(false);
+  });
+
   it('shows rejected control characters visibly and clears the error on valid play', () => {
     const target = renderTiny();
     type(target, 'look\taround');
