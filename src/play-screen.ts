@@ -334,12 +334,7 @@ export function renderPlayScreen(
       solutionStatus.textContent = solutionRoute.length
         ? `Solution route refreshed. ${solutionRoute.length} commands remain.`
         : 'No winning route found.';
-      const controls = solutionPanel?.querySelectorAll<HTMLButtonElement>('button');
-      for (const control of controls ?? []) {
-        if (control.textContent === 'Next solution command' || control.textContent === 'Run solution') {
-          control.disabled = solutionRoute.length === 0;
-        }
-      }
+      updateSolutionControls?.();
     }
     input.value = '';
     input.focus();
@@ -352,6 +347,7 @@ export function renderPlayScreen(
   let solutionStatus: HTMLParagraphElement | undefined;
   let solutionRoute: readonly string[] = [];
   let solutionRouteIndex = 0;
+  let updateSolutionControls: (() => void) | undefined;
   if (solutionModeEnabled()) {
     solutionRoute = findWinningCommands(world);
     solutionStatus = element('p', undefined, solutionRoute.length
@@ -365,6 +361,11 @@ export function renderPlayScreen(
     step.type = 'button';
     const runAll = element('button', undefined, 'Run solution');
     runAll.type = 'button';
+    updateSolutionControls = (): void => {
+      const exhausted = solutionRouteIndex >= solutionRoute.length;
+      step.disabled = solutionRoute.length === 0 || exhausted;
+      runAll.disabled = solutionRoute.length === 0 || exhausted;
+    };
     reset.addEventListener('click', () => {
       state = startPlay(world);
       solutionRoute = findWinningCommands(world);
@@ -373,8 +374,7 @@ export function renderPlayScreen(
       solutionStatus!.textContent = solutionRoute.length
         ? `Solution reset. ${solutionRoute.length} commands remain.`
         : 'No winning route found.';
-      step.disabled = solutionRoute.length === 0;
-      runAll.disabled = solutionRoute.length === 0;
+      updateSolutionControls?.();
       update();
       input.focus();
     });
@@ -387,12 +387,14 @@ export function renderPlayScreen(
         solutionRoute = findWinningCommands(world, state);
         solutionRouteIndex = 0;
         solutionStatus!.textContent = `Solution command “${command}” could not change the state. Reset or continue manually.`;
+        updateSolutionControls?.();
         return;
       }
       solutionRouteIndex += 1;
       solutionStatus!.textContent = state.goalReached
         ? `Solution reached the goal in ${solutionRouteIndex} commands.`
         : `${solutionRouteIndex} of ${solutionRoute.length} solution commands run.`;
+      updateSolutionControls?.();
       update();
       log.scrollTop = log.scrollHeight;
     });
@@ -408,6 +410,7 @@ export function renderPlayScreen(
       solutionStatus!.textContent = state.goalReached
         ? `Solution reached the goal in ${solutionRouteIndex} commands.`
         : `${solutionRouteIndex} of ${solutionRoute.length} solution commands run.`;
+      updateSolutionControls?.();
       update();
       log.scrollTop = log.scrollHeight;
     });

@@ -229,6 +229,8 @@ describe('renderPlayScreen', () => {
     expect(run.disabled).toBe(false);
     run.click();
     expect(target.querySelector<HTMLElement>('.play-ending')?.hidden).toBe(false);
+    expect(step.disabled).toBe(true);
+    expect(run.disabled).toBe(true);
     expect(onCommand).not.toHaveBeenCalled();
   });
 
