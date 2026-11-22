@@ -10,9 +10,9 @@ command parser and a save format. A pure play module runs parsed commands
 against a world, with a browser play screen built on it. New adventures use
 version 2's seeded item and clue placement; version 1 share words and saves
 keep their original worlds. All three genres can be played from the start
-screen, saved and resumed later. Authored place names, plot introductions,
-story objectives, puzzle completions and endings are rendered; some future
-consequential content remains planned.
+screen, saved and resumed later. Plot introductions, story objectives,
+puzzle completions and endings are rendered. Authored content-pack names
+remain unfinished under issue #56.
 
 ## Start screen
 

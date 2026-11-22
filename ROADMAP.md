@@ -101,16 +101,17 @@ checker. Deterministic light fantasy world generation is implemented for
 [pull request #35](https://github.com/juadielon/textQuest/pull/35). The seed chooses a plot, and length selects
 its fixed 8/16/24-place and 4/8/12-required-step plan. Tests cover all nine
 plot/length combinations, optional routes, winnability and repeatability.
-The world contains engine rules, not player progress. Authored place names,
-plot introductions, objectives, puzzle completions and endings are rendered
-in the browser.
+The world contains engine rules, not player progress. Plot introductions,
+objectives, puzzle completions and endings are rendered in the browser.
+Authored content-pack names remain unfinished under issue #56.
 The science fiction pack ([issue #33](https://github.com/juadielon/textQuest/issues/33))
 and the cosy mystery pack
 ([issue #32](https://github.com/juadielon/textQuest/issues/32)) follow the same
 format and checks. The generator builds worlds from both
 ([issue #40](https://github.com/juadielon/textQuest/issues/40)), with the same
 tests and pinned worlds for each genre. Commands run through the play module;
-authored names and released story text are rendered.
+released story prose is rendered, while authored content-pack names remain
+unfinished under issue #56.
 Seeded item and clue placement
 ([issue #51](https://github.com/juadielon/textQuest/issues/51)) is now playable
 in adventure version 2, using the final matching wording prepared in
@@ -184,7 +185,7 @@ handling without changing stored progress on Resume.
 **Status:** In progress — start and play screens are connected
 ([issue #54](https://github.com/juadielon/textQuest/issues/54)).
 The play interface in [issue #44](https://github.com/juadielon/textQuest/issues/44)
-still needs content-pack names and prose
+needs authored content-pack names
 ([issue #56](https://github.com/juadielon/textQuest/issues/56)).
 A start screen for new adventures and share words
 ([issue #41](https://github.com/juadielon/textQuest/issues/41)) is implemented
