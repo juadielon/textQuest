@@ -10,8 +10,9 @@ command parser and a save format. A pure play module runs parsed commands
 against a world, with a browser play screen built on it. New adventures use
 version 2's seeded item and clue placement; version 1 share words and saves
 keep their original worlds. All three genres can be played from the start
-screen, saved and resumed later. Names still come from IDs; authored story
-text remains planned.
+screen, saved and resumed later. Authored place names, plot introductions,
+story objectives, puzzle completions and endings are rendered; some future
+consequential content remains planned.
 
 ## Start screen
 
@@ -247,8 +248,9 @@ always gives the same result, whatever the time, locale or browser. Tests show
 long worlds with 28 places and 14 required steps finish within the limit. The
 limit is a cautious first value. Generator tests also check the authored
 light fantasy worlds, including every long plot, within this limit.
-Authored story text is not rendered yet. Commands run against generated
-worlds in the browser through the play module described below.
+Authored story text is rendered in the browser, including plot introductions,
+objectives, puzzle completions and endings. Commands run against generated
+worlds through the play module described below.
 
 ## Typed command parser
 
@@ -539,7 +541,8 @@ textQuest builds to plain static files: HTML, CSS, JavaScript and an icon.
 It needs no game server, database, API key or LLM, so any static web host
 can serve it. The current build connects the start and play screens for
 light fantasy, cosy mystery and science fiction. All three genres are
-playable, but authored prose and authored command names remain unfinished.
+playable with authored places and puzzle text. Authored command names are
+implemented and release content may be extended separately.
 Save an adventure once to keep its progress; after that each command is saved
 automatically in browsers with Web Locks. A share word
 recreates the starting adventure, not a saved session. Browser save-file

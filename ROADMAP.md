@@ -101,16 +101,16 @@ checker. Deterministic light fantasy world generation is implemented for
 [pull request #35](https://github.com/juadielon/textQuest/pull/35). The seed chooses a plot, and length selects
 its fixed 8/16/24-place and 4/8/12-required-step plan. Tests cover all nine
 plot/length combinations, optional routes, winnability and repeatability.
-The world contains engine rules, not rendered story text or player progress.
-These engine worlds can be played in the browser, but authored names and
-story text are not rendered yet.
+The world contains engine rules, not player progress. Authored place names,
+plot introductions, objectives, puzzle completions and endings are rendered
+in the browser.
 The science fiction pack ([issue #33](https://github.com/juadielon/textQuest/issues/33))
 and the cosy mystery pack
 ([issue #32](https://github.com/juadielon/textQuest/issues/32)) follow the same
 format and checks. The generator builds worlds from both
 ([issue #40](https://github.com/juadielon/textQuest/issues/40)), with the same
 tests and pinned worlds for each genre. Commands run through the play module;
-authored names and story text remain planned.
+authored names and released story text are rendered.
 Seeded item and clue placement
 ([issue #51](https://github.com/juadielon/textQuest/issues/51)) is now playable
 in adventure version 2, using the final matching wording prepared in
@@ -211,7 +211,8 @@ Invalid settings or worlds show the accessible unplayable message; unexpected
 errors while opening play are rethrown
 ([issue #74](https://github.com/juadielon/textQuest/issues/74)).
 A saves screen resumes and deletes saved adventures. Content-pack names and
-prose, and save file export and import remain planned.
+authored plot introductions, objectives, puzzle completions and endings are
+implemented. Save file export and import remain planned.
 
 ### 8. Release checks and hosting guide
 

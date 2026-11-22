@@ -369,6 +369,8 @@ describe('renderPlayScreen', () => {
     renderPlayScreen(target, settingsFor('light-fantasy'), { onCommand });
 
     expect(target.querySelector('.solution-panel')).not.toBeNull();
+    expect(target.querySelector('.solution-panel [role="status"]')?.getAttribute('aria-live'))
+      .toBe('polite');
     const buttons = [...target.querySelectorAll<HTMLButtonElement>('.solution-panel button')];
     const [reset, step, runAll] = buttons;
     expect(reset.textContent).toBe('Reset solution');

@@ -188,6 +188,8 @@ export function renderPlayScreen(
     const solutionStatus = element('p', undefined, route.length
       ? `Winning route: ${route.length} commands.`
       : 'No winning route found.');
+    solutionStatus.setAttribute('role', 'status');
+    solutionStatus.setAttribute('aria-live', 'polite');
     const reset = element('button', undefined, 'Reset solution');
     reset.type = 'button';
     const step = element('button', undefined, 'Next solution command');
