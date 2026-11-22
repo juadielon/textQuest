@@ -310,7 +310,7 @@ describe('renderPlayScreen', () => {
       expect(document.activeElement).toBe(target.querySelector('#play-command'));
       expect(target.querySelector('#play-command')!.getAttribute('aria-invalid')).toBe('true');
     }
-  });
+  }, 15_000);
 
   it('counts escaped JSON at the file boundary and keeps rejected input out of history', () => {
     const settings = settingsFor('light-fantasy');

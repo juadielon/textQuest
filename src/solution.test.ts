@@ -91,7 +91,7 @@ describe('solution mode', () => {
   });
 
   it('does not search beyond the documented state limit', () => {
-    expect(SOLUTION_SEARCH_LIMIT).toBe(10_000);
+    expect(SOLUTION_SEARCH_LIMIT).toBe(100_000);
   });
 
   it.each([1, 2] as const)('finds a short generated route: version %i', (version) => {
@@ -101,4 +101,12 @@ describe('solution mode', () => {
     expect(route.length).toBeGreaterThan(0);
     expect(replayCommands(world, route).goalReached).toBe(true);
   });
+
+  it.each(['medium', 'long'] as const)('finds a generated route: %s', (length) => {
+    const settings = createAdventureSettings(7, length, 1);
+    const world = generateAdventureWorld(settings);
+    const route = findWinningCommands(world);
+    expect(route.length).toBeGreaterThan(0);
+    expect(replayCommands(world, route).goalReached).toBe(true);
+  }, 30_000);
 });

@@ -1,7 +1,13 @@
 import { discoveredTargets, playCommand, startPlay, type PlayState, type PlayWorld } from './engine/play';
 
 /** The largest number of states the solution runner will search. */
-export const SOLUTION_SEARCH_LIMIT = 10_000;
+export const SOLUTION_SEARCH_LIMIT = 100_000;
+
+interface SearchNode {
+  readonly state: PlayState;
+  readonly parent: SearchNode | null;
+  readonly command: string;
+}
 
 /**
  * True only when the Vite environment explicitly enables solution mode.
@@ -27,17 +33,18 @@ export function findWinningCommands(world: PlayWorld, from?: PlayState): readonl
 }
 
 function deriveCommands(world: PlayWorld, start: PlayState): readonly string[] {
-  const queue: { readonly state: PlayState; readonly parent: number; readonly command: string }[] =
-    [{ state: start, parent: -1, command: '' }];
+  const queue: SearchNode[] = [{ state: start, parent: null, command: '' }];
   const seen = new Set([stateKey(start)]);
-  for (let index = 0; index < queue.length && seen.size <= SOLUTION_SEARCH_LIMIT; index += 1) {
-    const current = queue[index];
+  const requiredSteps = requiredStepIds(world);
+  for (let searched = 0; queue.length && seen.size <= SOLUTION_SEARCH_LIMIT; searched += 1) {
+    const current = popBest(queue, world, requiredSteps);
+    if (searched >= SOLUTION_SEARCH_LIMIT) break;
     if (current.state.goalReached) {
       const commands: string[] = [];
-      let cursor = index;
-      while (cursor > 0) {
-        commands.push(queue[cursor].command);
-        cursor = queue[cursor].parent;
+      let cursor: SearchNode | null = current;
+      while (cursor?.parent) {
+        commands.push(cursor.command);
+        cursor = cursor.parent;
       }
       return commands.reverse();
     }
@@ -47,10 +54,68 @@ function deriveCommands(world: PlayWorld, start: PlayState): readonly string[] {
       const key = stateKey(turn.state);
       if (seen.has(key)) continue;
       seen.add(key);
-      queue.push({ state: turn.state, parent: index, command });
+      pushHeap(queue, { state: turn.state, parent: current, command }, world, requiredSteps);
     }
   }
   return [];
+}
+
+function requiredStepIds(world: PlayWorld): ReadonlySet<string> {
+  const requiredSteps = new Set(world.solution.goal.conditions.stepsDone ?? []);
+  for (const step of world.solution.steps) {
+    for (const id of step.conditions.stepsDone ?? []) requiredSteps.add(id);
+  }
+  return requiredSteps;
+}
+
+function stateScore(world: PlayWorld, state: PlayState, requiredSteps: ReadonlySet<string>): number {
+  const progress = state.stepsDone.filter((id) => requiredSteps.has(id)).length;
+  const goalDistance = state.placeId === world.solution.goal.placeId ? 100 : 0;
+  return progress * 1000 + state.itemsHeld.length * 100
+    + state.cluesRevealed.length * 10 + goalDistance;
+}
+
+function pushHeap(
+  heap: SearchNode[],
+  node: SearchNode,
+  world: PlayWorld,
+  requiredSteps: ReadonlySet<string>,
+): void {
+  heap.push(node);
+  let index = heap.length - 1;
+  while (index > 0) {
+    const parent = Math.floor((index - 1) / 2);
+    if (stateScore(world, heap[parent].state, requiredSteps)
+      >= stateScore(world, heap[index].state, requiredSteps)) break;
+    [heap[parent], heap[index]] = [heap[index], heap[parent]];
+    index = parent;
+  }
+}
+
+function popBest(
+  heap: SearchNode[],
+  world: PlayWorld,
+  requiredSteps: ReadonlySet<string>,
+): SearchNode {
+  const first = heap[0];
+  const last = heap.pop();
+  if (heap.length && last) {
+    heap[0] = last;
+    let index = 0;
+    while (true) {
+      const left = index * 2 + 1;
+      const right = left + 1;
+      let best = index;
+      if (left < heap.length && stateScore(world, heap[left].state, requiredSteps)
+        > stateScore(world, heap[best].state, requiredSteps)) best = left;
+      if (right < heap.length && stateScore(world, heap[right].state, requiredSteps)
+        > stateScore(world, heap[best].state, requiredSteps)) best = right;
+      if (best === index) break;
+      [heap[index], heap[best]] = [heap[best], heap[index]];
+      index = best;
+    }
+  }
+  return first;
 }
 
 function candidateCommands(world: PlayWorld, state: PlayState): readonly string[] {

@@ -351,6 +351,21 @@ it('offers save controls in ordinary player mode', () => {
   expect(app.querySelector('.save-form')).not.toBeNull();
 });
 
+it('shows solution controls and suppresses save controls only with the explicit flag', () => {
+  vi.stubEnv('VITE_SOLUTION_MODE', '1');
+  openAdventure(adventureSettings.encodeShareWord(settings));
+  expect(app.querySelector('.solution-panel')).not.toBeNull();
+  expect(app.querySelector('.save-form')).toBeNull();
+  expect(localStorage.length).toBe(0);
+}, 30_000);
+
+it('offers save controls in ordinary player mode', () => {
+  vi.stubEnv('VITE_SOLUTION_MODE', '');
+  openAdventure(adventureSettings.encodeShareWord(settings));
+  expect(app.querySelector('.solution-panel')).toBeNull();
+  expect(app.querySelector('.save-form')).not.toBeNull();
+});
+
 it('offers no save form when the world cannot be played', async () => {
   const generator = await import('./generate-world');
   vi.spyOn(generator, 'generateAdventureWorld').mockImplementationOnce(() => {
