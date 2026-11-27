@@ -1,6 +1,8 @@
 import {
   adventureLengths,
+  adventureGenres,
   createNewAdventureSettings,
+  isAdventureGenre,
   type AdventureSettings,
   type RandomValueSource,
 } from './adventure-settings';
@@ -10,6 +12,7 @@ import {
   lengthLabels,
   readShareWord,
 } from './start-screen-model';
+import { genreLabels } from './start-screen-model';
 
 /** The game's name, shown as the page heading. */
 export const gameTitle = 'textQuest';
@@ -48,11 +51,35 @@ function buildNewAdventureForm(): HTMLFormElement {
     return create('div', { className: 'choice' }, input, create('label', { htmlFor: input.id }, lengthLabels[length]));
   });
 
+  const genreOptions = [
+    ...adventureGenres.map((genre) => {
+      const input = create('input', {
+        type: 'radio',
+        name: 'genre',
+        value: genre,
+        id: `genre-${genre}`,
+        checked: false,
+      });
+      return create('div', { className: 'choice' }, input,
+        create('label', { htmlFor: input.id }, genreLabels[genre]));
+    }),
+  ];
+  const surprise = create('input', {
+    type: 'radio',
+    name: 'genre',
+    value: 'surprise',
+    id: 'genre-surprise',
+    checked: true,
+  });
+  genreOptions.push(create('div', { className: 'choice' }, surprise,
+    create('label', { htmlFor: surprise.id }, 'Surprise me')));
+
   return create(
     'form',
     { className: 'panel', id: 'new-adventure' },
     create('h2', {}, 'Start a new adventure'),
     create('fieldset', {}, create('legend', {}, 'Adventure length'), ...options),
+    create('fieldset', {}, create('legend', {}, 'Adventure genre'), ...genreOptions),
     create('button', { type: 'submit' }, 'Start new adventure'),
   );
 }
@@ -115,6 +142,11 @@ export function renderStartScreen(target: HTMLElement, options: StartScreenOptio
       return;
     }
     clearError();
+    const genre = new FormData(newForm).get('genre');
+    if (isAdventureGenre(genre)) {
+      options.onStart(createNewAdventureSettings(length, options.randomSource, genre));
+      return;
+    }
     options.onStart(createNewAdventureSettings(length, options.randomSource));
   });
 

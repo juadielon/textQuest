@@ -48,6 +48,33 @@ describe('renderStartScreen', () => {
     expect(get('h1').getAttribute('tabindex')).toBe('-1');
   });
 
+  it('lets the player choose a genre or surprise me', () => {
+    expect(get<HTMLInputElement>('#genre-light-fantasy').checked).toBe(false);
+    expect(get<HTMLInputElement>('#genre-cosy-mystery').checked).toBe(false);
+    expect(get<HTMLInputElement>('#genre-science-fiction').checked).toBe(false);
+    expect(get<HTMLInputElement>('#genre-surprise').checked).toBe(true);
+
+    get<HTMLInputElement>('#genre-cosy-mystery').checked = true;
+    get<HTMLFormElement>('#new-adventure').requestSubmit();
+
+    expect(onStart).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ genre: 'cosy-mystery', length: 'medium' }),
+    );
+  });
+
+  it.each([
+    ['light-fantasy', '#genre-light-fantasy'],
+    ['cosy-mystery', '#genre-cosy-mystery'],
+    ['science-fiction', '#genre-science-fiction'],
+  ] as const)('starts %s when selected', (genre, selector) => {
+    get<HTMLInputElement>(selector).checked = true;
+    get<HTMLFormElement>('#new-adventure').requestSubmit();
+
+    expect(onStart).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ genre, length: 'medium' }),
+    );
+  });
+
   it('labels every control', () => {
     for (const input of app.querySelectorAll('input')) {
       expect(app.querySelector(`label[for="${input.id}"]`)?.textContent).not.toBe('');

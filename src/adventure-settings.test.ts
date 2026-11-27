@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  type AdventureGenre,
   adventureLengths,
+  adventureGenres,
   createAdventureSettings,
   createNewAdventureSettings,
   createSeed,
@@ -206,11 +208,73 @@ describe('createSeed', () => {
   });
 
   it('starts a new adventure with the chosen length and a fresh seed', () => {
-    expect(createNewAdventureSettings('long', fixedSource([1234]))).toEqual({
-      version: 2,
-      seed: 1234,
-      length: 'long',
-      genre: 'light-fantasy',
+    const settings = createNewAdventureSettings('long', fixedSource([0, 1234]));
+    expect(settings.version).toBe(2);
+    expect(settings.length).toBe('long');
+    expect(adventureGenres).toContain(settings.genre);
+    expect(createAdventureSettings(settings.seed, settings.length).genre).toBe(settings.genre);
+  });
+
+  it('draws a genre uniformly before selecting a matching seed for Surprise me', () => {
+    const source = vi.fn<RandomValueSource['getRandomValues']>(() => {
+      throw new Error('random source should be controlled by this test');
+    });
+    source
+      .mockImplementationOnce((array) => { array[0] = 1; return array; })
+      .mockImplementationOnce((array) => { array[0] = 0; return array; });
+    const sourceObject: RandomValueSource = { getRandomValues: source };
+
+    const settings = createNewAdventureSettings('medium', sourceObject);
+
+    expect(settings.genre).toBe('cosy-mystery');
+    expect(source).toHaveBeenCalledTimes(2);
+  });
+
+  it('samples Surprise me evenly across genres in controlled draws', () => {
+    const counts: Record<AdventureGenre, number> = {
+      'light-fantasy': 0,
+      'cosy-mystery': 0,
+      'science-fiction': 0,
+    };
+    for (let index = 0; index < 300; index += 1) {
+      const genreIndex = index % adventureGenres.length;
+      const seedIndex = index % 100;
+      const source = fixedSource([genreIndex, seedIndex]);
+      counts[createNewAdventureSettings('medium', source).genre] += 1;
+    }
+    expect(counts).toEqual({
+      'light-fantasy': 100,
+      'cosy-mystery': 100,
+      'science-fiction': 100,
     });
   });
+
+  it('rejects an upper-limit genre draw before selecting Surprise me', () => {
+    const settings = createNewAdventureSettings(
+      'medium',
+      fixedSource([0xffffffff, 1, 0]),
+    );
+    expect(settings.genre).toBe('cosy-mystery');
+  });
+
+  it('rejects upper-limit matching-seed values before choosing a seed', () => {
+    const settings = createNewAdventureSettings(
+      'medium',
+      fixedSource([0xffffffff, 3]),
+      'light-fantasy',
+    );
+
+    expect(settings.genre).toBe('light-fantasy');
+    expect(createAdventureSettings(settings.seed, settings.length).genre).toBe('light-fantasy');
+  });
+
+  it.each<AdventureGenre>(['light-fantasy', 'cosy-mystery', 'science-fiction'])(
+    'starts a %s adventure with a matching seed',
+    (genre) => {
+      const settings = createNewAdventureSettings('medium', fixedSource([1234]), genre);
+      expect(settings.genre).toBe(genre);
+      expect(settings.length).toBe('medium');
+      expect(createAdventureSettings(settings.seed, settings.length).genre).toBe(genre);
+    },
+  );
 });

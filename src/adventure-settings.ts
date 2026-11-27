@@ -33,6 +33,16 @@ export const adventureGenres = ['light-fantasy', 'cosy-mystery', 'science-fictio
 export type AdventureGenre = (typeof adventureGenres)[number];
 
 /**
+ * Checks whether a form value is a known adventure genre.
+ *
+ * @param value - The value from a genre control.
+ * @returns True for a supported genre.
+ */
+export function isAdventureGenre(value: unknown): value is AdventureGenre {
+  return adventureGenres.includes(value as AdventureGenre);
+}
+
+/**
  * The adventure version used for new adventures.
  *
  * @remarks
@@ -171,6 +181,18 @@ export interface RandomValueSource {
   getRandomValues(array: Uint32Array<ArrayBuffer>): unknown;
 }
 
+function randomIndex(count: number, source: RandomValueSource): number {
+  if (!Number.isInteger(count) || count < 1 || count > 0xffffffff) {
+    throw new RangeError('Choose a valid number of options.');
+  }
+  const limit = Math.floor(2 ** 32 / count) * count;
+  const values = new Uint32Array(1);
+  do {
+    source.getRandomValues(values);
+  } while (values[0] >= limit);
+  return values[0] % count;
+}
+
 /**
  * Picks an unpredictable seed for a new adventure. Every seed is equally likely.
  *
@@ -188,13 +210,7 @@ export function createSeed(
   source: RandomValueSource = globalThis.crypto,
 ): number {
   const count = seedCountFor(version);
-  // Throw away the few top values that would make some seeds more likely.
-  const limit = Math.floor(2 ** 32 / count) * count;
-  const values = new Uint32Array(1);
-  do {
-    source.getRandomValues(values);
-  } while (values[0] >= limit);
-  return values[0] % count;
+  return randomIndex(count, source);
 }
 
 /**
@@ -208,8 +224,25 @@ export function createSeed(
 export function createNewAdventureSettings(
   length: AdventureLength,
   source: RandomValueSource = globalThis.crypto,
+  genre?: AdventureGenre,
 ): AdventureSettings {
-  return createAdventureSettings(createSeed(currentVersion, source), length);
+  if (genre) {
+    if (!isAdventureGenre(genre)) {
+      throw new RangeError('Choose a supported adventure genre.');
+    }
+    const matchingSeeds: number[] = [];
+    for (let seed = 0; seed < seedCountFor(currentVersion); seed += 1) {
+      if (createAdventureSettings(seed, length).genre === genre) {
+        matchingSeeds.push(seed);
+      }
+    }
+    if (!matchingSeeds.length) {
+      throw new RangeError('Choose a supported adventure genre.');
+    }
+    return createAdventureSettings(matchingSeeds[randomIndex(matchingSeeds.length, source)], length);
+  }
+  const selectedGenre = adventureGenres[randomIndex(adventureGenres.length, source)];
+  return createNewAdventureSettings(length, source, selectedGenre);
 }
 
 /**
