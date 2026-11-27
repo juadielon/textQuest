@@ -214,6 +214,16 @@ describe('renderPlayScreen', () => {
     expect(target.querySelector('.play-objective')?.textContent)
       .toBe('Objective: Complete the required clues and reach the agreed goal.');
   });
+
+  it('keeps the objective visible after commands and undo', () => {
+    const target = renderTiny();
+    const objective = target.querySelector('.play-objective')?.textContent;
+
+    type(target, 'take brass key');
+    expect(target.querySelector('.play-objective')?.textContent).toBe(objective);
+    type(target, 'undo');
+    expect(target.querySelector('.play-objective')?.textContent).toBe(objective);
+  });
   it('keeps hidden names out of the generated objective', () => {
     const target = document.createElement('main');
     document.body.append(target);
