@@ -32,9 +32,9 @@ const pairs = [[lightFantasy, lightFantasyV2], [cosyMystery, cosyMysteryV2], [sc
 
 describe('version 2 place descriptions', () => {
   it.each([
-    [lightFantasyV2, '0bd66746febaec6f36dcc9efe98880aa5c3a679dc0502cdbbc2b3ecb8038a48e'],
-    [cosyMysteryV2, 'adfbb47ab8148449091a0c5c879faf155405140d5f937edb200b1c708234fefb'],
-    [scienceFictionV2, '0368affce362ab97fab6b76f2c8cc4ab0ae866f22b763a566bb6be1b388825ad'],
+    [lightFantasyV2, '58ff59c38943d89fc2c5a0e6ee14d71c026a4e3485f26a55d4e3d698fad4e40d'],
+    [cosyMysteryV2, '4adbebdfa2bb9ab833f45a5c1490c328e6dd84c9390047cfa47bc78a8c8704f3'],
+    [scienceFictionV2, '196b357e5f2dedbc621b0ca00226cc50ac12340722b1bd772d56878381217b93'],
   ] as const)('pins the complete final $genre content', async (pack, pin) => {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(pack)));
     expect([...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')).toBe(pin);

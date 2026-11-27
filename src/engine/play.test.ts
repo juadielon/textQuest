@@ -1442,7 +1442,12 @@ function namedWorld(): PlayWorld {
       ],
       clues: [{ id: 'note', name: 'Torn note' }, { id: 'answer', name: 'Hidden answer' }],
       people: [
-        { id: 'guard', name: 'The old guard', placeId: 'entry', aliases: ['guard'] },
+        {
+          id: 'guard', name: 'The old guard', placeId: 'entry', aliases: ['guard'],
+          conversations: [{
+            id: 'locked-door', label: 'The locked door', aliases: ['door', 'lock'],
+          }],
+        },
         { id: 'ghost', name: 'Ghost', placeId: 'elsewhere' },
       ],
     },
@@ -1625,6 +1630,16 @@ describe('play with content-pack names', () => {
       .toBe('There is no one here to talk to.');
     const finished = { ...start, goalReached: true };
     expect(playCommand(world, finished, 'talk to guard').message).toBe('The old guard greets you.');
+  });
+
+  it('matches authored topic aliases and gives a safe fallback for unknown topics', () => {
+    const world = namedWorld();
+    const start = startPlay(world);
+
+    expect(playCommand(world, start, 'talk to guard about door').message)
+      .toBe('The old guard discusses the locked door.');
+    expect(playCommand(world, start, 'talk to guard about sandwiches').message)
+      .toBe('The old guard does not recognise that topic. Try one of the visible topics.');
   });
 
   it('keeps the same state as ID names for the same moves', () => {

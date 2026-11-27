@@ -49,6 +49,18 @@ describe('worldNamesFrom', () => {
     expect(names.people.every(({ placeId }) => placeIds.includes(placeId))).toBe(true);
   });
 
+  it.each([lightFantasy, cosyMystery, scienceFiction])(
+    'authored every $genre character with distinct visible topic aliases',
+    (pack) => {
+      for (const person of pack.characters) {
+        expect(person.conversations?.length, person.id).toBeGreaterThanOrEqual(2);
+        const words = person.conversations!.flatMap(({ label, aliases }) =>
+          [label, ...aliases].map((word) => word.toLowerCase()));
+        expect(new Set(words).size, person.id).toBe(words.length);
+      }
+    },
+  );
+
   it('names every place, item and clue in generated worlds', () => {
     const settings = createAdventureSettings(0, 'long', 1);
     const world = generateAdventureWorld(settings);

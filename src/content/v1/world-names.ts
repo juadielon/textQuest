@@ -42,6 +42,15 @@ export function worldNamesFrom(
     items: named('item', pack.items),
     clues: named('clue', pack.clues),
     people: pack.characters.filter(({ placeId }) => placeIds.has(placeId))
-      .map(({ id, name, placeId }) => ({ id, name, placeId, aliases: aliasesFor(name) })),
+      .map(({ id, name, placeId, conversations }) => ({
+        id,
+        name,
+        placeId,
+        aliases: aliasesFor(name),
+        ...conversations?.length ? {
+          conversations: conversations.map(({ id: topicId, label, aliases }) =>
+            ({ id: topicId, label, aliases })),
+        } : {},
+      })),
   };
 }

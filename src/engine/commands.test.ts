@@ -38,6 +38,9 @@ describe('parseCommand', () => {
     ['use lamp on keeper', { kind: 'use', itemId: 'lamp', targetId: 'keeper', targetKind: 'person' }],
     ['talk gate keeper', { kind: 'talk', targetId: 'keeper', targetKind: 'person' }],
     ['talk to the keeper', { kind: 'talk', targetId: 'keeper', targetKind: 'person' }],
+    ['talk to the keeper about the locked door', {
+      kind: 'talk', targetId: 'keeper', targetKind: 'person', topic: 'the locked door',
+    }],
     ['t keeper', { kind: 'talk', targetId: 'keeper', targetKind: 'person' }],
     ['choose wait by the gate', { kind: 'choose', targetId: 'wait', targetKind: 'choice' }],
     ['choose 1', { kind: 'choose', targetId: 'wait', targetKind: 'choice' }],

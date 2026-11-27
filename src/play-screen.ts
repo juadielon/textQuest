@@ -1,7 +1,7 @@
 import type { AdventureSettings } from './adventure-settings';
 import type { AdventureWorld, Conditions } from './adventure-world';
 import type { CommandTarget } from './engine/commands';
-import { parseCommand } from './engine/commands';
+import { normaliseName, parseCommand } from './engine/commands';
 import {
   discoveredTargets, playCommand, startPlay, type CommandReplayMode, type PlayState, type PlayWorld,
 } from './engine/play';
@@ -197,10 +197,30 @@ export function renderPlayScreen(
     placeText.textContent = view.placeText;
     const presentPeople = pack.characters.filter(({ placeId }) =>
       placeId === state.placeId && world.places.some(({ id }) => id === placeId));
-    fillDetails(people, presentPeople.map((person) => ({
-      name: person.name,
-      text: renderProse(person.description, pack, world, state, targets, knownPlaces),
-    })));
+    people.replaceChildren(...presentPeople.map((person) => {
+      const row = element('li', undefined,
+        element('strong', undefined, person.name),
+        element('p', undefined, renderProse(
+          person.description, pack, world, state, targets, knownPlaces)));
+      if (person.conversations?.length) {
+        const topics = element('div', 'play-conversation-topics');
+        for (const topic of person.conversations) {
+          const visibleLabel = hideUndiscoveredNames(
+            topic.label, pack, world, state, targets, knownPlaces,
+          );
+          const button = element('button', 'play-conversation-topic', visibleLabel);
+          button.type = 'button';
+          button.setAttribute('aria-label', `Ask ${person.name} about ${visibleLabel}`);
+          button.addEventListener('click', () => {
+            input.value = `talk to ${person.name} about ${topic.label}`;
+            form.requestSubmit();
+          });
+          topics.append(button);
+        }
+        row.append(topics);
+      }
+      return row;
+    }));
     peopleHeading.hidden = !presentPeople.length;
     people.hidden = !presentPeople.length;
 
@@ -274,10 +294,22 @@ export function renderPlayScreen(
     const personId = parsed.ok && parsed.action.kind === 'talk' && 'targetId' in parsed.action
       ? parsed.action.targetId : undefined;
     const person = personId ? pack.characters.find(({ id }) => id === personId) : undefined;
+    const topic = parsed.ok && parsed.action.kind === 'talk' && 'topic' in parsed.action
+      ? parsed.action.topic : undefined;
+    const conversation = person && topic
+      ? person.conversations?.find((entry) =>
+        [entry.label, ...entry.aliases].some((label) => normaliseName(label) === normaliseName(topic)))
+      : undefined;
     const response = person
-      ? `${turn.message} ${renderProse(
-        person.motive, pack, world, state, discoveredTargets(world, state), knownPlaces,
-      )}`
+      ? conversation
+        ? `${turn.message} ${renderProse(
+          conversation.response, pack, world, state, discoveredTargets(world, state), knownPlaces,
+        )}`
+        : topic
+          ? turn.message
+          : `${turn.message} ${renderProse(
+            person.motive, pack, world, state, discoveredTargets(world, state), knownPlaces,
+          )}`
       : turn.message;
     log.append(element('li', 'play-entry',
       element('p', 'play-typed', `> ${command}`), element('p', undefined, response)));

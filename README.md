@@ -31,7 +31,10 @@ readers. They have not yet been checked with a real screen reader.
 
 The play screen shows each version's authored names and story text. References
 to hidden places, people, items and clues stay generic until they are
-discovered. Command suggestions and recovery checkpoints are still planned.
+discovered. Named characters offer authored conversation topics and answer typed
+topic aliases; unknown topics receive a safe in-world response. Conversation
+text stays in the response log and does not add found clues. Command suggestions
+and recovery checkpoints are still planned.
 Hand-built world-format version 2 adventures support mutually exclusive
 choices and winning endings, but released generators do not expose them.
 Failure endings remain blocked until checkpoint recovery is available. There

@@ -220,6 +220,11 @@ Returning to start ends the session, and reopening a word starts fresh.
 Play also offers an adventure link with accessible copy feedback and manual
 copying. Incoming links open fresh play, never a save. Production assets use
 relative URLs for static sub-path hosting.
+Named characters appear at their authored places, offer keyboard-accessible
+conversation topics and answer typed topic aliases without an LLM. Unknown
+topics use a safe in-world fallback. Conversation responses stay in the response
+log and do not create found-clue entries; undo and replay keep their state
+coherent. All three supported genres use the same authored conversation format.
 Invalid settings or worlds show the accessible unplayable message; unexpected
 errors while opening play are rethrown
 ([issue #74](https://github.com/juadielon/textQuest/issues/74)).

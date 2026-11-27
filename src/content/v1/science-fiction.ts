@@ -122,26 +122,46 @@ export const scienceFiction = {
       id: 'botanist', name: 'Juno the botanist', placeId: 'hydroponics',
       description: ['A cheerful grower with soil under her nails.'],
       motive: ['She wants ', { kind: 'place', id: 'docking-ring' }, ' to have fresh food before the supply ship is late again.'],
+      conversations: [
+        { id: 'fresh-food', label: 'Fresh food', aliases: ['food', 'supply ship'], response: ['The trays need working water and a clear docking schedule. Check the tools nearest the bays.'] },
+        { id: 'hydroponics', label: 'The hydroponics fault', aliases: ['plants', 'trays'], response: ['The growers can keep the station fed if the coolant stays stable. Look for a repair patch.'] },
+      ],
     },
     {
       id: 'medic', name: 'Dr Ade Okafor', placeId: 'med-bay',
       description: ['A patient doctor who hums while he works.'],
       motive: ['He wants his medical robot working before anyone needs it.'],
+      conversations: [
+        { id: 'robot-status', label: 'The medical robot', aliases: ['robot', 'medic'], response: ['The robot needs calibration before its next call. A small chip may restore it.'] },
+        { id: 'patient-safety', label: 'Patient safety', aliases: ['patients', 'safety'], response: ['No one should wait while the bay is in doubt. Secure the main circuit, then check the bunk readings.'] },
+      ],
     },
     {
       id: 'signaller', name: 'Pip the signaller', placeId: 'comms-deck',
       description: ['A young radio operator who never takes off their headset.'],
       motive: ['They want news of the overdue supply ship and its pilot.'],
+      conversations: [
+        { id: 'supply-news', label: 'The supply ship', aliases: ['ship', 'pilot'], response: ['The missing ship was still on the outer approach. Check the relay and listen for its old call sign.'] },
+        { id: 'comms-fault', label: 'The radio fault', aliases: ['radio', 'relay'], response: ['Static is hiding the useful signal. A blank antenna part could make the relay precise.'] },
+      ],
     },
     {
       id: 'station-mind', name: 'Wren, the station mind', placeId: 'docking-ring',
       description: ['A calm voice that speaks from a small blue light.'],
       motive: ['Wren wants the crew to keep the promises in the station charter.'],
+      conversations: [
+        { id: 'station-charter', label: 'The station charter', aliases: ['charter', 'promises'], response: ['The charter asks for fair access and shared records. Read the seal before granting access.'] },
+        { id: 'station-orders', label: 'The next station order', aliases: ['orders', 'station'], response: ['Restore one working route and keep the crew together. Start with the least damaged seal.'] },
+      ],
     },
     {
       id: 'security-officer', name: 'Officer Hale', placeId: 'hydroponics',
       description: ['A tired officer guarding a sealed bulkhead.'],
       motive: ['Hale wants nobody hurt while the air seals are checked.'],
+      conversations: [
+        { id: 'air-seals', label: 'The air seals', aliases: ['seals', 'bulkhead'], response: ['The bulkhead stays sealed until both side readings agree. Keep the sealant close and avoid the vent.'] },
+        { id: 'crew-safety', label: 'Crew safety', aliases: ['crew', 'danger'], response: ['A safe route is better than a fast one. Check the badge on the sealed door before you enter.'] },
+      ],
     },
   ],
   items: [

@@ -219,6 +219,6 @@ describe('version 1 science fiction content', () => {
   it('pins the complete released content, including array order', async () => {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(pack)));
     const hex = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
-    expect(hex).toBe('9e4fdbd623dd2aa77dec6f914b6cf137e17595fa04366e59889a3bfb79d62282');
+    expect(hex).toBe('bf6dc54c2779de92b470e11b87088631a720e20b118d9191bb2c3de575fd0ecf');
   });
 });

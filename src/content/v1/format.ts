@@ -17,12 +17,20 @@ export interface ContentPlace extends Place {
 }
 
 /** A character and the reason they take part in the story. */
+export interface ConversationTopic {
+  readonly id: string;
+  readonly label: string;
+  readonly aliases: readonly string[];
+  readonly response: Prose;
+}
+
 export interface ContentCharacter {
   readonly id: string;
   readonly name: string;
   readonly placeId: string;
   readonly description: Prose;
   readonly motive: Prose;
+  readonly conversations?: readonly ConversationTopic[];
 }
 
 /** An item, either placed initially or awarded by a step. */

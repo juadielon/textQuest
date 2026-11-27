@@ -117,26 +117,46 @@ export const lightFantasy = {
       id: 'miller', name: 'Mara the miller', placeId: 'mill',
       description: ['A practical miller with flour on her sleeves.'],
       motive: ['She wants ', { kind: 'place', id: 'village' }, ' to have bread before the next flood.'],
+      conversations: [
+        { id: 'mill-work', label: 'The mill repairs', aliases: ['mill', 'repairs'], response: ['The wheel needs a strong joint and a steady hand. Try finding a fitting peg, then use it at the mill.'] },
+        { id: 'flood-risk', label: 'The next flood', aliases: ['flood', 'bread'], response: ['Bread will matter most if the village has warning and water in time. Look for news along the river.'] },
+      ],
     },
     {
       id: 'warden', name: 'Ivo the orchard warden', placeId: 'orchard',
       description: ['A careful keeper of promises and fruit trees.'],
       motive: ['He wants the river folk paid fairly, not driven away.'],
+      conversations: [
+        { id: 'river-folk', label: 'The river folk', aliases: ['river', 'folk'], response: ['The river folk need a fair receipt, not promises. Ask who signed for the fruit.'] },
+        { id: 'orchard-work', label: 'The orchard', aliases: ['fruit', 'trees'], response: ['The orchard is busy, but the blocked path is the more urgent problem. Try taking the nearby tool.'] },
+      ],
     },
     {
       id: 'ferrier', name: 'Nell the ferrier', placeId: 'quay',
       description: ['A boat builder who carries a notebook of river signs.'],
       motive: ['She wants safe crossings and news of the missing hill keeper.'],
+      conversations: [
+        { id: 'missing-keeper', label: 'The missing keeper', aliases: ['keeper', 'hill keeper'], response: ['The hill keeper left before the warning post went quiet. Look for their signs at the river and tower.'] },
+        { id: 'safe-crossings', label: 'Safe crossings', aliases: ['crossings', 'boats'], response: ['A sound ferry needs its plans and a clear crossing. Search for a way through the reeds.'] },
+      ],
     },
     {
       id: 'river-guest', name: 'The river guest', placeId: 'village',
       description: ['A small water spirit in a coat of woven rushes.'],
       motive: ['They want people to honour the old flood-warning pact.'],
+      conversations: [
+        { id: 'old-pact', label: 'The flood pact', aliases: ['pact', 'warning'], response: ['The old warning belongs to everyone near the river. Someone must carry the warning to the hill.'] },
+        { id: 'river-signs', label: 'The river signs', aliases: ['signs', 'water'], response: ['The river speaks through rushes and bells. Look for a place where old and new warnings meet.'] },
+      ],
     },
     {
       id: 'yard-guard', name: 'Rowan the yard guard', placeId: 'mill',
       description: ['A tired guard keeping carts clear of the mill yard.'],
       motive: ['They want the workers protected while repairs are under way.'],
+      conversations: [
+        { id: 'yard-danger', label: 'The yard danger', aliases: ['danger', 'workers'], response: ['Loose carts and a broken wheel could hurt the repair crew. Secure the tools before opening the path.'] },
+        { id: 'mill-duty', label: 'The guard duty', aliases: ['guard', 'duty'], response: ['The shift is too thin for every entrance. Clear the nearest cart and report the other roads open.'] },
+      ],
     },
   ],
   items: [
