@@ -25,23 +25,21 @@ its main **Objective**.
 _Avoid_: Side quest, optional puzzle
 
 **Character**:
-A named person in an **Adventure** who provides authored dialogue and
-conversation topics.
+A named person in an **Adventure** who can be examined or spoken to.
 _Avoid_: NPC, persona
 
 **Conversation**:
-Player dialogue with a **Character**, using visible topics or typed words matched
-to authored aliases.
+Player interaction with a **Character**, using the person's discovered name or
+an authored alias.
 
 **Clue**:
-Evidence discovered through an action or a puzzle effect. A **Conversation** can
-lead to a useful topic or action, but it does not add a **Clue**.
+Evidence discovered through an action or a puzzle effect.
 _Avoid_: Hint, information
 
 **Hint**:
-Optional player-requested help that becomes more useful across repeated requests.
-It must use only discovered information and not reveal hidden solutions.
+Optional player-requested help based on the player's discovered state. It must
+not reveal hidden solutions.
 
-**Surprise me**:
-A start-screen choice that selects one of the three genres uniformly.
-_Avoid_: Random genre
+**Random genre selection**:
+The genre chosen from the seed after the player chooses an adventure length.
+_Avoid_: Surprise me
