@@ -218,6 +218,8 @@ describe('renderPlayScreen', () => {
   it('keeps the objective visible after commands and undo', () => {
     const target = renderTiny();
     const objective = target.querySelector('.play-objective')?.textContent;
+    expect(objective)
+      .toBe('Objective: Complete the required clues and reach the agreed goal.');
 
     type(target, 'take brass key');
     expect(target.querySelector('.play-objective')?.textContent).toBe(objective);
