@@ -82,21 +82,30 @@ it('mounts the start screen and focuses its heading', () => {
 
 it.each<adventureSettings.AdventureGenre>(['light-fantasy', 'cosy-mystery', 'science-fiction'])(
   'starts a playable %s adventure from a fresh random seed', async (genre) => {
-    const newSettings = Array.from({ length: 100 }, (_, seed) =>
-      adventureSettings.createAdventureSettings(seed, 'short'))
-      .find((value) => value.genre === genre)!;
-    const random = vi.spyOn(globalThis.crypto, 'getRandomValues').mockImplementationOnce((array) => {
-      if (!(array instanceof Uint32Array)) throw new Error('Expected a seed buffer');
-      array[0] = newSettings.seed;
-      return array;
-    });
+    const matchingSeeds = Array.from(
+      { length: adventureSettings.seedCountFor(2) },
+      (_, seed) => adventureSettings.createAdventureSettings(seed, 'short'),
+    ).filter((value) => value.genre === genre);
+    const newSettings = matchingSeeds[0];
+    const genreIndex = adventureSettings.adventureGenres.indexOf(genre);
+    const random = vi.spyOn(globalThis.crypto, 'getRandomValues')
+      .mockImplementationOnce((array) => {
+        if (!(array instanceof Uint32Array)) throw new Error('Expected a seed buffer');
+        array[0] = genreIndex;
+        return array;
+      })
+      .mockImplementationOnce((array) => {
+        if (!(array instanceof Uint32Array)) throw new Error('Expected a seed buffer');
+        array[0] = 0;
+        return array;
+      });
     const module = await import('./adventure-settings');
     const create = vi.spyOn(module, 'createNewAdventureSettings');
     get<HTMLInputElement>('#length-short').checked = true;
 
     get<HTMLFormElement>('#new-adventure').requestSubmit();
 
-    expect(random).toHaveBeenCalledOnce();
+    expect(random).toHaveBeenCalledTimes(2);
     expect(create).toHaveBeenCalledExactlyOnceWith('short', undefined);
     expectPlay(newSettings);
     const title = get('h1').textContent;

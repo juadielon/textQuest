@@ -181,6 +181,18 @@ export interface RandomValueSource {
   getRandomValues(array: Uint32Array<ArrayBuffer>): unknown;
 }
 
+function randomIndex(count: number, source: RandomValueSource): number {
+  if (!Number.isInteger(count) || count < 1 || count > 0xffffffff) {
+    throw new RangeError('Choose a valid number of options.');
+  }
+  const limit = Math.floor(2 ** 32 / count) * count;
+  const values = new Uint32Array(1);
+  do {
+    source.getRandomValues(values);
+  } while (values[0] >= limit);
+  return values[0] % count;
+}
+
 /**
  * Picks an unpredictable seed for a new adventure. Every seed is equally likely.
  *
@@ -198,13 +210,7 @@ export function createSeed(
   source: RandomValueSource = globalThis.crypto,
 ): number {
   const count = seedCountFor(version);
-  // Throw away the few top values that would make some seeds more likely.
-  const limit = Math.floor(2 ** 32 / count) * count;
-  const values = new Uint32Array(1);
-  do {
-    source.getRandomValues(values);
-  } while (values[0] >= limit);
-  return values[0] % count;
+  return randomIndex(count, source);
 }
 
 /**
@@ -233,15 +239,10 @@ export function createNewAdventureSettings(
     if (!matchingSeeds.length) {
       throw new RangeError('Choose a supported adventure genre.');
     }
-    const count = matchingSeeds.length;
-    const limit = Math.floor(2 ** 32 / count) * count;
-    const values = new Uint32Array(1);
-    do {
-      source.getRandomValues(values);
-    } while (values[0] >= limit);
-    return createAdventureSettings(matchingSeeds[values[0] % count], length);
+    return createAdventureSettings(matchingSeeds[randomIndex(matchingSeeds.length, source)], length);
   }
-  return createAdventureSettings(createSeed(currentVersion, source), length);
+  const selectedGenre = adventureGenres[randomIndex(adventureGenres.length, source)];
+  return createNewAdventureSettings(length, source, selectedGenre);
 }
 
 /**
