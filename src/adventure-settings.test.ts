@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  type AdventureGenre,
   adventureLengths,
   createAdventureSettings,
   createNewAdventureSettings,
@@ -213,4 +214,14 @@ describe('createSeed', () => {
       genre: 'light-fantasy',
     });
   });
+
+  it.each<AdventureGenre>(['light-fantasy', 'cosy-mystery', 'science-fiction'])(
+    'starts a %s adventure with a matching seed',
+    (genre) => {
+      const settings = createNewAdventureSettings('medium', fixedSource([1234]), genre);
+      expect(settings.genre).toBe(genre);
+      expect(settings.length).toBe('medium');
+      expect(createAdventureSettings(settings.seed, settings.length).genre).toBe(genre);
+    },
+  );
 });

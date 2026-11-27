@@ -108,6 +108,30 @@ it.each<adventureSettings.AdventureGenre>(['light-fantasy', 'cosy-mystery', 'sci
   },
 );
 
+it.each<adventureSettings.AdventureGenre>(['light-fantasy', 'cosy-mystery', 'science-fiction'])(
+  'starts a selected %s adventure', async (genre) => {
+    const matchingSeeds = Array.from({ length: 100 }, (_, seed) =>
+      adventureSettings.createAdventureSettings(seed, 'short'))
+      .filter((value) => value.genre === genre);
+    const newSettings = matchingSeeds[0];
+    const random = vi.spyOn(globalThis.crypto, 'getRandomValues').mockImplementationOnce((array) => {
+      if (!(array instanceof Uint32Array)) throw new Error('Expected a seed buffer');
+      array[0] = 0;
+      return array;
+    });
+    const module = await import('./adventure-settings');
+    const create = vi.spyOn(module, 'createNewAdventureSettings');
+    get<HTMLInputElement>('#length-short').checked = true;
+    get<HTMLInputElement>(`#genre-${genre}`).checked = true;
+
+    get<HTMLFormElement>('#new-adventure').requestSubmit();
+
+    expect(random).toHaveBeenCalledOnce();
+    expect(create).toHaveBeenCalledExactlyOnceWith('short', undefined, genre);
+    expectPlay(newSettings);
+  },
+);
+
 it.each([1, 2])('opens all version %i shared genres directly in play, accepting capitals and hyphens', (version) => {
   for (const genre of adventureSettings.adventureGenres) {
     const sharedSettings = Array.from({ length: 100 }, (_, seed) =>

@@ -33,6 +33,16 @@ export const adventureGenres = ['light-fantasy', 'cosy-mystery', 'science-fictio
 export type AdventureGenre = (typeof adventureGenres)[number];
 
 /**
+ * Checks whether a form value is a known adventure genre.
+ *
+ * @param value - The value from a genre control.
+ * @returns True for a supported genre.
+ */
+export function isAdventureGenre(value: unknown): value is AdventureGenre {
+  return adventureGenres.includes(value as AdventureGenre);
+}
+
+/**
  * The adventure version used for new adventures.
  *
  * @remarks
@@ -208,7 +218,29 @@ export function createSeed(
 export function createNewAdventureSettings(
   length: AdventureLength,
   source: RandomValueSource = globalThis.crypto,
+  genre?: AdventureGenre,
 ): AdventureSettings {
+  if (genre) {
+    if (!isAdventureGenre(genre)) {
+      throw new RangeError('Choose a supported adventure genre.');
+    }
+    const matchingSeeds: number[] = [];
+    for (let seed = 0; seed < seedCountFor(currentVersion); seed += 1) {
+      if (createAdventureSettings(seed, length).genre === genre) {
+        matchingSeeds.push(seed);
+      }
+    }
+    if (!matchingSeeds.length) {
+      throw new RangeError('Choose a supported adventure genre.');
+    }
+    const count = matchingSeeds.length;
+    const limit = Math.floor(2 ** 32 / count) * count;
+    const values = new Uint32Array(1);
+    do {
+      source.getRandomValues(values);
+    } while (values[0] >= limit);
+    return createAdventureSettings(matchingSeeds[values[0] % count], length);
+  }
   return createAdventureSettings(createSeed(currentVersion, source), length);
 }
 
