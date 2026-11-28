@@ -16,10 +16,10 @@ export interface CheckedWinnability {
   readonly winnable: boolean;
   /** IDs of puzzle steps that no route can complete, in world order. */
   readonly unreachableStepIds: readonly string[];
-  /** World version 2 only. IDs of endings some route can reach, in world order. */
+  /** IDs of endings some route can reach, in world order. */
   readonly reachableEndingIds?: readonly string[];
   /**
-   * World version 2 only. True when some route reaches a point where the
+   * True when some route reaches a point where the
    * player can no longer win. Failure endings don't count, but the point just
    * before each one must still be able to win, so recovery from it works.
    */
@@ -50,19 +50,16 @@ interface SearchState {
 }
 
 /**
- * Checks that a world uses a supported version, has unique non-empty IDs and
+ * Checks that a world has unique non-empty IDs and
  * only refers to things that exist. The world is not changed.
  *
  * @remarks
- * Choices, endings and `end-adventure` effects need world version 2. Each
+ * Choices, endings and `end-adventure` effects are supported. Each
  * choice needs at least two steps, and a step can end the adventure only once.
  *
  * @throws RangeError when the world is invalid, with a message naming the problem.
  */
 export function validateWorld(world: AdventureWorld): void {
-  if (world.version !== 2) {
-    throw new RangeError(`World version ${world.version} is not supported.`);
-  }
 
   const idsFor = (entries: readonly { readonly id: string }[], kind: string) => {
     const ids = new Set<string>();
@@ -217,9 +214,6 @@ function settleHere(
   world: AdventureWorld, state: SearchState, automatic: ReadonlyMap<string, readonly PuzzleStep[]>,
 ): string[] {
   state.placesVisited.add(state.placeId);
-  for (const item of world.items) {
-    if (item.placeId === state.placeId) state.itemsHeld.add(item.id);
-  }
   for (const clue of world.clues) {
     if (clue.placeId === state.placeId) state.cluesRevealed.add(clue.id);
   }
@@ -288,13 +282,13 @@ function stateKey(areaId: string, state: SearchState): string {
  * `TooLargeToCheck` result. The same world always gives the same result.
  *
  * @remarks
- * For world version 2, the search tries moves, item takes, uses and decisions
+ * The search tries moves, item takes, uses and decisions
  * separately, stopping each route at its goal or early ending. Uses follow
  * play's first-ready-step rule, including the preference for a named local
  * exit. It also reports reachable endings and whether a player can get stuck.
  *
  * @throws RangeError when the world has invalid references, empty or repeated
- * IDs, an unsupported version or an unknown effect.
+ * IDs or an unknown effect.
  */
 export function checkWinnability(world: AdventureWorld): WinnabilityResult {
   validateWorld(world);
@@ -357,6 +351,12 @@ export function checkWinnability(world: AdventureWorld): WinnabilityResult {
       continue;
     }
     const inArea = new Set(area);
+    for (const item of world.items) {
+      if (item.placeId !== state.placeId || state.itemsHeld.has(item.id)) continue;
+      const taken = copyState(state, state.placeId);
+      taken.itemsHeld.add(item.id);
+      if (!enqueue(taken, key)) return { winnable: false, tooLarge: true };
+    }
     // Built once per state, so each option is checked without rescanning every step.
     const closedChoices = new Set<string>();
     for (const id of state.stepsDone) {

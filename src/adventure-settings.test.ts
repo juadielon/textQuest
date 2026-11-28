@@ -9,7 +9,6 @@ import {
   parseShareWord,
   seedCountFor,
   ShareWordError,
-  supportedVersions,
   type RandomValueSource,
 } from './adventure-settings';
 
@@ -37,10 +36,6 @@ function problemOf(input: unknown): string | undefined {
 }
 
 describe('adventure settings', () => {
-  it('supports only version 2', () => {
-    expect(supportedVersions).toEqual([2]);
-  });
-
   it('works out the same genre from the same seed', () => {
     vi.spyOn(Math, 'random').mockImplementation(() => {
       throw new Error('Math.random must not be used');
@@ -51,7 +46,7 @@ describe('adventure settings', () => {
     expect(createAdventureSettings(1, 'short').genre).toBe('cosy-mystery');
   });
 
-  it('round-trips every version 2 seed and length to one canonical word', () => {
+  it('round-trips every seed and length to one canonical word', () => {
     const words = new Set<string>();
     for (let seed = 0; seed < seedCountFor(); seed += 1) {
       for (const length of adventureLengths) {
@@ -64,16 +59,14 @@ describe('adventure settings', () => {
     expect(words.size).toBe(seedCountFor() * adventureLengths.length);
   }, 30_000);
 
-  it('rejects malformed and unsupported share words', () => {
-    for (const input of ['', 'silverlantern', 'ableacorn', 'silverlantern1']) {
+  it('rejects malformed share words', () => {
+    for (const input of ['', 'nope', 'silver lantern 1', 'sunlit saucer 2']) {
       expect(problemOf(input)).toBe('malformed');
     }
-    expect(problemOf('silverlantern3')).toBe('unsupported-version');
   });
 
   it('starts a new adventure with the chosen length and genre', () => {
     const settings = createNewAdventureSettings('long', fixedSource([0, 1234]));
-    expect(settings.version).toBe(2);
     expect(settings.length).toBe('long');
     expect(adventureGenres).toContain(settings.genre);
   });

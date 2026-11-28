@@ -70,8 +70,8 @@ const baseSecondWords: readonly string[] = [
   'toucan', 'unicorn', 'walnut', 'harmonica', 'jellyfish', 'magnet', 'saucer',
 ];
 
-/** Version 2 first words. Never change this order. */
-export const versionTwoFirstWords: readonly string[] = [...baseFirstWords].reverse();
+/** First words. Never change this order. */
+export const firstWords: readonly string[] = [...baseFirstWords].reverse();
 
-/** Version 2 second words. Never change this order. */
-export const versionTwoSecondWords: readonly string[] = [...baseSecondWords].reverse();
+/** Second words. Never change this order. */
+export const secondWords: readonly string[] = [...baseSecondWords].reverse();

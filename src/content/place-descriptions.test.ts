@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { cosyMystery } from '../v1/cosy-mystery';
-import type { ContentPack, Prose } from '../v1/format';
-import { lightFantasy } from '../v1/light-fantasy';
-import { scienceFiction } from '../v1/science-fiction';
-import { cosyMysteryV2, lightFantasyV2, scienceFictionV2 } from './place-wording';
+import { cosyMystery } from './cosy-mystery';
+import type { ContentPack, Prose } from './format';
+import { lightFantasy } from './light-fantasy';
+import { scienceFiction } from './science-fiction';
+import { cosyMysteryWithWording, lightFantasyWithWording, scienceFictionWithWording } from './place-wording';
 
 const words = (text: string) => text.toLowerCase().match(/[a-z]+/g) ?? [];
 
@@ -28,36 +28,35 @@ function movableMentions(pack: Pick<ContentPack, 'places' | 'items' | 'clues'>):
       .map((thing) => `${id} mentions ${thing.name}`));
 }
 
-const pairs = [[lightFantasy, lightFantasyV2], [cosyMystery, cosyMysteryV2], [scienceFiction, scienceFictionV2]] as const;
+const pairs = [[lightFantasy, lightFantasyWithWording], [cosyMystery, cosyMysteryWithWording], [scienceFiction, scienceFictionWithWording]] as const;
 
-describe('version 2 place descriptions', () => {
+describe('place descriptions', () => {
   it.each([
-    [lightFantasyV2, '0bd66746febaec6f36dcc9efe98880aa5c3a679dc0502cdbbc2b3ecb8038a48e'],
-    [cosyMysteryV2, 'adfbb47ab8148449091a0c5c879faf155405140d5f937edb200b1c708234fefb'],
-    [scienceFictionV2, '0368affce362ab97fab6b76f2c8cc4ab0ae866f22b763a566bb6be1b388825ad'],
+    [lightFantasyWithWording, '0052f8fcb439824060ad74dc23b8dc2ff35c5188b3711be845c07e57881fabfd'],
+    [cosyMysteryWithWording, 'ee4efdb87fac595c2c25a4ef64229c2d9b5f036e498cf7abe75a66491ecaa998'],
+    [scienceFictionWithWording, '917462866615636de44f46c23212153ab1a13297a2a194128a499e962e1ff504'],
   ] as const)('pins the complete final $genre content', async (pack, pin) => {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(pack)));
     expect([...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')).toBe(pin);
   });
 
-  it.each(pairs)('keep $genre places free of items and clues that can move', (_v1, pack) => {
+  it.each(pairs)('keep $genre places free of items and clues that can move', (_base, pack) => {
     expect(movableMentions(pack)).toEqual([]);
   });
 
-  it.each(pairs)('change only place descriptions and prompts for $genre', (v1, v2) => {
-    const { places: oldPlaces, puzzles: oldPuzzles, version: oldVersion, ...rest } = v1;
-    const { places, puzzles, version, ...newRest } = v2;
-    expect([oldVersion, version]).toEqual([1, 2]);
+  it.each(pairs)('change only place descriptions and prompts for $genre', (base, withWording) => {
+    const { places: basePlaces, puzzles: basePuzzles, ...rest } = base;
+    const { places, puzzles, ...newRest } = withWording;
     expect(newRest).toEqual(rest);
-    expect(places.map(({ id, name }) => [id, name])).toEqual(oldPlaces.map(({ id, name }) => [id, name]));
+    expect(places.map(({ id, name }) => [id, name])).toEqual(basePlaces.map(({ id, name }) => [id, name]));
     expect(puzzles.map(({ id, placeId, family, completion }) => [id, placeId, family, completion]))
-      .toEqual(oldPuzzles.map(({ id, placeId, family, completion }) => [id, placeId, family, completion]));
+      .toEqual(basePuzzles.map(({ id, placeId, family, completion }) => [id, placeId, family, completion]));
   });
 
   it('moves the align-mirrors prompt off the garden', () => {
     const prompt = (pack: Pick<ContentPack, 'puzzles'>) => pack.puzzles.find(({ id }) => id === 'align-mirrors')?.prompt;
     expect(prompt(lightFantasy)).toEqual(['Arrange the mirrors to follow the garden labels.']);
-    expect(prompt(lightFantasyV2)).toEqual(['Arrange the mirrors to follow the sun labels.']);
+    expect(prompt(lightFantasyWithWording)).toEqual(['Arrange the mirrors to follow the sun labels.']);
   });
 
   it('catches a place that names or describes a movable clue', () => {

@@ -459,7 +459,7 @@ function completeStep(
   return messages;
 }
 
-// Version 2 decisions: choices and steps that end the adventure. The player
+// Decisions: choices and steps that end the adventure. The player
 // makes them with choose, so they never happen by themselves or through use.
 const isDecision = (step: PuzzleStep) => step.choiceId !== undefined
   || step.effects.some(({ kind }) => kind === 'end-adventure');
@@ -559,7 +559,7 @@ export function startPlay(world: PlayWorld): PlayState {
 /**
  * Lists the things the player has discovered, ready to pass to `parseCommand`.
  * Puzzle steps, the goal, unvisited places out of sight, items elsewhere and
- * unfound clues never appear. World version 2 choices appear only while the
+ * unfound clues never appear. Choices appear only while the
  * player is at their place, their conditions hold and the choice is still
  * open. Finished adventures have no available choices.
  *
@@ -572,7 +572,7 @@ export function startPlay(world: PlayWorld): PlayState {
  * call an exit "locked way" until the player knows where it leads. Names
  * that collide, cannot be parsed, or make an item-on-exit command ambiguous
  * get a neutral numbered name where needed. Some original names and aliases
- * may be ignored or ambiguous. Version 2 item names stay usable as choices
+ * may be ignored or ambiguous. Item names stay usable as choices
  * appear or the player moves. Neutral item-use fallback numbers follow world
  * item order, not inventory or discovered target order.
  */
@@ -876,7 +876,7 @@ function hint(world: PlayWorld, progress: Progress, canUndo: boolean): string {
  * themselves once their conditions hold. These match the winnability
  * checker's rules, so any winnable world can be won with typed commands.
  *
- * World version 2 decisions, meaning steps with a `choiceId` or an
+ * Decisions, meaning steps with a `choiceId` or an
  * `end-adventure` effect, never happen by themselves or through use. Once
  * their conditions hold at their place they are offered as choices, and
  * `choose` makes one. Making one step of a choice shuts out the others. A
@@ -884,9 +884,8 @@ function hint(world: PlayWorld, progress: Progress, canUndo: boolean): string {
  * Automatic effect messages use the final discovered names after settling.
  *
  * Hints point at the next useful step without naming puzzle answers, and
- * suggest undo at a dead end only when a previous turn exists. Version 2
- * hints stay general and never suggest a route, because the route search
- * does not model choices yet.
+ * suggest undo at a dead end only when a previous turn exists. Worlds with
+ * choices stay general, while worlds without choices may suggest a route.
  *
  * @throws RangeError when the world is invalid or has a failure ending.
  */
@@ -956,7 +955,7 @@ export function playCommand(world: PlayWorld, state: PlayState, input: string): 
 
 /**
  * Starts a world and plays typed commands in order, preserving the naming
- * rules that applied to each command. Legacy histories use ID names.
+ * rules that applied to each command. ID-name histories use ID names.
  *
  * @throws RangeError when `modes` does not match the number of commands.
  */

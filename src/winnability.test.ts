@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { AdventureWorld } from './adventure-world';
-import { checkWinnability, validateWorld } from './winnability';
+import { checkWinnability } from './winnability';
 
 function world(overrides: Partial<AdventureWorld> = {}): AdventureWorld {
   return {
-    version: 2,
+
     startPlaceId: 'gate',
     places: [{ id: 'gate' }, { id: 'goal' }],
     exits: [{ id: 'path', fromPlaceId: 'gate', toPlaceId: 'goal', locked: false }],
@@ -19,7 +19,7 @@ function world(overrides: Partial<AdventureWorld> = {}): AdventureWorld {
 }
 
 describe('checkWinnability', () => {
-  it('finds a winnable version 2 world', () => {
+  it('finds a winnable world', () => {
     expect(checkWinnability(world())).toMatchObject({ winnable: true });
   });
 
@@ -46,7 +46,7 @@ describe('checkWinnability', () => {
     expect(checkWinnability(checked)).toMatchObject({ winnable: true });
   });
 
-  it('returns the choice and ending data for a version 2 world', () => {
+  it('returns the choice and ending data for a world', () => {
     const checked = world({
       solution: {
         endings: [{ id: 'win', outcome: 'win' }],
@@ -72,7 +72,13 @@ describe('checkWinnability', () => {
     });
   });
 
-  it('rejects unsupported world and adventure versions', () => {
-    expect(() => validateWorld(world({ version: 3 }))).toThrow('not supported');
+  it('reports stuck and unreachable states', () => {
+    const checked = world({
+      exits: [{ id: 'path', fromPlaceId: 'gate', toPlaceId: 'goal', locked: true }],
+    });
+    expect(checkWinnability(checked)).toMatchObject({
+      winnable: false,
+      canGetStuck: true,
+    });
   });
 });

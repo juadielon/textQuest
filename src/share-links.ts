@@ -2,7 +2,7 @@ import { encodeShareWord, type AdventureSettings } from './adventure-settings';
 
 /**
  * Builds a link to the exact starting adventure at the current app path.
- * Only the versioned share word is included; query values and fragments are
+ * Only the share word is included; query values and fragments are
  * discarded so player progress and unrelated data cannot enter the link.
  * Invalid settings throw the same RangeError as {@link encodeShareWord}.
  */

@@ -5,7 +5,7 @@ import {
 import type { AdventureWorld } from './adventure-world';
 import { adventurePack, generateAdventureWorld } from './generate-world';
 import { playCommand, replayCommands, type CommandReplayMode } from './engine/play';
-import { worldNamesFrom } from './content/v1/world-names';
+import { worldNamesFrom } from './content/world-names';
 import {
   MAX_COMMAND_LENGTH,
   MAX_SAVE_COMMANDS,
@@ -18,13 +18,12 @@ import {
   createSaveStore,
   exportSaveFile,
   importSaveFile,
-  saveFormatVersion,
   validateSave,
   type SaveProblem,
   type StorageLike,
 } from './saves';
 
-const settings = createAdventureSettings(1234, 'medium', 2);
+const settings = createAdventureSettings(1234, 'medium');
 const createdTime = new Date('2026-10-12T04:00:00.000Z');
 
 function sampleSave(name = 'Lighthouse trip', commands: string[] = ['look', 'go north']) {
@@ -121,10 +120,9 @@ function commandsToPlace(world: AdventureWorld, destination: string): string[] {
   throw new Error(`No open route to ${destination}.`);
 }
 
-describe('save format', () => {
-  it('holds a version, name, settings, commands and timestamps', () => {
+describe('saves', () => {
+  it('holds a name, settings, commands and timestamps', () => {
     expect(sampleSave()).toEqual({
-      formatVersion: 2,
       name: 'Lighthouse trip',
       settings,
       commands: ['look', 'go north'],
@@ -132,7 +130,6 @@ describe('save format', () => {
       createdAt: '2026-10-12T04:00:00.000Z',
       updatedAt: '2026-10-12T04:00:00.000Z',
     });
-    expect(saveFormatVersion).toBe(2);
   });
 
   it('trims the name and rejects blank or overlong names', () => {
@@ -214,9 +211,9 @@ describe('save format', () => {
     const extra = `{"__proto__":{"polluted":true},"solution":{"secret":true},${file.slice(1)}`;
     const imported = importSaveFile(extra);
     expect(Object.keys(imported).sort()).toEqual(
-      ['commandModes', 'commands', 'createdAt', 'formatVersion', 'name', 'settings', 'updatedAt'],
+      ['commandModes', 'commands', 'createdAt', 'name', 'settings', 'updatedAt'],
     );
-    expect(Object.keys(imported.settings).sort()).toEqual(['genre', 'length', 'seed', 'version']);
+    expect(Object.keys(imported.settings).sort()).toEqual(['genre', 'length', 'seed']);
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 });
@@ -228,9 +225,6 @@ describe('importing untrusted save files', () => {
     ['not JSON', 'not a save'],
     ['a number', '42'],
     ['an array', '[]'],
-    ['no format version', JSON.stringify({ ...good(), formatVersion: undefined })],
-    ['a zero format version', JSON.stringify({ ...good(), formatVersion: 0 })],
-    ['a text format version', JSON.stringify({ ...good(), formatVersion: '1' })],
     ['no settings', JSON.stringify({ ...good(), settings: null })],
     ['a seed out of range', JSON.stringify({ ...good(), settings: { ...settings, seed: 999_999 } })],
     ['a seed that is text', JSON.stringify({ ...good(), settings: { ...settings, seed: '1234' } })],
@@ -243,7 +237,7 @@ describe('importing untrusted save files', () => {
     ['a command that is not text', JSON.stringify({ ...good(), commands: ['look', 7] })],
     ['command modes with the wrong length', JSON.stringify({ ...good(), commandModes: ['id'] })],
     ['missing command modes', JSON.stringify({ ...good(), commandModes: undefined })],
-    ['an unknown command mode', JSON.stringify({ ...good(), commandModes: ['id', 'legacy'] })],
+    ['an unknown command mode', JSON.stringify({ ...good(), commandModes: ['id', 'unsupported'] })],
     ['a command with a line break', JSON.stringify({ ...good(), commands: ['look\nnorth'] })],
     ['an overlong command', JSON.stringify({ ...good(), commands: ['x'.repeat(MAX_COMMAND_LENGTH + 1)] })],
     ['a missing time', JSON.stringify({ ...good(), createdAt: undefined })],
@@ -275,21 +269,6 @@ describe('importing untrusted save files', () => {
     );
   });
 
-  it('rejects a file from a newer version of textQuest', () => {
-    const text = JSON.stringify({ ...good(), formatVersion: saveFormatVersion + 1 });
-    expect(problemOf(() => importSaveFile(text))).toBe('future-version');
-    expect(messageOf(() => importSaveFile(text))).toBe(
-      'This save file was made by a newer version of textQuest. Update textQuest, then try again.',
-    );
-  });
-
-  it('rejects an adventure version this copy does not support', () => {
-    const text = JSON.stringify({ ...good(), settings: { ...settings, version: 3 } });
-    expect(problemOf(() => importSaveFile(text))).toBe('unsupported-adventure');
-    expect(messageOf(() => importSaveFile(text))).toBe(
-      'This save is for adventure version 3, which this copy of textQuest does not support.',
-    );
-  });
 
   it('rejects input that is not text', () => {
     expect(problemOf(() => importSaveFile(undefined as unknown as string))).toBe('malformed');
@@ -308,11 +287,9 @@ describe('save store', () => {
     return { storage, store: createSaveStore(storage, countingSource()) };
   }
 
-  it.each([2])(
-    'preserves old, failed and mixed-name commands for adventure version %i',
-    (version) => {
-      const settings = createAdventureSettings(0, 'long', version);
-      const pack = adventurePack(version, settings.genre);
+  it('preserves failed and mixed-name commands', () => {
+      const settings = createAdventureSettings(0, 'long');
+      const pack = adventurePack(settings.genre);
       const generated = generateAdventureWorld(settings);
       const world = { ...generated, names: worldNamesFrom(pack, generated) };
       expect(settings.genre).toBe('light-fantasy');
@@ -341,11 +318,11 @@ describe('save store', () => {
     },
   );
 
-  it('stores version 2 saves and imports copies without changing existing saves', () => {
+  it('stores saves and imports copies without changing existing saves', () => {
     const { storage, store } = setUp();
-    for (const version of [2]) for (const seed of [0, 1, 17000]) for (const length of adventureLengths) {
-      const settings = createAdventureSettings(seed, length, version);
-      const save = createSave('Versioned trip', settings, ['look', 'take unknown item', 'undo'], createdTime);
+    for (const seed of [0, 1, 17000]) for (const length of adventureLengths) {
+      const settings = createAdventureSettings(seed, length);
+      const save = createSave('Shared trip', settings, ['look', 'take unknown item', 'undo'], createdTime);
       const id = store.add(save);
       const file = store.exportSave(id);
       const before = new Map(storage.items);
@@ -416,7 +393,7 @@ describe('save store', () => {
     expect(store.list()).toHaveLength(1);
   });
 
-  it('replaces a save only while it still matches the expected version', () => {
+  it('replaces a save only while it still matches the stored snapshot', () => {
     const { storage, store } = setUp();
     const original = sampleSave();
     const id = store.add(original);
@@ -486,15 +463,13 @@ describe('save store', () => {
     storage.setItem('theme', 'dark');
     storage.setItem(SAVE_KEY_PREFIX + 'not-an-id', '{}');
     storage.setItem(SAVE_KEY_PREFIX + idFor(7), 'broken');
-    storage.setItem(SAVE_KEY_PREFIX + idFor(8), JSON.stringify({ ...sampleSave(), formatVersion: 3 }));
     const good = store.add(sampleSave());
 
     expect(store.list()).toEqual([
       expect.objectContaining({ id: good, status: 'ready' }),
       { id: idFor(7), snapshot: 'broken', status: 'unreadable', message: expect.stringMatching(/damaged/) },
-      { id: idFor(8), snapshot: storage.items.get(SAVE_KEY_PREFIX + idFor(8)), status: 'unreadable', message: expect.stringMatching(/newer version/) },
     ]);
-    expect(storage.items.size).toBe(5);
+    expect(storage.items.size).toBe(4);
   });
 
   it('exports JSON and imports it as a new save without changing existing saves', () => {
@@ -514,7 +489,7 @@ describe('save store', () => {
     const { storage, store } = setUp();
     store.add(sampleSave());
     const before = new Map(storage.items);
-    for (const text of ['nope', JSON.stringify({ ...sampleSave(), formatVersion: 99 }), ' '.repeat(MAX_SAVE_FILE_LENGTH + 1)]) {
+    for (const text of ['nope', ' '.repeat(MAX_SAVE_FILE_LENGTH + 1)]) {
       expect(() => store.importSave(text)).toThrow(SaveError);
     }
     expect(storage.items).toEqual(before);

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { adventureLengths, createAdventureSettings } from '../adventure-settings';
 import type { AdventureWorld, PuzzleStep } from '../adventure-world';
-import { lightFantasy } from '../content/v1/light-fantasy';
-import { worldNamesFrom } from '../content/v1/world-names';
+import { lightFantasy } from '../content/light-fantasy';
+import { worldNamesFrom } from '../content/world-names';
 import { generateAdventureWorld } from '../generate-world';
 import { createSave, exportSaveFile, importSaveFile } from '../saves';
 import { checkWinnability } from '../winnability';
@@ -15,7 +15,7 @@ import type { PlayState, PlayWorld } from './play';
 // The same world the winnability tests use, so play and checker agree on one example.
 function sampleWorld(): AdventureWorld {
   return {
-    version: 2,
+
     startPlaceId: 'entry',
     places: [{ id: 'entry' }, { id: 'study' }, { id: 'finish' }],
     exits: [
@@ -54,7 +54,7 @@ const winningCommands = [
 
 it('can reach a place when its grammar-safe fallback name is occupied', () => {
   const world: AdventureWorld = {
-    version: 2, startPlaceId: 'entry',
+     startPlaceId: 'entry',
     places: [{ id: 'entry' }, { id: 'to-room' }, { id: 'place-2' }],
     exits: [{ id: 'path', fromPlaceId: 'entry', toPlaceId: 'to-room', locked: false }],
     items: [], clues: [],
@@ -68,7 +68,7 @@ it('can reach a place when its grammar-safe fallback name is occupied', () => {
 it('keeps item use unambiguous after a visible place is renamed', () => {
   const itemId = 'badge-on-north-(place-2)';
   const world: AdventureWorld = {
-    version: 2, startPlaceId: 'entry',
+     startPlaceId: 'entry',
     places: [{ id: 'entry' }, { id: 'north' }],
     exits: [{ id: 'path', fromPlaceId: 'entry', toPlaceId: 'north', locked: false }],
     items: [{ id: 'badge', placeId: 'entry' }, { id: itemId, placeId: 'entry' }],
@@ -86,7 +86,7 @@ it('keeps item use unambiguous after a visible place is renamed', () => {
 
 it('suggests a winning place named too-large instead of search-limit advice', () => {
   const world: AdventureWorld = {
-    version: 2, startPlaceId: 'entry',
+     startPlaceId: 'entry',
     places: [{ id: 'entry' }, { id: 'too-large' }],
     exits: [{ id: 'path', fromPlaceId: 'entry', toPlaceId: 'too-large', locked: false }],
     items: [], clues: [],
@@ -148,11 +148,11 @@ describe('startPlay', () => {
   });
 });
 
-// A world version 2 example: one choice opens one of two paths. The right
+// An example: one choice opens one of two paths. The right
 // path leads to a winning ending and the left path leads to the goal.
 function choiceWorld(): PlayWorld {
   return {
-    version: 2,
+
     startPlaceId: 'gate',
     places: [{ id: 'gate' }, { id: 'left-path' }, { id: 'right-path' }, { id: 'tower' }],
     exits: [
@@ -191,7 +191,7 @@ function choiceWorld(): PlayWorld {
 
 function itemLabelWorld(): PlayWorld {
   return {
-    version: 2, startPlaceId: 'room', places: [{ id: 'room' }, { id: 'away' }],
+     startPlaceId: 'room', places: [{ id: 'room' }, { id: 'away' }],
     exits: [{ id: 'gate', fromPlaceId: 'room', toPlaceId: 'away', locked: true }],
     items: [
       { id: 'coin-on-gate', placeId: 'room' }, { id: 'coin', placeId: 'room' },
@@ -217,7 +217,7 @@ function itemLabelWorld(): PlayWorld {
 const choiceIds = (world: PlayWorld, state: PlayState) => discoveredTargets(world, state)
   .filter(({ kind }) => kind === 'choice').map(({ id }) => id);
 
-describe('playing world version 2 choices', () => {
+describe('playing choices', () => {
   it('agrees with the checker on the example world', () => {
     expect(checkWinnability(choiceWorld())).toMatchObject({
       winnable: true, unreachableStepIds: [], reachableEndingIds: ['crowned'],
@@ -239,7 +239,7 @@ describe('playing world version 2 choices', () => {
       effects: [{ kind: 'reveal-clue', clueId: `clue-${index}` }],
     }));
     const world: AdventureWorld = {
-      version: 2, startPlaceId: 'room', places: [{ id: 'room' }, { id: 'goal' }],
+       startPlaceId: 'room', places: [{ id: 'room' }, { id: 'goal' }],
       exits: [], items: [], clues: Array.from({ length: size }, (_, index) => ({ id: `clue-${index}` })),
       solution: { steps: [...choices, ...automatic], goal: { placeId: 'goal', conditions: {} } },
     };
@@ -268,7 +268,7 @@ describe('playing world version 2 choices', () => {
       ],
     }));
     const world: AdventureWorld = {
-      version: 2, startPlaceId: 'outside',
+       startPlaceId: 'outside',
       places: [{ id: 'outside' }, { id: 'room' }, { id: 'goal' }],
       exits: [{ id: 'door', fromPlaceId: 'outside', toPlaceId: 'room', locked: false }],
       items: Array.from({ length: size }, (_, index) => ({ id: `gift-${index}` })),
@@ -293,10 +293,10 @@ describe('playing world version 2 choices', () => {
     expect(playCommand(world, arrived.state, 'undo').state).toBe(start);
   });
 
-  it('uses settled discovery names for automatic messages only in version 2', () => {
-    for (const version of [2] as const) {
+  it('uses settled discovery names for automatic messages', () => {
       const world: PlayWorld = {
-        version, startPlaceId: 'outside',
+
+        startPlaceId: 'outside',
         places: [{ id: 'outside' }, { id: 'room' }, { id: 'garden' }, { id: 'secret-vault' }],
         exits: [
           { id: 'door', fromPlaceId: 'outside', toPlaceId: 'room', locked: false },
@@ -329,11 +329,8 @@ describe('playing world version 2 choices', () => {
       expect(arrived.state.stepsDone).toEqual(['open', 'reveal']);
       expect(arrived.message).not.toContain('secret vault');
       expect(exit.name).not.toBe('way to the garden');
-      expect(arrived.message).toContain(version === 2
-        ? `The ${exit.name} is now open. A way is now open.`
-        : 'The way to the garden is now open. A way is now open.');
+      expect(arrived.message).toContain(`The ${exit.name} is now open. A way is now open.`);
       expect(arrived.message).toContain('Something changes here. You found the way to the garden clue.');
-    }
   });
 
   it('offers open choices here without doing them by themselves', () => {
@@ -484,7 +481,7 @@ describe('playing world version 2 choices', () => {
 
   it('hides choices unlocked by a winning ending and restores them on undo', () => {
     const world: PlayWorld = {
-      version: 2, startPlaceId: 'room', places: [{ id: 'room' }, { id: 'goal' }], exits: [],
+       startPlaceId: 'room', places: [{ id: 'room' }, { id: 'goal' }], exits: [],
       items: [], clues: [],
       choiceNames: [{ id: 'win', name: 'finish' }, { id: 'secret', name: 'hidden finale' }],
       solution: {
@@ -514,7 +511,7 @@ describe('playing world version 2 choices', () => {
 
   it('does not show choices on arrival when automatic steps finish the adventure', () => {
     const world: PlayWorld = {
-      version: 2, startPlaceId: 'outside', places: [{ id: 'outside' }, { id: 'inside' }],
+       startPlaceId: 'outside', places: [{ id: 'outside' }, { id: 'inside' }],
       exits: [{ id: 'door', fromPlaceId: 'outside', toPlaceId: 'inside', locked: false }],
       items: [], clues: [],
       choiceNames: [{ id: 'secret-one', name: 'hidden route' }, { id: 'secret-two', name: 'hidden ending' }],
@@ -537,7 +534,7 @@ describe('playing world version 2 choices', () => {
 
   it('shows choices made available by automatic steps after arriving', () => {
     const world: PlayWorld = {
-      version: 2, startPlaceId: 'outside', places: [{ id: 'outside' }, { id: 'inside' }],
+       startPlaceId: 'outside', places: [{ id: 'outside' }, { id: 'inside' }],
       exits: [{ id: 'door', fromPlaceId: 'outside', toPlaceId: 'inside', locked: false }],
       items: [], clues: [],
       choiceNames: [{ id: 'stay', name: 'stay' }, { id: 'leave', name: 'leave' }],
@@ -565,7 +562,7 @@ describe('playing world version 2 choices', () => {
 
   it('checks shared-item steps using the same local-exit preference as play', () => {
     const world: PlayWorld = {
-      version: 2, startPlaceId: 'room', places: [{ id: 'room' }, { id: 'away' }],
+       startPlaceId: 'room', places: [{ id: 'room' }, { id: 'away' }],
       exits: [{ id: 'gate', fromPlaceId: 'away', toPlaceId: 'room', locked: true }],
       items: [{ id: 'coin', placeId: 'room' }, { id: 'badge' }, { id: 'key' }], clues: [],
       solution: {
@@ -639,14 +636,14 @@ describe('playing world version 2 choices', () => {
       winnable: true, unreachableStepIds: ['prepare', 'alternate'], reachableEndingIds: [],
     });
 
-    const legacy: AdventureWorld = {
-      ...local, version: 2,
+    const worldWithoutChoices: AdventureWorld = {
+      ...local,
       solution: { steps: local.solution.steps.slice(0, 2), goal: local.solution.goal },
     };
-    const legacyHolding = playCommand(legacy, startPlay(legacy), 'take coin').state;
-    expect(playCommand(legacy, legacyHolding, 'use coin').state.stepsDone).toEqual(['finish']);
-    expect(playCommand(legacy, legacyHolding, 'use coin on gate').state.stepsDone).toEqual(['prepare']);
-    expect(checkWinnability(legacy)).toMatchObject({ winnable: true, unreachableStepIds: [] });
+    const noChoiceHolding = playCommand(worldWithoutChoices, startPlay(worldWithoutChoices), 'take coin').state;
+    expect(playCommand(worldWithoutChoices, noChoiceHolding, 'use coin').state.stepsDone).toEqual(['finish']);
+    expect(playCommand(worldWithoutChoices, noChoiceHolding, 'use coin on gate').state.stepsDone).toEqual(['prepare']);
+    expect(checkWinnability(worldWithoutChoices)).toMatchObject({ winnable: true, unreachableStepIds: [] });
   });
 
   it('keeps the displayed fallback usable after taking an item and opening an exit', () => {
@@ -754,7 +751,7 @@ describe('playing world version 2 choices', () => {
 
   it('checks and plays local-exit preference with a punctuated item label', () => {
     const world: PlayWorld = {
-      version: 2, startPlaceId: 'room', places: [{ id: 'room' }, { id: 'away' }],
+       startPlaceId: 'room', places: [{ id: 'room' }, { id: 'away' }],
       exits: [{ id: 'gate', fromPlaceId: 'room', toPlaceId: 'away', locked: true }],
       items: [{ id: 'coin', placeId: 'room' }, { id: 'badge' }, { id: 'key' }], clues: [],
       names: {
@@ -797,7 +794,7 @@ describe('playing world version 2 choices', () => {
 
   it('uses displayed item and exit labels when another item ends in on', () => {
     const world: PlayWorld = {
-      version: 2, startPlaceId: 'room', places: [{ id: 'room' }, { id: 'gate' }],
+       startPlaceId: 'room', places: [{ id: 'room' }, { id: 'gate' }],
       exits: [{ id: 'on-gate', fromPlaceId: 'room', toPlaceId: 'gate', locked: false }],
       items: [{ id: 'coin', placeId: 'room' }, { id: 'coin-on', placeId: 'room' }, { id: 'badge' }],
       clues: [],
@@ -834,7 +831,7 @@ describe('playing world version 2 choices', () => {
 
   it('checks a shared step that can be selected with a different held item', () => {
     const world: PlayWorld = {
-      version: 2, startPlaceId: 'room', places: [{ id: 'room' }], exits: [],
+       startPlaceId: 'room', places: [{ id: 'room' }], exits: [],
       items: [
         { id: 'coin', placeId: 'room' }, { id: 'token', placeId: 'room' }, { id: 'badge' }, { id: 'key' },
       ],
@@ -876,7 +873,7 @@ describe('playing world version 2 choices', () => {
     expect(playCommand(world, chosen, 'hint').message)
       .toBe('Look around and think about what you could do next. You can also try undo.');
     const room: AdventureWorld = {
-      version: 2, startPlaceId: 'room', places: [{ id: 'room' }], exits: [],
+       startPlaceId: 'room', places: [{ id: 'room' }], exits: [],
       items: [{ id: 'lamp', placeId: 'room' }], clues: [],
       solution: {
         steps: [
@@ -894,7 +891,7 @@ describe('playing world version 2 choices', () => {
       .toBe('Look around and think about what you could do next. You can also try undo.');
 
     const indirect: AdventureWorld = {
-      version: 2, startPlaceId: 'room', places: [{ id: 'room' }, { id: 'goal' }],
+       startPlaceId: 'room', places: [{ id: 'room' }, { id: 'goal' }],
       exits: [{ id: 'way', fromPlaceId: 'room', toPlaceId: 'goal', locked: false }],
       items: [{ id: 'lamp', placeId: 'room' }], clues: [],
       solution: {
@@ -918,7 +915,7 @@ describe('playing world version 2 choices', () => {
 describe('playing with typed commands', () => {
   it('keeps leading articles in ID-derived names', () => {
     const world: AdventureWorld = {
-      version: 2,
+
       startPlaceId: 'the-garden',
       places: [{ id: 'the-garden' }],
       exits: [],
@@ -1020,7 +1017,7 @@ describe('discoveredTargets', () => {
     ['red-key', 'red_key', 'red key (item 4)'],
   ])('wins using displayed names despite colliding IDs: %j', (...ids: string[]) => {
     const world: AdventureWorld = {
-      version: 2,
+
       startPlaceId: 'entry',
       places: [{ id: 'entry' }, { id: 'finish' }],
       exits: [{ id: 'door', fromPlaceId: 'entry', toPlaceId: 'finish', locked: true }],
@@ -1058,7 +1055,7 @@ describe('discoveredTargets', () => {
 
   it.each(['north', 'up', 'the'])('can walk to a place and exit both called %j', (id) => {
     const world: AdventureWorld = {
-      version: 2, startPlaceId: 'entry',
+       startPlaceId: 'entry',
       places: [{ id: 'entry' }, { id }],
       exits: [{ id, fromPlaceId: 'entry', toPlaceId: id, locked: false }],
       items: [], clues: [],
@@ -1076,7 +1073,7 @@ describe('discoveredTargets', () => {
 
   it('uses distinct names in movement hints when place IDs collide', () => {
     const world: AdventureWorld = {
-      version: 2, startPlaceId: 'entry',
+       startPlaceId: 'entry',
       places: [{ id: 'entry' }, { id: 'red-room' }, { id: 'red_room' }],
       exits: [
         { id: 'wrong-way', fromPlaceId: 'entry', toPlaceId: 'red-room', locked: false },
@@ -1094,7 +1091,7 @@ describe('discoveredTargets', () => {
 
   it('round-trips displayed movement names beginning with to to the exact target', () => {
     const world: AdventureWorld = {
-      version: 2, startPlaceId: 'entry',
+       startPlaceId: 'entry',
       places: [{ id: 'entry' }, { id: 'to-red-room' }, { id: 'red-room' }],
       exits: [
         { id: 'to-path', fromPlaceId: 'entry', toPlaceId: 'to-red-room', locked: false },
@@ -1117,7 +1114,7 @@ describe('discoveredTargets', () => {
 
   it('wins using the displayed name of an item that overlaps an item-on-target command', () => {
     const world: AdventureWorld = {
-      version: 2, startPlaceId: 'entry',
+       startPlaceId: 'entry',
       places: [{ id: 'entry' }, { id: 'ribbon' }],
       exits: [{ id: 'door', fromPlaceId: 'entry', toPlaceId: 'ribbon', locked: true }],
       items: [{ id: 'badge-on-ribbon', placeId: 'entry' }, { id: 'badge', placeId: 'entry' }],
@@ -1236,17 +1233,17 @@ describe('undo', () => {
 describe('replaying a long save', () => {
   // Regression: repeated target resolution made large saves slow to resume.
   it('replays thousands of commands on a long named world quickly', () => {
-    let settings = createAdventureSettings(0, 'long', 2);
-    while (settings.genre !== 'light-fantasy') settings = createAdventureSettings(settings.seed + 1, 'long', 2);
+    let settings = createAdventureSettings(0, 'long');
+    while (settings.genre !== 'light-fantasy') settings = createAdventureSettings(settings.seed + 1, 'long');
     const generated = generateAdventureWorld(settings);
     const world: PlayWorld = { ...generated, names: worldNamesFrom(lightFantasy, generated) };
     const commands = Array<string>(2000).fill('look');
     const started = Date.now();
     expect(replayCommands(world, commands)).toEqual(startPlay(world));
     expect(Date.now() - started).toBeLessThan(20_000);
-    const legacyStarted = Date.now();
+    const idStarted = Date.now();
     expect(replayCommands(world, commands, commands.map(() => 'id'))).toEqual(startPlay(world));
-    expect(Date.now() - legacyStarted).toBeLessThan(20_000);
+    expect(Date.now() - idStarted).toBeLessThan(20_000);
   }, 20_000);
 });
 
@@ -1284,7 +1281,7 @@ describe('hints', () => {
 
   it('avoid one-way dead ends and admit when there is no way forward', () => {
     const world: AdventureWorld = {
-      version: 2, startPlaceId: 'fork',
+       startPlaceId: 'fork',
       places: [{ id: 'fork' }, { id: 'pit' }, { id: 'home' }],
       exits: [
         { id: 'slide', fromPlaceId: 'fork', toPlaceId: 'pit', locked: false },
@@ -1330,10 +1327,10 @@ function playByHints(world: PlayWorld, commands: string[] = []): PlayState {
   return state;
 }
 
-describe.each([2])('version %i generated play and saved replay', (version) => {
+describe('generated play and saved replay', () => {
   it.each([0, 1, 17000])('seed %i: wins every length and resumes the exact command history', (seed) => {
     for (const length of adventureLengths) {
-      const settings = createAdventureSettings(seed, length, version);
+      const settings = createAdventureSettings(seed, length);
       const world = generateAdventureWorld(settings);
       for (const optional of [true, false]) {
         const required = world.solution.goal.conditions.stepsDone ?? [];
@@ -1364,7 +1361,7 @@ describe('agreement with the winnability checker', () => {
   const chain = (length: number): AdventureWorld => {
     const places = Array.from({ length }, (_, index) => ({ id: `room-${index}` }));
     return {
-      version: 2, startPlaceId: 'room-0', places,
+       startPlaceId: 'room-0', places,
       exits: places.slice(1).flatMap(({ id }, index) => [
         { id: `gate-${index}`, fromPlaceId: `room-${index}`, toPlaceId: id, locked: index % 2 === 0 },
         { id: `back-${index}`, fromPlaceId: id, toPlaceId: `room-${index}`, locked: false },
@@ -1567,7 +1564,7 @@ describe('play with content-pack names', () => {
 
   it('keeps ID-only remote unlock wording unchanged', () => {
     const world: AdventureWorld = {
-      version: 2,
+
       startPlaceId: 'entry',
       places: [{ id: 'entry' }, { id: 'vault' }],
       exits: [{ id: 'secret-door', fromPlaceId: 'vault', toPlaceId: 'entry', locked: true }],
@@ -1609,10 +1606,10 @@ describe('play with content-pack names', () => {
 
   it('wins generated light fantasy worlds by hints using only pack names', () => {
     const seeds = Array.from({ length: 64 }, (_, seed) => seed)
-      .filter((seed) => createAdventureSettings(seed, 'short', 2).genre === 'light-fantasy').slice(0, 3);
+      .filter((seed) => createAdventureSettings(seed, 'short').genre === 'light-fantasy').slice(0, 3);
     expect(seeds).toHaveLength(3);
     for (const seed of seeds) {
-      const base = generateAdventureWorld(createAdventureSettings(seed, 'short', 2));
+      const base = generateAdventureWorld(createAdventureSettings(seed, 'short'));
       const world: PlayWorld = { ...base, names: worldNamesFrom(lightFantasy, base) };
       expect(playByHints(world).goalReached).toBe(true);
       const packNames = new Set([...lightFantasy.places, ...lightFantasy.items, ...lightFantasy.clues,

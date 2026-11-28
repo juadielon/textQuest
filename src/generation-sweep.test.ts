@@ -30,7 +30,7 @@ function recordSeedExceptions(seed: number, problems: string[], check: () => voi
   }
 }
 
-describe('version 2 generation sweep', () => {
+describe('generation sweep', () => {
   for (const length of adventureLengths) {
     // Checking every seed takes a few seconds, so a busy machine can push it past
     // Vitest's 5-second default. Give it more room.

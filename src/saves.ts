@@ -2,7 +2,6 @@ import {
   adventureGenres,
   adventureLengths,
   encodeShareWord,
-  supportedVersions,
   type AdventureSettings,
   type RandomValueSource,
 } from './adventure-settings';
@@ -13,14 +12,6 @@ import type { CommandReplayMode } from './engine/play';
  * Progress is rebuilt later by replaying those commands, so saves never depend
  * on engine internals and never hold puzzle solutions.
  */
-
-/**
- * The save format version written by this copy of textQuest.
- *
- * @remarks
- * Bump this only for a change older copies cannot read.
- */
-export const saveFormatVersion = 2;
 
 /** The longest save file, in characters, that will be stored or imported. */
 export const MAX_SAVE_FILE_LENGTH = 1_200_000;
@@ -36,8 +27,6 @@ export const MAX_SAVE_NAME_LENGTH = 60;
 
 /** One saved adventure, as stored in the browser and in exported files. */
 export interface AdventureSave {
-  /** The save format version. See {@link saveFormatVersion}. */
-  readonly formatVersion: number;
   /** The name the player gave this adventure. */
   readonly name: string;
   /** The settings the adventure started with. */
@@ -57,10 +46,8 @@ export interface AdventureSave {
  *
  * - `malformed`: the file is damaged or isn't a textQuest save.
  * - `too-large`: the file or save is over the size limits.
- * - `future-version`: a newer copy of textQuest made the file.
- * - `unsupported-adventure`: the adventure version isn't supported here.
  * - `not-found`: no save has that ID.
- * - `changed`: the stored save no longer matches the version being updated.
+ * - `changed`: the stored save no longer matches the snapshot being updated.
  * - `storage-full`: the browser has no room left for saves.
  * - `storage-unavailable`: the browser refused to read or write saves.
  * - `metadata-cleanup`: the save was deleted, but its play-time metadata remains.
@@ -68,8 +55,6 @@ export interface AdventureSave {
 export type SaveProblem =
   | 'malformed'
   | 'too-large'
-  | 'future-version'
-  | 'unsupported-adventure'
   | 'not-found'
   | 'changed'
   | 'storage-full'
@@ -123,15 +108,9 @@ function readSettings(value: unknown): AdventureSettings {
   if (!isPlainObject(value)) {
     throw damaged('the adventure settings are missing.');
   }
-  const { version, seed, length, genre } = value;
-  if (!Number.isInteger(version) || typeof seed !== 'number') {
+  const { seed, length, genre } = value;
+  if (typeof seed !== 'number') {
     throw damaged('the adventure settings are not valid.');
-  }
-  if (!supportedVersions.includes(version as number)) {
-    throw new SaveError(
-      'unsupported-adventure',
-      `This save is for adventure version ${version}, which this copy of textQuest does not support.`,
-    );
   }
   if (
     !adventureLengths.includes(length as AdventureSettings['length']) ||
@@ -140,7 +119,7 @@ function readSettings(value: unknown): AdventureSettings {
     throw damaged('the adventure settings are not valid.');
   }
 
-  const settings = { version, seed, length, genre } as AdventureSettings;
+  const settings = { seed, length, genre } as AdventureSettings;
   try {
     // Checks the seed range and that the genre matches the seed.
     encodeShareWord(settings);
@@ -215,19 +194,6 @@ export function validateSave(value: unknown): AdventureSave {
   if (!isPlainObject(value)) {
     throw damaged('it does not hold a save.');
   }
-  const { formatVersion } = value;
-  if (!Number.isInteger(formatVersion) || (formatVersion as number) < 1) {
-    throw damaged('the save format version is missing.');
-  }
-  if ((formatVersion as number) === 1) {
-    throw damaged('save format version 1 is no longer supported.');
-  }
-  if ((formatVersion as number) > saveFormatVersion) {
-    throw new SaveError(
-      'future-version',
-      'This save file was made by a newer version of textQuest. Update textQuest, then try again.',
-    );
-  }
 
   const createdAt = readTime(value.createdAt, 'created');
   const updatedAt = readTime(value.updatedAt, 'updated');
@@ -237,7 +203,6 @@ export function validateSave(value: unknown): AdventureSave {
 
   const commands = readCommands(value.commands);
   return {
-    formatVersion: saveFormatVersion,
     name: readName(value.name),
     settings: readSettings(value.settings),
     commands,
@@ -254,7 +219,7 @@ export function validateSave(value: unknown): AdventureSave {
  * @param settings - The adventure's starting settings.
  * @param commands - Commands typed so far. Defaults to none.
  * @param now - The current time. Used for both timestamps.
- * @param commandModes - How each command matched names. Defaults to legacy ID names.
+ * @param commandModes - How each command matched names. Defaults to ID names.
  * @returns A checked save.
  * @throws {@link SaveError} if the name, settings or commands are not valid.
  */
@@ -267,7 +232,6 @@ export function createSave(
 ): AdventureSave {
   const time = now.toISOString();
   return validateSave({
-    formatVersion: saveFormatVersion,
     name,
     settings,
     commands,
@@ -297,7 +261,7 @@ export function exportSaveFile(save: AdventureSave): string {
  *
  * @param text - The file contents.
  * @returns The checked save.
- * @throws {@link SaveError} if the file is too large, damaged or from a newer version.
+ * @throws {@link SaveError} if the file is too large or damaged.
  */
 export function importSaveFile(text: string): AdventureSave {
   if (typeof text !== 'string') {
@@ -321,7 +285,7 @@ export function importSaveFile(text: string): AdventureSave {
 
 /**
  * The parts of the browser's `Storage` that saves use, such as `localStorage`.
- * Tests can pass a simple in-memory version instead.
+ * Tests can pass a simple in-memory implementation instead.
  */
 export type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'key' | 'length'>;
 
@@ -377,7 +341,7 @@ export interface SaveStore {
   markPlayed(id: string, now?: Date): boolean;
   /** Stores a new save and returns its new ID. */
   add(save: AdventureSave): string;
-  /** Stores a save under this ID, replacing any earlier version. On failure the old version is kept. */
+  /** Stores a save under this ID, replacing the earlier save. On failure the old save is kept. */
   put(id: string, save: AdventureSave): void;
   /**
    * Stores a save under this ID only if the stored save still matches

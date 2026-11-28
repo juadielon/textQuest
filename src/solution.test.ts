@@ -10,7 +10,7 @@ import {
 } from './solution';
 
 const tinyWorld: PlayWorld = {
-  version: 2,
+
   startPlaceId: 'gate',
   places: [{ id: 'gate' }, { id: 'old-tower' }],
   exits: [
@@ -50,10 +50,10 @@ describe('solution mode', () => {
     ]);
   });
 
-  it('finds a deterministic route in a version 2 world', () => {
+  it('finds a deterministic route in a world', () => {
     const world: PlayWorld = {
       ...tinyWorld,
-      version: 2,
+
       solution: {
         steps: [
           {
@@ -94,8 +94,8 @@ describe('solution mode', () => {
     expect(SOLUTION_SEARCH_LIMIT).toBe(100_000);
   });
 
-  it.each([2] as const)('finds a short generated route: version %i', (version) => {
-    const settings = createAdventureSettings(7, 'short', version);
+  it('finds a short generated route', () => {
+    const settings = createAdventureSettings(7, 'short');
     const world = generateAdventureWorld(settings);
     const route = findWinningCommands(world);
     expect(route.length).toBeGreaterThan(0);
@@ -103,7 +103,7 @@ describe('solution mode', () => {
   });
 
   it.each(['medium', 'long'] as const)('finds a generated route: %s', (length) => {
-    const settings = createAdventureSettings(7, length, 2);
+    const settings = createAdventureSettings(7, length);
     const world = generateAdventureWorld(settings);
     const route = findWinningCommands(world);
     expect(route.length).toBeGreaterThan(0);

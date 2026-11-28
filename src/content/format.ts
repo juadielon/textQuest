@@ -1,5 +1,5 @@
-import type { AdventureGenre, AdventureLength } from '../../adventure-settings';
-import type { Clue, Conditions, Exit, Goal, Item, Place, PuzzleStep } from '../../adventure-world';
+import type { AdventureGenre, AdventureLength } from '../adventure-settings';
+import type { Clue, Conditions, Exit, Goal, Item, Place, PuzzleStep } from '../adventure-world';
 
 /** A name reference, resolved only from entities included in the adventure. */
 export type EntityReference = {
@@ -77,7 +77,6 @@ export interface PlotStructure {
 
 /** Released authored data; arrays and IDs are part of seed compatibility. */
 export interface ContentPack {
-  readonly version: 1;
   readonly genre: AdventureGenre;
   readonly startPlaceId: string;
   readonly places: readonly ContentPlace[];

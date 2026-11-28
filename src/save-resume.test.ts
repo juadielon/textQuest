@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createAdventureSettings, encodeShareWord, parseShareWord } from './adventure-settings';
-import { worldNamesFrom } from './content/v1/world-names';
+import { worldNamesFrom } from './content/world-names';
 import { replayCommands } from './engine/play';
 import { adventurePack, generateAdventureWorld } from './generate-world';
 import {
@@ -36,7 +36,7 @@ function replay(settings: ReturnType<typeof createAdventureSettings>, commands: 
   return replayCommands(named, [...commands]);
 }
 
-describe('version 2 save and resume', () => {
+describe('save and resume', () => {
   it.each([
     [0, 'short'],
     [1, 'medium'],
