@@ -486,7 +486,21 @@ describe('renderPlayScreen', () => {
     expect(text(target, '.play-sidebar ul')[0]).toBe('You are not carrying anything.');
   });
 
-  it('keeps focus in the command box and re-announces a repeated response', () => {
+  it('progresses hints and keeps the final hint spoiler-free', () => {
+    const target = renderTiny();
+
+    type(target, 'hint');
+    type(target, 'hint');
+    type(target, 'hint');
+
+    const responses = text(target, '.play-entry p:not(.play-typed)');
+    expect(responses.at(-3)).toBe('Pause and look at the situation before choosing an action.');
+    expect(responses.at(-2)).toBe('Look for something useful nearby or a way you have discovered.');
+    expect(responses.at(-1)).toBe('Try taking the brass key.');
+    expect(responses.join(' ')).not.toContain('hidden gem');
+  });
+
+  it('keeps focus and announces each new hint stage', () => {
     const target = renderTiny();
     const input = target.querySelector<HTMLInputElement>('#play-command')!;
     const announcer = target.querySelector('[aria-live="polite"]')!;
@@ -499,7 +513,7 @@ describe('renderPlayScreen', () => {
     expect(document.activeElement).toBe(input);
     expect(announcer.children).toHaveLength(1);
     expect(announcer.firstChild).not.toBe(first);
-    expect(announcer.textContent).toBe(first?.textContent);
+    expect(announcer.textContent).toBe('Look for something useful nearby or a way you have discovered.');
   });
 
   it('shows the ending when the goal is reached and hides it again after undo', () => {
@@ -1058,6 +1072,21 @@ describe('renderPlayScreen', () => {
     type(target, 'talk to old keeper about sandwiches');
     expect(target.querySelector('.play-log')?.textContent)
       .toContain('does not recognise that topic');
+  });
+
+  it('replays progressive hints and restores state through undo', () => {
+    vi.mocked(generateAdventureWorld).mockReturnValueOnce(tinyWorld);
+    vi.mocked(adventurePack).mockReturnValueOnce(tinyPack);
+    const target = document.createElement('main');
+    document.body.append(target);
+    renderPlayScreen(target, settingsFor('light-fantasy'), {
+      commands: ['hint', 'hint', 'hint', 'undo'],
+      commandModes: ['content', 'content', 'content', 'content'],
+    });
+
+    expect(target.querySelector('.play-log')?.textContent)
+      .toContain('Try taking the brass key.');
+    expect(target.querySelector('.play-sidebar')?.textContent).not.toContain('hidden gem');
   });
 
   it('replays dialogue without adding clues and keeps undo coherent', () => {
