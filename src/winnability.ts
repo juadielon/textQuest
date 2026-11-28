@@ -304,6 +304,8 @@ export function checkWinnability(world: AdventureWorld): WinnabilityResult {
   // A running total, not the queue length, so the cap still holds if the queue is ever drained.
   let statesCreated = queue.length;
   const seen = new Set<string>();
+  const queued = new Set<string>();
+  queued.add(stateKey(world.startPlaceId, queue[0]));
   const reachableSteps = new Set<string>();
   const reachedEndings = new Set<string>();
   const winningOutcome = new Set((world.solution.endings ?? [])
@@ -322,7 +324,11 @@ export function checkWinnability(world: AdventureWorld): WinnabilityResult {
   const winningKeys: string[] = [];
   let winnable = false;
   const enqueue = (next: SearchState, parentKey: string): boolean => {
-    // Count every state created, including repeats, so both work and memory stay capped.
+    const nextArea = settleHere(world, next, automatic);
+    const nextKey = stateKey(nextArea[0], next);
+    if (seen.has(nextKey) || queued.has(nextKey)) return true;
+    queued.add(nextKey);
+    // Count each state queued, so work and memory stay capped.
     if (statesCreated >= MAX_SEARCH_STATES) return false;
     statesCreated++;
     queue.push(next);

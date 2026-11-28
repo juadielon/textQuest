@@ -10,6 +10,7 @@ import { checkWinnability } from './winnability';
 // A fixed range keeps the sweep repeatable. It is large enough to reach every
 // genre and plot many times while staying well inside a normal test run.
 const sweepSeedCount = 300;
+const progressMilestone = 50;
 
 function withoutOptionalSteps(world: AdventureWorld): AdventureWorld {
   const requiredStepIds = world.solution.goal.conditions.stepsDone ?? [];
@@ -67,6 +68,10 @@ describe('generation sweep', () => {
             }
           }
         });
+        const checked = seed + 1;
+        if (checked % progressMilestone === 0 || checked === sweepSeedCount) {
+          console.log(`[generation sweep] ${length}: ${checked}/${sweepSeedCount} seeds checked`);
+        }
       }
 
       expect(problems).toEqual([]);
