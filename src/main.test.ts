@@ -172,6 +172,22 @@ it.each([
     expect(person).toBeDefined();
     if (person) {
       const alias = person.aliases?.[0] ?? person.name;
+      const character = pack.characters.find(({ id }) => id === person.id);
+      expect(character?.conversations?.length).toBeGreaterThan(0);
+      const topics = [...app.querySelectorAll<HTMLButtonElement>('.play-conversation-topic')]
+        .map((button) => button.textContent);
+      expect(topics.length).toBeGreaterThan(0);
+      expect(topics.every((topic) => Boolean(topic))).toBe(true);
+
+      const topic = character?.conversations?.[0];
+      if (topic) {
+        const topicAlias = topic.aliases?.[0] ?? topic.label;
+        get<HTMLInputElement>('#play-command').value = `talk to ${alias} about ${topicAlias}`;
+        get<HTMLFormElement>('.play-command').requestSubmit();
+        expect(get('.play-log').lastElementChild?.lastElementChild?.textContent)
+          .not.toContain('does not recognise that topic');
+      }
+
       get<HTMLInputElement>('#play-command').value = `talk to ${alias}`;
       get<HTMLFormElement>('.play-command').requestSubmit();
       expect(get('.play-log').lastElementChild?.lastElementChild?.textContent)
