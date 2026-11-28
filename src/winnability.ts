@@ -319,20 +319,24 @@ export function checkWinnability(world: AdventureWorld): WinnabilityResult {
   const choiceOfStep = new Map(world.solution.steps.flatMap(({ id, choiceId }) =>
     choiceId === undefined ? [] : [[id, choiceId] as const]));
   // Links each searched state to the states it leads to, to find any that can't win.
-  const parents: (string | null)[] = [null];
   const ledFrom = new Map<string, string[]>();
   const winningKeys: string[] = [];
   let winnable = false;
   const enqueue = (next: SearchState, parentKey: string): boolean => {
     const nextArea = settleHere(world, next, automatic);
     const nextKey = stateKey(nextArea[0], next);
+    const sources = ledFrom.get(nextKey);
+    if (sources) {
+      if (!sources.includes(parentKey)) sources.push(parentKey);
+    } else {
+      ledFrom.set(nextKey, [parentKey]);
+    }
     if (seen.has(nextKey) || queued.has(nextKey)) return true;
     queued.add(nextKey);
     // Count each state queued, so work and memory stay capped.
     if (statesCreated >= MAX_SEARCH_STATES) return false;
     statesCreated++;
     queue.push(next);
-    parents.push(parentKey);
     return true;
   };
 
@@ -340,12 +344,6 @@ export function checkWinnability(world: AdventureWorld): WinnabilityResult {
     const state = queue[index];
     const area = settleHere(world, state, automatic);
     const key = stateKey(area[0], state);
-    const parentKey = parents[index];
-    if (parentKey !== null) {
-      const sources = ledFrom.get(key);
-      if (sources) sources.push(parentKey);
-      else ledFrom.set(key, [parentKey]);
-    }
     if (seen.has(key)) continue;
     seen.add(key);
     for (const id of state.stepsDone) reachableSteps.add(id);

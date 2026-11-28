@@ -126,8 +126,10 @@ using the final matching wording prepared in
 [pull request #63](https://github.com/juadielon/textQuest/pull/63).
 Its complete content, word lists and representative worlds are pinned
 separately. Tests sweep 300 seeds at every length, with at least 80%
-distinct worlds in each genre/plot/length group and winnability with and
-without optional steps. Places, routes and prose are still authored, not
+distinct worlds in each genre/plot/length group. Short and medium worlds are
+checked with and without optional steps; long worlds use the bounded required-
+step route because full optional-route search is combinatorial. Places, routes
+and prose are still authored, not
 unique for every seed. The browser uses the released authored names and prose.
 Saves keep an ID or content-name replay mode for every command.
 Released generated worlds only add progress. World rules and checks for

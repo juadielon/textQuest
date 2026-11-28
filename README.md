@@ -131,7 +131,8 @@ when they are available, can be undone, and do not reveal hidden outcomes or
 puzzle answers. Hints stay general because route hints do not yet model
 choices. Worlds with failure endings are refused until checkpoint recovery
 is available. See the roadmap for the related work and current limitations.
-Released adventures, share words and saves remain unchanged.
+Current adventures, share words and saves use one format. This retirement
+does not preserve compatibility with older share words or saves.
 
 The project is written in TypeScript. Vite turns it into the HTML, CSS and
 JavaScript files used by the browser. The written content is in

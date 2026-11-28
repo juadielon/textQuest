@@ -85,4 +85,20 @@ describe('checkWinnability', () => {
       canGetStuck: true,
     });
   });
+
+  it('keeps every incoming route when two parents merge', () => {
+    const merged = world({
+      places: [{ id: 'gate' }, { id: 'left' }, { id: 'right' }, { id: 'goal' }],
+      exits: [
+        { id: 'left-path', fromPlaceId: 'gate', toPlaceId: 'left', locked: false },
+        { id: 'right-path', fromPlaceId: 'gate', toPlaceId: 'right', locked: false },
+        { id: 'left-goal', fromPlaceId: 'left', toPlaceId: 'goal', locked: false },
+        { id: 'right-goal', fromPlaceId: 'right', toPlaceId: 'goal', locked: false },
+      ],
+    });
+    expect(checkWinnability(merged)).toMatchObject({
+      winnable: true,
+      canGetStuck: false,
+    });
+  });
 });

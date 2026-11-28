@@ -4,6 +4,7 @@ import type { ContentPack, Prose } from './format';
 import { lightFantasy } from './light-fantasy';
 import { scienceFiction } from './science-fiction';
 import { cosyMysteryWithWording, lightFantasyWithWording, scienceFictionWithWording } from './place-wording';
+import { validateWorld } from '../winnability';
 
 const words = (text: string) => text.toLowerCase().match(/[a-z]+/g) ?? [];
 
@@ -29,8 +30,88 @@ function movableMentions(pack: Pick<ContentPack, 'places' | 'items' | 'clues'>):
 }
 
 const pairs = [[lightFantasy, lightFantasyWithWording], [cosyMystery, cosyMysteryWithWording], [scienceFiction, scienceFictionWithWording]] as const;
+const packs: readonly ContentPack[] = [lightFantasy, cosyMystery, scienceFiction];
+
+function expectUniqueIds(entries: readonly { readonly id: string }[], kind: string): void {
+  const ids = new Set<string>();
+  for (const entry of entries) {
+    expect(ids.has(entry.id), `${kind} ID ${entry.id} is repeated`).toBe(false);
+    ids.add(entry.id);
+  }
+}
+
+function expectReferences(
+  prose: readonly Prose[],
+  pack: ContentPack,
+): void {
+  for (const text of prose) {
+    for (const part of text) {
+      if (typeof part === 'string') continue;
+      const targets = part.kind === 'place'
+        ? pack.places
+        : part.kind === 'character'
+          ? pack.characters
+          : part.kind === 'item'
+            ? pack.items
+            : pack.clues;
+      expect(targets.some(({ id }) => id === part.id),
+        `${part.kind} reference ${part.id} exists`).toBe(true);
+    }
+  }
+}
 
 describe('place descriptions', () => {
+  it.each(packs)('validates the $genre current content pack', (pack) => {
+    expectUniqueIds(pack.places, 'place');
+    expectUniqueIds(pack.characters, 'character');
+    expectUniqueIds(pack.items, 'item');
+    expectUniqueIds(pack.clues, 'clue');
+    expectUniqueIds(pack.puzzles, 'puzzle');
+    expectUniqueIds(pack.optionalDiscoveries, 'optional discovery');
+    expectUniqueIds(pack.endings, 'ending');
+
+    validateWorld({
+      startPlaceId: pack.startPlaceId,
+      places: pack.places.map(({ id }) => ({ id })),
+      exits: pack.exits,
+      items: pack.items.map(({ id, placeId }) => ({ id, placeId })),
+      clues: pack.clues.map(({ id, placeId }) => ({ id, placeId })),
+      solution: pack.solution,
+    });
+
+    const placeIds = new Set(pack.places.map(({ id }) => id));
+    const stepIds = new Set(pack.solution.steps.map(({ id }) => id));
+    const puzzleIds = new Set(pack.puzzles.map(({ id }) => id));
+    const endingIds = new Set(pack.endings.map(({ id }) => id));
+    for (const plot of pack.plots) {
+      for (const plan of Object.values(plot.lengths)) {
+        expect(plan.placeIds.every((id) => placeIds.has(id)), 'length plan places exist').toBe(true);
+        expect(plan.requiredStepIds.every((id) => stepIds.has(id)), 'length plan steps exist').toBe(true);
+      }
+      for (const [stepId, dependencies] of Object.entries(plot.dependencies)) {
+        expect(stepIds.has(stepId), `dependency step ${stepId} exists`).toBe(true);
+        expect(dependencies.every((id) => stepIds.has(id)), `dependencies of ${stepId} exist`).toBe(true);
+      }
+      expect(plot.endingIds.every((id) => endingIds.has(id)), 'plot endings exist').toBe(true);
+    }
+    for (const puzzle of [...pack.puzzles, ...pack.optionalDiscoveries]) {
+      expect(stepIds.has(puzzle.id) || puzzleIds.has(puzzle.id),
+        `puzzle ${puzzle.id} exists`).toBe(true);
+    }
+
+    const prose = [
+      ...pack.places.flatMap(({ description }) => [description]),
+      ...pack.characters.flatMap(({ description, motive }) => [description, motive]),
+      ...pack.items.flatMap(({ description }) => [description]),
+      ...pack.clues.flatMap(({ text }) => [text]),
+      ...pack.puzzles.flatMap(({ prompt, completion }) => [prompt, completion]),
+      ...pack.optionalDiscoveries.flatMap(({ prompt, completion }) => [prompt, completion]),
+      ...pack.plots.flatMap(({ introduction }) => [introduction]),
+      ...pack.endings.flatMap(({ text }) => [text]),
+    ];
+    expectReferences(prose, pack);
+  });
+
   it.each([
     [lightFantasyWithWording, '0052f8fcb439824060ad74dc23b8dc2ff35c5188b3711be845c07e57881fabfd'],
     [cosyMysteryWithWording, 'ee4efdb87fac595c2c25a4ef64229c2d9b5f036e498cf7abe75a66491ecaa998'],
