@@ -145,18 +145,22 @@ it.each<adventureSettings.AdventureGenre>(['light-fantasy', 'cosy-mystery', 'sci
 it.each([
   ['light-fantasy', 0,
     'A flood is coming. someone asks you to restore the valley warning stations in order.',
-    'Objective: Restore each valley warning station and light the place.',
+    'Objective: Restore each valley warning station and light the beacon.',
+    'Look for an item that belongs near here.',
     'Your work gives the valley a warning before the flood. Boats reach shelter in time.'],
   ['cosy-mystery', 1,
     'The Silver Teapot has vanished before the fete. Mrs Finch the organiser asks you to follow its trail, one clue at a time.',
     'Objective: Find who borrowed the Silver Teapot and return it before judging.',
+    'Look for something useful nearby or a way you have discovered.',
     'The trail ends with a well-meaning borrower. The Silver Teapot is back on Village green before the judging.'],
   ['science-fiction', 2,
-    'someone has heard a faint call from the late supply ship. Follow two lines of repairs and bring them together to a clue it home.',
-    'Objective: Repair the station, trace the ship and a clue it home.',
+    'someone has heard a faint call from the late supply ship. Follow two lines of repairs and bring them together to guide it home.',
+    'Objective: Repair the station, trace the ship and guide it home.',
+    'Look for an item that belongs near here.',
     'The supply ship docks safely. Pip the signaller finally takes off their headset.'],
 ] as const)(
-  'proves the complete browser story loop for %s', (genre, seed, introduction, objective, endingText) => {
+  'proves the complete browser story loop for %s',
+  (genre, seed, introduction, objective, stageTwoHint, endingText) => {
     const shared = adventureSettings.createAdventureSettings(seed, 'short');
     expect(shared.genre).toBe(genre);
     openAdventure(adventureSettings.encodeShareWord(shared));
@@ -185,7 +189,7 @@ it.each([
         get<HTMLInputElement>('#play-command').value = `talk to ${alias} about ${topicAlias}`;
         get<HTMLFormElement>('.play-command').requestSubmit();
         expect(get('.play-log').lastElementChild?.lastElementChild?.textContent)
-          .not.toContain('does not recognise that topic');
+          .toContain('discusses that topic');
       }
 
       get<HTMLInputElement>('#play-command').value = `talk to ${alias}`;
@@ -205,7 +209,10 @@ it.each([
       get<HTMLFormElement>('.play-command').requestSubmit();
       hintResponses.push(get('.play-log').lastElementChild?.lastElementChild?.textContent ?? '');
     }
-    expect(new Set(hintResponses).size).toBe(3);
+    expect(hintResponses[0]).toBe('Pause and look at the situation before choosing an action.');
+    expect(hintResponses[1]).toBe(stageTwoHint);
+    expect(hintResponses[2]).not.toBe('');
+    expect(hintResponses.join(' ')).not.toMatch(/river guest|silver teapot|supply ship|hidden|secret/i);
     expect(get('.play-sidebar > p:last-child').textContent).toBe('Turns taken: 0');
 
     const beforeInvalid = {
@@ -214,6 +221,8 @@ it.each([
     };
     get<HTMLInputElement>('#play-command').value = 'unrecognised command';
     get<HTMLFormElement>('.play-command').requestSubmit();
+    expect(get('.play-log').lastElementChild?.lastElementChild?.textContent)
+      .toBe('That command is not supported. Type help for commands.');
     expect(get('.play-place-name').textContent).toBe(beforeInvalid.place);
     expect(get('.play-sidebar > p:last-child').textContent).toBe(beforeInvalid.turns);
 

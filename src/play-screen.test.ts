@@ -495,7 +495,7 @@ describe('renderPlayScreen', () => {
 
     const responses = text(target, '.play-entry p:not(.play-typed)');
     expect(responses.at(-3)).toBe('Pause and look at the situation before choosing an action.');
-    expect(responses.at(-2)).toBe('Look for something useful nearby or a way you have discovered.');
+    expect(responses.at(-2)).toBe('Look for an item that belongs near here.');
     expect(responses.at(-1)).toBe('Try taking the brass key.');
     expect(responses.join(' ')).not.toContain('hidden gem');
   });
@@ -513,7 +513,7 @@ describe('renderPlayScreen', () => {
     expect(document.activeElement).toBe(input);
     expect(announcer.children).toHaveLength(1);
     expect(announcer.firstChild).not.toBe(first);
-    expect(announcer.textContent).toBe('Look for something useful nearby or a way you have discovered.');
+    expect(announcer.textContent).toBe('Look for an item that belongs near here.');
   });
 
   it('shows the ending when the goal is reached and hides it again after undo', () => {
