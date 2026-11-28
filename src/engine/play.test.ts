@@ -893,9 +893,8 @@ describe('playing choices', () => {
     const roomStart = startPlay(room);
     let stage = playCommand(room, roomStart, 'hint').state;
     stage = playCommand(room, stage, 'hint').state;
-    const firstChoice = discoveredTargets(room, roomStart).find(({ kind }) => kind === 'choice')!;
     expect(playCommand(room, stage, 'hint').message)
-      .toBe(`Try choosing ${firstChoice.name}.`);
+      .toBe('Look for a choice that could help you reach the goal.');
     const dark = playCommand(room, roomStart, 'choose choice 2').state;
     stage = playCommand(room, dark, 'hint').state;
     stage = playCommand(room, stage, 'hint').state;
@@ -923,6 +922,32 @@ describe('playing choices', () => {
     indirectStage = playCommand(indirect, indirectStage, 'hint').state;
     expect(playCommand(indirect, indirectStage, 'hint').message)
       .toBe('Look around and think about what you could do next. You can also try undo.');
+  });
+
+  it('only names a choice with a verified winning continuation', () => {
+    const world: AdventureWorld = {
+      startPlaceId: 'gate',
+      places: [{ id: 'gate' }, { id: 'finish' }],
+      exits: [],
+      items: [],
+      clues: [],
+      solution: {
+        steps: [
+          { id: 'dead-end', placeId: 'gate', conditions: {}, choiceId: 'route', effects: [] },
+          {
+            id: 'winning-route', placeId: 'gate', conditions: {}, choiceId: 'route',
+            effects: [{ kind: 'end-adventure', endingId: 'win' }],
+          },
+        ],
+        goal: { placeId: 'finish', conditions: {} },
+        endings: [{ id: 'win', outcome: 'win' }],
+      },
+    };
+    const start = startPlay(world);
+    let state = playCommand(world, start, 'hint').state;
+    state = playCommand(world, state, 'hint').state;
+    expect(playCommand(world, state, 'hint').message)
+      .toBe('Try choosing choice 2.');
   });
 });
 

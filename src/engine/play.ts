@@ -861,11 +861,56 @@ function nextPlaceToGoal(
   return null;
 }
 
+function choiceHasWinningContinuation(
+  world: PlayWorld,
+  start: Progress,
+  choice: { id: string; step: PuzzleStep },
+): boolean {
+  const initial = cloneProgress(start);
+  completeStep(world, initial, choice.step, false);
+  settleGreedily(world, initial);
+  const queue: Progress[] = [initial];
+  const seen = new Set([progressKey(initial)]);
+  for (let index = 0; index < queue.length; index++) {
+    const progress = queue[index];
+    if (goalMet(world, progress) || winningEndingReached(world, progress)) return true;
+    for (const nextChoice of choicesHere(world, progress)) {
+      const next = cloneProgress(progress);
+      completeStep(world, next, nextChoice.step, false);
+      settleGreedily(world, next);
+      if (goalMet(world, next) || winningEndingReached(world, next)) return true;
+      const key = progressKey(next);
+      if (!seen.has(key)) {
+        seen.add(key);
+        queue.push(next);
+      }
+    }
+    for (const exit of exitsFrom(world, progress.placeId)) {
+      if (!isOpen(progress, exit)) continue;
+      const next = cloneProgress(progress);
+      arrive(world, next, exit.toPlaceId);
+      settleGreedily(world, next);
+      if (goalMet(world, next) || winningEndingReached(world, next)) return true;
+      const key = progressKey(next);
+      if (seen.size >= 10_000) return false;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      queue.push(next);
+    }
+  }
+  return false;
+}
+
 function hintFinal(world: PlayWorld, progress: Progress, canUndo: boolean): string {
   const choices = choicesHere(world, progress);
   if (choices.length) {
-    const name = stateNameOf(world, progress, 'choice', choices[0].id);
-    return `Try choosing ${name}.`;
+    const winningChoice = choices.find((choice) =>
+      choiceHasWinningContinuation(world, progress, choice));
+    if (winningChoice) {
+      const name = stateNameOf(world, progress, 'choice', winningChoice.id);
+      return `Try choosing ${name}.`;
+    }
+    return 'Look for a choice that could help you reach the goal.';
   }
   if (world.solution.steps.some(isDecision)) {
     const hasClosedChoice = [...progress.stepsDone].some((id) =>
