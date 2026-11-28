@@ -1,6 +1,6 @@
 import { createSeededRandom } from './seeded-random';
 import {
-  versionOneFirstWords, versionOneSecondWords, versionTwoFirstWords, versionTwoSecondWords,
+  versionTwoFirstWords, versionTwoSecondWords,
 } from './share-words';
 
 /*
@@ -12,8 +12,8 @@ import {
  * Adventure lengths a player can choose, in share-word order.
  *
  * @remarks
- * Never add, remove, rename or reorder entries. Released version 1 share
- * words depend on this exact list; a change needs a new version.
+ * Never add, remove, rename or reorder entries. Share words depend on this
+ * exact list; a change needs a new version.
  */
 export const adventureLengths = ['short', 'medium', 'long'] as const;
 
@@ -52,36 +52,11 @@ export function isAdventureGenre(value: unknown): value is AdventureGenre {
  */
 export const currentVersion = 2;
 
-interface VersionRules {
-  readonly genres: readonly AdventureGenre[];
-  readonly firstWords: readonly string[];
-  readonly secondWords: readonly string[];
-}
-
-const versionRules: ReadonlyMap<number, VersionRules> = new Map([
-  [
-    1,
-    {
-      // The seed picks a genre by position. Never change this list: released
-      // version 1 share words depend on it.
-      genres: ['light-fantasy', 'cosy-mystery', 'science-fiction'],
-      firstWords: versionOneFirstWords,
-      secondWords: versionOneSecondWords,
-    },
-  ],
-  [
-    2,
-    {
-      // Version 2 keeps these genre draws but adds seeded placement after the plot.
-      genres: ['light-fantasy', 'cosy-mystery', 'science-fiction'],
-      firstWords: versionTwoFirstWords,
-      secondWords: versionTwoSecondWords,
-    },
-  ],
-]);
+const adventureVersionGenres: readonly AdventureGenre[] =
+  ['light-fantasy', 'cosy-mystery', 'science-fiction'];
 
 /** Adventure versions this copy of textQuest can create and open. */
-export const supportedVersions: readonly number[] = [...versionRules.keys()];
+export const supportedVersions: readonly number[] = [currentVersion];
 
 /** Everything needed to recreate the same starting adventure. */
 export interface AdventureSettings {
@@ -119,28 +94,20 @@ export class ShareWordError extends Error {
   }
 }
 
-function rulesFor(version: number): VersionRules {
-  const rules = versionRules.get(version);
-  if (!rules) {
-    throw new RangeError(`Adventure version ${version} is not supported.`);
-  }
-  return rules;
-}
-
 /**
- * Counts the seeds a version supports.
+ * Counts the seeds version 2 supports.
  *
  * @remarks
  * Every word pair stands for one seed and length, so the number of seeds is
  * the number of pairs shared out between the lengths.
  *
- * @param version - The adventure version.
  * @returns How many seeds the version has. Valid seeds go from 0 to this number minus 1.
- * @throws RangeError if the version is not supported.
  */
-export function seedCountFor(version: number): number {
-  const rules = rulesFor(version);
-  return Math.floor((rules.firstWords.length * rules.secondWords.length) / adventureLengths.length);
+export function seedCountFor(version: number = currentVersion): number {
+  if (version !== currentVersion) {
+    throw new RangeError(`Adventure version ${version} is not supported.`);
+  }
+  return Math.floor((versionTwoFirstWords.length * versionTwoSecondWords.length) / adventureLengths.length);
 }
 
 /**
@@ -159,17 +126,19 @@ export function createAdventureSettings(
   length: AdventureLength,
   version: number = currentVersion,
 ): AdventureSettings {
-  const rules = rulesFor(version);
-  if (!Number.isInteger(seed) || seed < 0 || seed >= seedCountFor(version)) {
-    throw new RangeError(`A version ${version} seed must be a whole number below ${seedCountFor(version)}.`);
+  if (version !== currentVersion) {
+    throw new RangeError(`Adventure version ${version} is not supported.`);
+  }
+  if (!Number.isInteger(seed) || seed < 0 || seed >= seedCountFor()) {
+    throw new RangeError(`A seed must be a whole number below ${seedCountFor()}.`);
   }
   if (!adventureLengths.includes(length)) {
     throw new RangeError('Choose a short, medium or long adventure.');
   }
 
   const random = createSeededRandom(seed);
-  const genre = rules.genres[random.pickIndex(rules.genres.length)];
-  return { version, seed, length, genre };
+  const genre = adventureVersionGenres[random.pickIndex(adventureVersionGenres.length)];
+  return { version: currentVersion, seed, length, genre };
 }
 
 /**
@@ -206,10 +175,14 @@ function randomIndex(count: number, source: RandomValueSource): number {
  * @throws RangeError if the version is not supported.
  */
 export function createSeed(
-  version: number = currentVersion,
+  versionOrSource: number | RandomValueSource = globalThis.crypto,
   source: RandomValueSource = globalThis.crypto,
 ): number {
-  const count = seedCountFor(version);
+  if (typeof versionOrSource === 'number') {
+    throw new RangeError(`Adventure version ${versionOrSource} is not supported.`);
+  }
+  source = versionOrSource;
+  const count = seedCountFor();
   return randomIndex(count, source);
 }
 
@@ -231,7 +204,7 @@ export function createNewAdventureSettings(
       throw new RangeError('Choose a supported adventure genre.');
     }
     const matchingSeeds: number[] = [];
-    for (let seed = 0; seed < seedCountFor(currentVersion); seed += 1) {
+    for (let seed = 0; seed < seedCountFor(); seed += 1) {
       if (createAdventureSettings(seed, length).genre === genre) {
         matchingSeeds.push(seed);
       }
@@ -249,26 +222,25 @@ export function createNewAdventureSettings(
  * Turns adventure settings into their one canonical share word.
  *
  * @remarks
- * A share word joins one word from each list, such as "silverlantern".
- * Version 1 words have no number. Later versions end with their number,
- * such as "sunlitsaucer2", so older copies can say they do not support them.
+ * A share word joins one word from each list and ends with the adventure
+ * version, such as "sunlitsaucer2".
  *
  * @param settings - The settings to share.
  * @returns A lowercase share word.
  * @throws RangeError if the settings are invalid or the genre doesn't match the seed.
  */
 export function encodeShareWord(settings: AdventureSettings): string {
-  const expected = createAdventureSettings(settings.seed, settings.length, settings.version);
-  if (settings.genre !== expected.genre) {
-    throw new RangeError('The genre does not match this seed and version.');
+  if (settings.version !== currentVersion) {
+    throw new RangeError(`Adventure version ${settings.version} is not supported.`);
   }
-
-  const rules = rulesFor(settings.version);
+  const expected = createAdventureSettings(settings.seed, settings.length);
+  if (settings.genre !== expected.genre) {
+    throw new RangeError('The genre does not match this seed.');
+  }
   const pairNumber = settings.seed * adventureLengths.length + adventureLengths.indexOf(settings.length);
-  const first = rules.firstWords[Math.floor(pairNumber / rules.secondWords.length)];
-  const second = rules.secondWords[pairNumber % rules.secondWords.length];
-  const suffix = settings.version === 1 ? '' : String(settings.version);
-  return `${first}${second}${suffix}`;
+  const first = versionTwoFirstWords[Math.floor(pairNumber / versionTwoSecondWords.length)];
+  const second = versionTwoSecondWords[pairNumber % versionTwoSecondWords.length];
+  return `${first}${second}${currentVersion}`;
 }
 
 function malformed(): ShareWordError {
@@ -299,32 +271,32 @@ export function parseShareWord(input: string): AdventureSettings {
   }
 
   const [, letters, suffix] = match;
-  if (suffix !== '' && !/^[2-9]$|^[1-9]\d+$/.test(suffix)) {
+  if (suffix === '') {
     throw malformed();
   }
-
-  const version = suffix === '' ? 1 : Number(suffix);
-  if (!versionRules.has(version)) {
+  if (!/^[2-9]$|^[1-9]\d+$/.test(suffix)) {
+    throw malformed();
+  }
+  const version = Number(suffix);
+  if (version !== currentVersion) {
     throw new ShareWordError(
       'unsupported-version',
       `That share word is for adventure version ${suffix}, which this copy of textQuest does not support.`,
     );
   }
-
-  const rules = rulesFor(version);
-  for (const [firstIndex, first] of rules.firstWords.entries()) {
+  for (const [firstIndex, first] of versionTwoFirstWords.entries()) {
     if (!letters.startsWith(first)) {
       continue;
     }
-    const secondIndex = rules.secondWords.indexOf(letters.slice(first.length));
+    const secondIndex = versionTwoSecondWords.indexOf(letters.slice(first.length));
     if (secondIndex === -1) {
       continue;
     }
 
-    const pairNumber = firstIndex * rules.secondWords.length + secondIndex;
+    const pairNumber = firstIndex * versionTwoSecondWords.length + secondIndex;
     const seed = Math.floor(pairNumber / adventureLengths.length);
     const length = adventureLengths[pairNumber % adventureLengths.length];
-    return createAdventureSettings(seed, length, version);
+    return createAdventureSettings(seed, length);
   }
 
   throw malformed();

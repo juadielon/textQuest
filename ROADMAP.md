@@ -64,8 +64,7 @@ play for new adventures or share words, and play shows the share word
 Play also shows the selected plot's readable title beside the share word
 ([issue #81](https://github.com/juadielon/textQuest/issues/81)).
 Names containing a hidden name or alias use a generic genre title instead.
-The same adventure has the same title in versions 1 and 2; titles can repeat,
-so only the share word identifies the exact starting adventure.
+Titles can repeat, so only the share word identifies the exact starting adventure.
 Version 1 settings generate
 repeatable engine worlds ([issue #31](https://github.com/juadielon/textQuest/issues/31)),
 implemented in [pull request #35](https://github.com/juadielon/textQuest/pull/35).
@@ -73,9 +72,8 @@ implemented in [pull request #35](https://github.com/juadielon/textQuest/pull/35
 cosy mystery and science fiction genres.
 New adventures now use separately versioned seeded placement
 ([issue #51](https://github.com/juadielon/textQuest/issues/51)).
-Version 2 share words end in `2` and recreate the same starting world;
-version 1 words and saves retain their original rules. Both versions have
-exhaustive share-word round-trip tests. Browser saving and resuming are implemented.
+Version 2 share words end in `2` and recreate the same starting world.
+Exhaustive share-word round-trip tests and browser saving and resuming are implemented.
 Shareable links ([issue #80](https://github.com/juadielon/textQuest/issues/80))
 now open the exact versioned starting adventure without player progress.
 They keep the hosting sub-path and report invalid or unsupported words through
@@ -130,11 +128,8 @@ Its complete content, word lists and representative worlds are pinned
 separately. Tests sweep seeds 0 to 999 at every length, with at least 80%
 distinct worlds in each genre/plot/length group and winnability with and
 without optional steps. Places, routes and prose are still authored, not
-unique for every seed. Version 1 is released and
-keeps its original 27 worlds, share words, content and saved-command replay.
-The browser uses each version's authored names and prose. Save format 2 keeps
-an ID or content-name replay mode for every command; format 1 histories
-migrate to ID mode so old failed commands keep their meaning.
+unique for every seed. The browser uses the released authored names and prose.
+Save format 2 keeps an ID or content-name replay mode for every command.
 Released generated worlds only add progress. World format version 2 rules
 and checks for mutually exclusive choices and early win or failure endings
 are prepared ([issue #79](https://github.com/juadielon/textQuest/issues/79)),
@@ -180,9 +175,8 @@ or import save files. Invalid files and storage errors are reported clearly.
 **Depends on:** Milestones 3 and 5.
 
 A save stores the settings, typed commands and one ID/content replay mode per
-command. Format 2 migrates format 1 histories to ID mode and retains mixed
-histories, including failed commands. Replaying commands into regenerated
-version 1 and version 2 worlds is covered by unit tests. Players save during
+command. Format 2 retains mixed histories, including failed commands. Replaying commands into regenerated
+version 2 worlds is covered by unit tests. Players save during
 play, see their saves listed and resume one by replaying its commands. Delete
 asks first, and unreadable saves are listed and kept. Export downloads a JSON
 file. Import validates files and adds a new save without overwriting others;

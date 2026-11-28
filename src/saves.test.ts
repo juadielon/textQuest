@@ -24,7 +24,7 @@ import {
   type StorageLike,
 } from './saves';
 
-const settings = createAdventureSettings(1234, 'medium', 1);
+const settings = createAdventureSettings(1234, 'medium', 2);
 const createdTime = new Date('2026-10-12T04:00:00.000Z');
 
 function sampleSave(name = 'Lighthouse trip', commands: string[] = ['look', 'go north']) {
@@ -160,33 +160,11 @@ describe('save format', () => {
     expect(importSaveFile(exportSaveFile(save))).toEqual(save);
   });
 
-  it('migrates old command histories to ID replay and keeps mixed modes when re-saving', () => {
-    for (const version of [1, 2]) {
-      const old = JSON.parse(exportSaveFile(createSave(
-        'Older save', createAdventureSettings(1234, 'medium', version), ['look', 'go north'], createdTime,
-      ))) as Record<string, unknown>;
-      delete old.commandModes;
-      old.formatVersion = 1;
-      const imported = importSaveFile(JSON.stringify(old));
-      const resaved = importSaveFile(exportSaveFile(imported));
-
-      expect(imported.formatVersion).toBe(saveFormatVersion);
-      expect(imported.commandModes).toEqual(['id', 'id']);
-      expect(resaved.commandModes).toEqual(imported.commandModes);
-    }
-
+  it('keeps mixed replay modes when re-saving', () => {
     const mixed = createSave('Mixed history', settings, ['look', 'go north'], createdTime, ['id', 'content']);
     expect(importSaveFile(exportSaveFile(mixed)).commandModes).toEqual(['id', 'content']);
   });
-
-  it('ignores legacy replay-mode extras and copies validated mode arrays', () => {
-    const original = JSON.parse(exportSaveFile(sampleSave())) as Record<string, unknown>;
-    original.formatVersion = 1;
-    for (const extraModes of [['content', 'content'], { mode: 'content' }]) {
-      const imported = importSaveFile(JSON.stringify({ ...original, commandModes: extraModes }));
-      expect(imported.commandModes).toEqual(['id', 'id']);
-    }
-
+  it('copies validated replay mode arrays', () => {
     const createModes: CommandReplayMode[] = ['id', 'content'];
     const created = createSave('Copied modes', settings, ['look', 'go north'], createdTime, createModes);
     createModes[0] = 'content';
@@ -330,7 +308,7 @@ describe('save store', () => {
     return { storage, store: createSaveStore(storage, countingSource()) };
   }
 
-  it.each([1, 2])(
+  it.each([2])(
     'preserves old, failed and mixed-name commands for adventure version %i',
     (version) => {
       const settings = createAdventureSettings(0, 'long', version);
@@ -363,28 +341,9 @@ describe('save store', () => {
     },
   );
 
-  it.each([1, 2])('keeps coal-shed failed commands in ID mode when a legacy file has extra modes for version %i', (version) => {
-    const settings = createAdventureSettings(0, 'long', version);
-    const pack = adventurePack(version, settings.genre);
-    const generated = generateAdventureWorld(settings);
-    const world = { ...generated, names: worldNamesFrom(pack, generated) };
-    const route = commandsToPlace(world, 'coal-shed');
-    const commands = [...route, 'go heather path'];
-    const legacy = JSON.parse(exportSaveFile(createSave(
-      'Old route', settings, commands, createdTime,
-    ))) as Record<string, unknown>;
-    legacy.formatVersion = 1;
-    legacy.commandModes = commands.map(() => 'content');
-
-    const restored = importSaveFile(JSON.stringify(legacy));
-    const state = replayCommands(world, restored.commands, restored.commandModes);
-    expect(restored.commandModes).toEqual(commands.map(() => 'id'));
-    expect(state.placeId).toBe('coal-shed');
-  });
-
-  it('stores both adventure versions and imports copies without changing existing saves', () => {
+  it('stores version 2 saves and imports copies without changing existing saves', () => {
     const { storage, store } = setUp();
-    for (const version of [1, 2]) for (const seed of [0, 1, 17000]) for (const length of adventureLengths) {
+    for (const version of [2]) for (const seed of [0, 1, 17000]) for (const length of adventureLengths) {
       const settings = createAdventureSettings(seed, length, version);
       const save = createSave('Versioned trip', settings, ['look', 'take unknown item', 'undo'], createdTime);
       const id = store.add(save);
@@ -403,7 +362,7 @@ describe('save store', () => {
         generateAdventureWorld(settings), save.commands, save.commandModes,
       ));
     }
-    expect(store.list()).toHaveLength(36);
+    expect(store.list()).toHaveLength(18);
   });
 
   it('saves, lists, loads and deletes several adventures', () => {
@@ -549,31 +508,6 @@ describe('save store', () => {
     expect(copy).not.toBe(id);
     expect(store.load(copy)).toEqual(store.load(id));
     expect(storage.items.get(SAVE_KEY_PREFIX + id)).toBe(before.get(SAVE_KEY_PREFIX + id));
-  });
-
-  it('imports, exports and resaves an in-limit legacy file after mode migration', () => {
-    const { store } = setUp();
-    const legacy = {
-      formatVersion: 1,
-      name: 'Large legacy history',
-      settings: createAdventureSettings(0, 'long', 1),
-      commands: Array(10_000).fill('x'.repeat(90)),
-      createdAt: '2026-10-12T04:00:00.000Z',
-      updatedAt: '2026-10-12T04:00:00.000Z',
-    };
-    const legacyText = JSON.stringify(legacy, null, 2);
-    expect(legacyText.length).toBeLessThan(1_000_000);
-
-    const id = store.importSave(legacyText);
-    const migratedText = store.exportSave(id);
-    expect(migratedText.length).toBeGreaterThan(1_000_000);
-    expect(migratedText.length).toBeLessThanOrEqual(MAX_SAVE_FILE_LENGTH);
-
-    const reloaded = store.load(id);
-    expect(reloaded.commands).toEqual(legacy.commands);
-    expect(reloaded.commandModes).toEqual(Array(10_000).fill('id'));
-    const resavedId = store.add(reloaded);
-    expect(store.load(resavedId)).toEqual(reloaded);
   });
 
   it('leaves storage untouched when an import is rejected', () => {

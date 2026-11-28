@@ -5,7 +5,7 @@ import {
   type AdventureGenre, type AdventureSettings,
 } from './adventure-settings';
 import type { AdventureWorld } from './adventure-world';
-import type { ContentPack } from './content/v1/format';
+import type { VersionTwoContentPack } from './content/v2/place-wording';
 import { commandHelp } from './engine/commands';
 import * as play from './engine/play';
 import { adventurePack, generateAdventureWorld } from './generate-world';
@@ -32,7 +32,7 @@ vi.mock('./engine/play', async (original) => {
 
 // A tiny world that is quick to win, so the ending can be checked.
 const tinyWorld: AdventureWorld = {
-  version: 1,
+  version: 2,
   startPlaceId: 'gate',
   places: [{ id: 'gate' }, { id: 'old-tower' }],
   exits: [
@@ -50,8 +50,8 @@ const tinyWorld: AdventureWorld = {
   },
 };
 
-const tinyPack: ContentPack = {
-  version: 1,
+const tinyPack: VersionTwoContentPack = {
+  version: 2,
   genre: 'light-fantasy',
   startPlaceId: 'gate',
   places: [
@@ -230,7 +230,7 @@ describe('renderPlayScreen', () => {
     const target = document.createElement('main');
     document.body.append(target);
 
-    renderPlayScreen(target, createAdventureSettings(0, 'long', 1));
+    renderPlayScreen(target, createAdventureSettings(0, 'long', 2));
 
     expect(target.querySelector('.play-objective')?.textContent)
       .not.toContain('Hill beacon');
@@ -544,7 +544,7 @@ describe('renderPlayScreen', () => {
         goal: { placeId: 'old-tower', conditions: {} },
       },
     };
-    const choicePack: ContentPack = {
+    const choicePack: VersionTwoContentPack = {
       ...tinyPack,
       optionalDiscoveries: [{
         id: 'push-cart', placeId: 'gate', family: 'help-character', choice: 'non-graphic-force',
@@ -680,7 +680,7 @@ describe('renderPlayScreen', () => {
     [20, 'Wake the quiet station'],
   ] as const)('pins seed %i title "%s" across released versions and lengths', (seed, title) => {
     const target = document.createElement('main');
-    for (const version of [1, 2]) for (const length of adventureLengths) {
+    for (const version of [2]) for (const length of adventureLengths) {
       const settings = createAdventureSettings(seed, length, version);
       const before = generateAdventureWorld(settings);
       const word = encodeShareWord(settings);
@@ -701,7 +701,7 @@ describe('renderPlayScreen', () => {
     expect(target.querySelector('.play-plot-name')).toBeNull();
   });
 
-  it.each([1, 2])('keeps hidden names and aliases out of version %i titles, including resumed games', (version) => {
+  it.each([2])('keeps hidden names and aliases out of version %i titles, including resumed games', (version) => {
     const settings = settingsFor('light-fantasy', version);
     const commands = ['take brass key', 'use brass key', 'go to old tower'];
     for (const history of [[], commands]) {
@@ -735,7 +735,7 @@ describe('renderPlayScreen', () => {
     expect(target.querySelector('img')).toBeNull();
   });
 
-  it.each([1, 2])('shows authored names and safe prose for adventure version %i', (version) => {
+  it.each([2])('shows authored names and safe prose for adventure version %i', (version) => {
     const settings = settingsFor('light-fantasy', version);
     const world = generateAdventureWorld(settings);
     const pack = adventurePack(version, settings.genre);
@@ -817,7 +817,7 @@ describe('renderPlayScreen', () => {
   });
 
   it('does not mask a prose word used as an ambiguous alias', () => {
-    const pack: ContentPack = {
+    const pack: VersionTwoContentPack = {
       ...tinyPack,
       places: tinyPack.places.map((place) => ({
         ...place,
@@ -835,7 +835,7 @@ describe('renderPlayScreen', () => {
   });
 
   it('hides a unique alias for an undiscovered place in found clue text', () => {
-    const settings = createAdventureSettings(1, 'long', 1);
+    const settings = createAdventureSettings(1, 'long', 2);
     expect(settings.genre).toBe('cosy-mystery');
     const world = generateAdventureWorld(settings);
     const pack = adventurePack(settings.version, settings.genre);
@@ -886,7 +886,7 @@ describe('renderPlayScreen', () => {
       }],
       solution: { ...tinyWorld.solution, goal: { placeId: 'secret-garden', conditions: {} } },
     };
-    const pack: ContentPack = {
+    const pack: VersionTwoContentPack = {
       ...tinyPack,
       places: [...tinyPack.places, {
         id: 'secret-garden', name: 'Secret garden', description: [],
@@ -950,7 +950,7 @@ describe('renderPlayScreen', () => {
     expect(target.querySelector('.play-authored-ending')?.textContent).not.toContain('apology');
   });
 
-  it.each([1, 2])('uses the generated item location for prose references in version %i', (version) => {
+  it.each([2])('uses the generated item location for prose references in version %i', (version) => {
     const target = renderTiny(version);
     expect(target.querySelector('.play-introduction')?.textContent).toBe('Find something and a clue.');
     expect(target.textContent).not.toContain('quiet gem');
@@ -973,7 +973,7 @@ describe('renderPlayScreen', () => {
           goal: { placeId: 'old-tower', conditions: { itemsHeld: ['hidden-gem'] } },
       },
     };
-    const pack: ContentPack = {
+    const pack: VersionTwoContentPack = {
       ...tinyPack,
       characters: [...tinyPack.characters, {
         id: 'tower-keeper', name: 'Tower keeper', placeId: 'old-tower',
@@ -1003,7 +1003,7 @@ describe('renderPlayScreen', () => {
       .toBe('Find quiet gem and hidden note. Remember Tower keeper and quiet gem.');
   });
 
-  it.each([1, 2])('does not reveal a moved item at its authored pack location in version %i', (version) => {
+  it.each([2])('does not reveal a moved item at its authored pack location in version %i', (version) => {
     vi.mocked(generateAdventureWorld).mockReturnValueOnce({
       ...tinyWorld,
       items: tinyWorld.items.map((item) =>

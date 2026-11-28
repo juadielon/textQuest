@@ -30,11 +30,11 @@ export const genreLabels: Readonly<Record<AdventureGenre, string>> = {
 export const defaultLength: AdventureLength = 'medium';
 
 /** Shown when the player tries to open a share word without typing one. */
-export const emptyShareWordMessage = 'Type a share word, such as silverlantern.';
+export const emptyShareWordMessage = 'Type a share word, such as sunlitsaucer2.';
 
 /** What the start screen shows about an adventure's starting settings. */
 export interface AdventureSummary {
-  /** The canonical lowercase share word, such as "silverlantern". */
+  /** The canonical lowercase share word, such as "sunlitsaucer2". */
   readonly shareWord: string;
   /** The genre name, such as "Light fantasy". */
   readonly genreLabel: string;

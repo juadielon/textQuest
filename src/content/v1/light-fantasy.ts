@@ -31,7 +31,7 @@ const lengths = {
   },
 } as const satisfies Readonly<Record<'short' | 'medium' | 'long', LengthPlan>>;
 
-/** Version 1's released light fantasy pack; changes require a new content version. */
+/** Released light fantasy content used by the version 2 adventure generator. */
 export const lightFantasy = {
   version: 1,
   genre: 'light-fantasy',

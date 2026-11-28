@@ -31,7 +31,7 @@ const lengths = {
   },
 } as const satisfies Readonly<Record<'short' | 'medium' | 'long', LengthPlan>>;
 
-/** Version 1's released cosy mystery pack; changes require a new content version. */
+/** Released cosy mystery content used by the version 2 adventure generator. */
 export const cosyMystery = {
   version: 1,
   genre: 'cosy-mystery',

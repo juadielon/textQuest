@@ -42,7 +42,7 @@ is no turn-based combat.
 The play screen's heading is a readable story title, based on the selected
 plot's authored name ([issue #81](https://github.com/juadielon/textQuest/issues/81)).
 If the name contains a hidden name or alias, it uses a generic genre title instead.
-It stays the same for new and shared adventures in versions 1 and 2, without
+It stays the same for new and shared adventures in version 2, without
 revealing hidden discoveries. Titles can repeat: use the exact share word or
 link to identify an adventure, not just its title. An unplayable adventure
 keeps the fallback heading "Your adventure".
@@ -114,18 +114,16 @@ size: 8 places and 4 required puzzle steps for a short adventure, 16 places
 and 8 steps for a medium one, or 24 places and 12 steps for a long one. The
 seed also helps choose where some items and clues appear.
 
-Each released version has 65,280 possible share words. They do not all make
-unique adventures: version 1 has 27 generated worlds, and version 2 varies
-item and clue locations, but stories and layouts can still repeat. A share
-word records the version, seed and length so it can recreate the same
+Version 2 has 65,280 possible share words. They do not all make unique
+adventures: item and clue locations vary, but stories and layouts can still
+repeat. A share word records the version, seed and length so it can recreate the same
 starting adventure.
 
 The game tracks your commands, location and discoveries. A save holds the
 starting details and the commands you entered. When you resume, the game
 recreates the adventure and replays those commands to restore your progress.
 Each saved command keeps whether it used internal ID names or authored names,
-so older histories keep their original meaning. Format 1 saves migrate to
-ID-name replay; new saves use format 2 and preserve mixed histories.
+so histories keep their original meaning. Format 2 saves preserve mixed histories.
 
 World-format version 2 adds mutually exclusive choices and early endings to
 the world rules. The play engine supports these choices and winning endings

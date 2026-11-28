@@ -55,10 +55,10 @@ describe('isAdventureLength', () => {
 
 describe('summariseAdventure', () => {
   it('gives the share word and readable genre and length', () => {
-    const settings = createAdventureSettings(0, 'short', 1);
+    const settings = createAdventureSettings(0, 'short', 2);
 
     expect(summariseAdventure(settings)).toEqual({
-      shareWord: 'ableacorn',
+      shareWord: 'sunlitsaucer2',
       genreLabel: genreLabels[settings.genre],
       lengthLabel: 'Short',
     });
@@ -67,9 +67,9 @@ describe('summariseAdventure', () => {
 
 describe('readShareWord', () => {
   it('reads a valid word typed with capitals and spaces', () => {
-    const result = readShareWord('  Silver Lantern ');
+    const result = readShareWord('  Sunlit Saucer 2 ');
 
-    const settings = parseShareWord('silverlantern');
+    const settings = parseShareWord('sunlitsaucer2');
     expect(result).toEqual({ ok: true, settings, summary: summariseAdventure(settings) });
   });
 

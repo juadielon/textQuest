@@ -1,6 +1,6 @@
 import type { AdventureWorld, Conditions, Effect, Exit, PuzzleStep } from '../adventure-world';
 import { useStepOptions } from '../use-rules';
-import { MAX_SEARCH_STATES, validateWorld } from '../winnability';
+import { validateWorld } from '../winnability';
 import { commandHelp, normaliseName, parseCommand } from './commands';
 import type { CommandAction, CommandTarget, Direction } from './commands';
 
@@ -141,7 +141,7 @@ function namedTargets(world: PlayWorld): readonly CommandTarget[] {
   const cached = namesByWorld.get(world);
   if (cached) return cached;
   const targets = nameTargets(world);
-  const named = world.version === 2 ? stableUseTargets(world, targets) : targets;
+  const named = stableUseTargets(world, targets);
   namesByWorld.set(world, named);
   return named;
 }
@@ -252,7 +252,9 @@ function rawExitName(world: PlayWorld, progress: Progress, exit: Exit): string {
 }
 
 function disambiguateExitTargets(targets: readonly CommandTarget[], protectItems = false): CommandTarget[] {
-  const result = usableAliases(targets);
+  const result = targets.map((target) => target.kind === 'item'
+    ? target
+    : usableAliases([target])[0]);
   const choiceAliases = new Map(targets.filter(({ kind }) => kind === 'choice')
     .map(({ id, aliases }) => [id, aliases] as const));
   const reachable = (target: CommandTarget, list: readonly CommandTarget[]) => {
@@ -315,15 +317,14 @@ function stateTargets(world: PlayWorld, progress: Progress): CommandTarget[] {
     ...world.names
       ? exits.map((exit): CommandTarget => ({ id: exit.id, kind: 'exit', name: rawExitName(world, progress, exit) }))
       : exits.map(({ id }) => id).map(target('exit')),
-    ...(world.names || world.version === 2
-      ? inWorldOrder(world.items, new Set([...progress.itemsHeld, ...itemsHere(world, progress)]))
-      : [...progress.itemsHeld, ...itemsHere(world, progress)]).map(target('item')),
+    ...inWorldOrder(world.items, new Set([...progress.itemsHeld, ...itemsHere(world, progress)]))
+      .map(target('item')),
     ...[...progress.cluesRevealed].map(target('clue')),
     ...peopleHere(world, progress).map(target('person')),
     ...choices,
   ];
   return world.names || choices.length
-    ? disambiguateExitTargets(targets, world.version === 2) : targets;
+    ? disambiguateExitTargets(targets, true) : targets;
 }
 
 function stateNameOf(
@@ -375,17 +376,6 @@ function progressFrom(state: PlayState): Progress {
   };
 }
 
-function cloneProgress(progress: Progress): Progress {
-  return {
-    placeId: progress.placeId,
-    itemsHeld: new Set(progress.itemsHeld),
-    placesVisited: new Set(progress.placesVisited),
-    cluesRevealed: new Set(progress.cluesRevealed),
-    stepsDone: new Set(progress.stepsDone),
-    unlockedExits: new Set(progress.unlockedExits),
-  };
-}
-
 function inWorldOrder(entries: readonly { readonly id: string }[], ids: Set<string>): string[] {
   return entries.filter(({ id }) => ids.has(id)).map(({ id }) => id);
 }
@@ -419,12 +409,13 @@ function arrive(world: PlayWorld, progress: Progress, placeId: string): string[]
 
 function describeEffect(
   world: PlayWorld, progress: Progress, effect: Effect, targets?: readonly CommandTarget[],
+  hideRemoteName = false,
 ): string[] {
   switch (effect.kind) {
     case 'unlock-exit': {
       const exit = world.exits.find(({ id }) => id === effect.exitId)!;
-      if (exit.fromPlaceId !== progress.placeId && (world.version === 2
-        || (world.names && !progress.placesVisited.has(exit.toPlaceId)))) {
+      if (exit.fromPlaceId !== progress.placeId
+        && (hideRemoteName || (world.names && !progress.placesVisited.has(exit.toPlaceId)))) {
         return ['A way is now open.'];
       }
       return [`${capitalise(withThe(exitName(world, progress, exit, targets)))} is now open.`];
@@ -438,7 +429,13 @@ function describeEffect(
   }
 }
 
-function completeStep(world: PlayWorld, progress: Progress, step: PuzzleStep, includeMessages = true): string[] {
+function completeStep(
+  world: PlayWorld,
+  progress: Progress,
+  step: PuzzleStep,
+  includeMessages = true,
+  hideRemoteName = false,
+): string[] {
   progress.stepsDone.add(step.id);
   const messages: string[] = [];
   for (const effect of step.effects) {
@@ -455,7 +452,9 @@ function completeStep(world: PlayWorld, progress: Progress, step: PuzzleStep, in
       case 'end-adventure':
         break;
     }
-    if (includeMessages) messages.push(...describeEffect(world, progress, effect));
+    if (includeMessages) {
+      messages.push(...describeEffect(world, progress, effect, undefined, hideRemoteName));
+    }
   }
   return messages;
 }
@@ -467,10 +466,8 @@ const isDecision = (step: PuzzleStep) => step.choiceId !== undefined
 
 function stepsReadyHere(world: PlayWorld, progress: Progress): PuzzleStep[] {
   const closedChoices = new Set<string>();
-  if (world.version === 2) {
-    for (const step of world.solution.steps) {
-      if (progress.stepsDone.has(step.id) && step.choiceId !== undefined) closedChoices.add(step.choiceId);
-    }
+  for (const step of world.solution.steps) {
+    if (progress.stepsDone.has(step.id) && step.choiceId !== undefined) closedChoices.add(step.choiceId);
   }
   return world.solution.steps.filter((step) => step.placeId === progress.placeId
     && !progress.stepsDone.has(step.id) && meets(progress, step.conditions)
@@ -483,7 +480,6 @@ const actionsReadyHere = (world: PlayWorld, progress: Progress) =>
 
 // Only winning endings can be played until checkpoint recovery exists.
 function winningEndingReached(world: PlayWorld, progress: Progress): boolean {
-  if (world.version === 1) return false;
   const wins = new Set((world.solution.endings ?? [])
     .filter(({ outcome }) => outcome === 'win').map(({ id }) => id));
   return world.solution.steps.some((step) => progress.stepsDone.has(step.id)
@@ -491,7 +487,7 @@ function winningEndingReached(world: PlayWorld, progress: Progress): boolean {
 }
 
 function choicesHere(world: PlayWorld, progress: Progress): { id: string; step: PuzzleStep }[] {
-  if (world.version === 1 || goalMet(world, progress) || winningEndingReached(world, progress)) return [];
+  if (goalMet(world, progress) || winningEndingReached(world, progress)) return [];
   const ready = new Set(stepsReadyHere(world, progress));
   return world.solution.steps.filter(isDecision).flatMap((step, index) =>
     ready.has(step) ? [{ id: `choice-${index + 1}`, step }] : []);
@@ -508,10 +504,9 @@ function settle(world: PlayWorld, progress: Progress, includeMessages = true): s
     && meets(progress, entry.conditions)); step;
     step = automatic.find((entry) => !progress.stepsDone.has(entry.id)
       && meets(progress, entry.conditions))) {
-    const changes = completeStep(world, progress, step, includeMessages && world.version === 1);
+    completeStep(world, progress, step, false);
     if (includeMessages) {
-      if (world.version === 1) messages.push('Something changes here.', ...changes);
-      else completed.push(step);
+      completed.push(step);
     }
   }
   if (completed.length) {
@@ -724,9 +719,7 @@ function move(
     return { done: false, message: `${capitalise(withThe(exitName(world, progress, exit)))} is locked.` };
   }
   const found = arrive(world, progress, exit.toPlaceId);
-  return world.version === 2
-    ? { done: true, message: '', arrivalClues: found }
-    : { done: true, message: describeArrival(world, progress, found) };
+  return { done: true, message: '', arrivalClues: found };
 }
 
 function take(world: PlayWorld, progress: Progress, { kind, id }: Target): Change {
@@ -784,24 +777,21 @@ function choose(world: PlayWorld, progress: Progress, { kind, id }: Target): Cha
     return { done: false, message: 'There is no choice to make here.' };
   }
   const name = stateNameOf(world, progress, 'choice', id);
-  return { done: true, message: [`You choose ${name}.`, ...completeStep(world, progress, choice.step)].join(' ') };
+  return {
+    done: true,
+    message: [`You choose ${name}.`, ...completeStep(world, progress, choice.step, true, true)].join(' '),
+  };
 }
 
-// Takes and uses everything possible here. Progress only grows in version 1,
-// so this never blocks a win and lets the route search treat a place as one step.
-function settleGreedily(world: PlayWorld, progress: Progress): void {
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const id of itemsHere(world, progress)) {
-      progress.itemsHeld.add(id);
-      changed = true;
-    }
-    for (const step of stepsReadyHere(world, progress)) {
-      completeStep(world, progress, step, false);
-      changed = true;
-    }
-  }
+function cloneProgress(progress: Progress): Progress {
+  return {
+    placeId: progress.placeId,
+    itemsHeld: new Set(progress.itemsHeld),
+    placesVisited: new Set(progress.placesVisited),
+    cluesRevealed: new Set(progress.cluesRevealed),
+    stepsDone: new Set(progress.stepsDone),
+    unlockedExits: new Set(progress.unlockedExits),
+  };
 }
 
 function progressKey(progress: Progress): string {
@@ -809,7 +799,18 @@ function progressKey(progress: Progress): string {
     progress.stepsDone, progress.cluesRevealed, progress.unlockedExits].map((ids) => [...ids].sort())]);
 }
 
-// Finds the first place to head for on a shortest route to the goal.
+function settleGreedily(world: PlayWorld, progress: Progress): void {
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const id of itemsHere(world, progress)) progress.itemsHeld.add(id);
+    for (const step of stepsReadyHere(world, progress)) {
+      completeStep(world, progress, step, false);
+      changed = true;
+    }
+  }
+}
+
 const searchLimitReached = Symbol('search-limit');
 
 function nextPlaceToGoal(
@@ -831,7 +832,7 @@ function nextPlaceToGoal(
       if (goalMet(world, next)) return placeId;
       const key = progressKey(next);
       if (seen.has(key)) continue;
-      if (seen.size >= MAX_SEARCH_STATES) return searchLimitReached;
+      if (seen.size >= 10_000) return searchLimitReached;
       seen.add(key);
       queue.push({ progress: next, firstPlaceId: placeId });
     }
@@ -840,25 +841,26 @@ function nextPlaceToGoal(
 }
 
 function hint(world: PlayWorld, progress: Progress, canUndo: boolean): string {
-  // shortcut: version 2 hints do not search routes; upgrade when search models choices.
-  if (world.version === 2) {
-    if (choicesHere(world, progress).length) return 'There is a choice to make here. Think before you choose.';
-    if (actionsReadyHere(world, progress).length) return 'Something you are carrying could be useful here.';
-    return `Look around and think about what you could do next.${canUndo ? ' You can also try undo.' : ''}`;
+  if (choicesHere(world, progress).length) return 'There is a choice to make here. Think before you choose.';
+  if (world.solution.steps.some(isDecision)) {
+    const hasClosedChoice = [...progress.stepsDone].some((id) =>
+      world.solution.steps.find((step) => step.id === id)?.choiceId !== undefined);
+    if (hasClosedChoice) {
+      return `Look around and think about what you could do next.${canUndo ? ' You can also try undo.' : ''}`;
+    }
   }
   const { steps, goal } = world.solution;
   const neededItems = new Set([goal, ...steps].flatMap(({ conditions }) => conditions.itemsHeld ?? []));
   if (itemsHere(world, progress).some((id) => neededItems.has(id))) {
     return 'Look around. Something here is worth taking.';
   }
-  if (actionsReadyHere(world, progress).length) {
-    return 'Something you are carrying could be useful here.';
+  if (actionsReadyHere(world, progress).length) return 'Something you are carrying could be useful here.';
+  if (world.solution.steps.some(isDecision)) {
+    return `Look around and think about what you could do next.${canUndo ? ' You can also try undo.' : ''}`;
   }
   const next = nextPlaceToGoal(world, progress);
   if (next === searchLimitReached) return 'Try exploring somewhere you have not been yet.';
-  if (next === null) {
-    return `There seems to be no way forward from here.${canUndo ? ' Try undo.' : ''}`;
-  }
+  if (next === null) return `There seems to be no way forward from here.${canUndo ? ' Try undo.' : ''}`;
   return `Try going to ${stateThe(world, progress, 'place', next)}.`;
 }
 
@@ -879,8 +881,7 @@ function hint(world: PlayWorld, progress: Progress, canUndo: boolean): string {
  * their conditions hold at their place they are offered as choices, and
  * `choose` makes one. Making one step of a choice shuts out the others. A
  * winning ending finishes the adventure straight away.
- * Automatic effect messages use the final discovered names after settling
- * in version 2; version 1 keeps its original message order and names.
+ * Automatic effect messages use the final discovered names after settling.
  *
  * Hints point at the next useful step without naming puzzle answers, and
  * suggest undo at a dead end only when a previous turn exists. Version 2

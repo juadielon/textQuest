@@ -18,8 +18,7 @@ import type { CommandReplayMode } from './engine/play';
  * The save format version written by this copy of textQuest.
  *
  * @remarks
- * Bump this only for a change older copies cannot read. Every released
- * version must still load, so players never lose a save.
+ * Bump this only for a change older copies cannot read.
  */
 export const saveFormatVersion = 2;
 
@@ -176,8 +175,7 @@ function isCommandReplayMode(value: unknown): value is CommandReplayMode {
   return value === 'id' || value === 'content';
 }
 
-function readCommandModes(value: unknown, commandCount: number, legacy: boolean): CommandReplayMode[] {
-  if (legacy) return Array.from({ length: commandCount }, () => 'id' as const);
+function readCommandModes(value: unknown, commandCount: number): CommandReplayMode[] {
   if (!Array.isArray(value) || value.length !== commandCount) {
     throw damaged('the command replay modes are not valid.');
   }
@@ -221,6 +219,9 @@ export function validateSave(value: unknown): AdventureSave {
   if (!Number.isInteger(formatVersion) || (formatVersion as number) < 1) {
     throw damaged('the save format version is missing.');
   }
+  if ((formatVersion as number) === 1) {
+    throw damaged('save format version 1 is no longer supported.');
+  }
   if ((formatVersion as number) > saveFormatVersion) {
     throw new SaveError(
       'future-version',
@@ -240,7 +241,7 @@ export function validateSave(value: unknown): AdventureSave {
     name: readName(value.name),
     settings: readSettings(value.settings),
     commands,
-    commandModes: readCommandModes(value.commandModes, commands.length, formatVersion === 1),
+    commandModes: readCommandModes(value.commandModes, commands.length),
     createdAt,
     updatedAt,
   };

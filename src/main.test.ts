@@ -141,7 +141,7 @@ it.each<adventureSettings.AdventureGenre>(['light-fantasy', 'cosy-mystery', 'sci
   },
 );
 
-it.each([1, 2])('opens all version %i shared genres directly in play, accepting capitals and hyphens', (version) => {
+it.each([2])('opens all version %i shared genres directly in play, accepting capitals and hyphens', (version) => {
   for (const genre of adventureSettings.adventureGenres) {
     const sharedSettings = Array.from({ length: 100 }, (_, seed) =>
       adventureSettings.createAdventureSettings(seed, 'short', version))
@@ -209,7 +209,7 @@ it('shows a generation error and still lets the player return to start', async (
   expect(document.activeElement).toBe(get('h1'));
 });
 
-it.each([1, 2])('saves, exports, imports and resumes version %i from a share link without sharing progress', async (version) => {
+it.each([2])('saves, exports, imports and resumes version %i from a share link without sharing progress', async (version) => {
   // Like Web Locks shared by every tab: tasks run one at a time, later, in order.
   let queue: Promise<unknown> = Promise.resolve();
   const request = vi.fn((_name: string, task: () => unknown) => (queue = queue.then(task)));
@@ -325,7 +325,7 @@ it.each([1, 2])('saves, exports, imports and resumes version %i from a share lin
     .toEqual([...commands, 'inventory'].map((command) => `> ${command}`));
 });
 
-it.each([1, 2])('keeps a failed legacy character talk separate from new content talk in version %i saves', async (version) => {
+it.each([2])('keeps a failed legacy character talk separate from new content talk in version %i saves', async (version) => {
   let queue: Promise<unknown> = Promise.resolve();
   Object.defineProperty(navigator, 'locks', {
     configurable: true,
@@ -1239,7 +1239,7 @@ it('announces a rejected play-time lock without stopping play', async () => {
   expect(store.list()[0]).not.toHaveProperty('lastPlayedAt');
 });
 
-it.each([1, 2])('opens version %i links in fresh play for all genres and lengths', async (version) => {
+it.each([2])('opens version %i links in fresh play for all genres and lengths', async (version) => {
   for (const genre of adventureSettings.adventureGenres) {
     for (const length of adventureSettings.adventureLengths) {
       const shared = Array.from({ length: 100 }, (_, seed) =>
@@ -1342,7 +1342,7 @@ it('clears the incoming adventure on return to start so reloading does not resta
   expect(document.activeElement).toBe(get('h1'));
 });
 
-it.each([1, 2])('opens a link without reading or overwriting an existing version %i save', async (version) => {
+it.each([2])('opens a link without reading or overwriting an existing version %i save', async (version) => {
   const savedSettings = adventureSettings.createAdventureSettings(settings.seed, 'short', version);
   const saved = createSave('Existing trip', savedSettings, ['look'], new Date('2026-10-01T09:00:00.000Z'));
   const store = createSaveStore(localStorage);
@@ -1357,11 +1357,11 @@ it.each([1, 2])('opens a link without reading or overwriting an existing version
   expect(store.load(id)).toEqual(saved);
 });
 
-it('keeps a changed version 1 save when deleting it after opening a share link', async () => {
+it('keeps a changed save when deleting it after opening a share link', async () => {
   let queue: Promise<unknown> = Promise.resolve();
   const request = vi.fn((_name: string, task: () => unknown) => (queue = queue.then(task)));
   Object.defineProperty(navigator, 'locks', { configurable: true, value: { request } });
-  const oldSettings = adventureSettings.createAdventureSettings(settings.seed, 'short', 1);
+  const oldSettings = adventureSettings.createAdventureSettings(settings.seed, 'short', 2);
   const old = createSave('Old trip', oldSettings, ['look'], new Date('2026-10-01T09:00:00.000Z'));
   const store = createSaveStore(localStorage);
   const id = store.add(old);

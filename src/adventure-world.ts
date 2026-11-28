@@ -114,13 +114,12 @@ export interface Goal {
  * `solution` holds puzzle answers. Keep it separate from anything the player
  * sees, so hints and suggestions never give answers away.
  *
- * Version 1 worlds only ever add progress. Version 2 adds mutually exclusive
- * choices and early endings. Released adventures generate version 1 worlds.
- * Play accepts version 2 worlds only when every ending is a win.
+ * Worlds support mutually exclusive choices and early endings.
+ * Play accepts a world only when every ending is a win.
  */
 export interface AdventureWorld {
   /** World format version. */
-  readonly version: 1 | 2;
+  readonly version: number;
   /** Where the player begins. */
   readonly startPlaceId: string;
   /** Every place in the world. */

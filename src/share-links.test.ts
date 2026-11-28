@@ -4,7 +4,7 @@ import { generateAdventureWorld } from './generate-world';
 import { createAdventureLink } from './share-links';
 import packageJson from '../package.json';
 
-it.each([1, 2])('links recreate exact version %i worlds for every genre and length', (version) => {
+it.each([2])('links recreate exact version %i worlds for every genre and length', (version) => {
   for (const length of adventureLengths) {
     const genres = new Set<string>();
     for (let seed = 0; seed < 100; seed++) {

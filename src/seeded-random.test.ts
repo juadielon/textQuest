@@ -28,7 +28,7 @@ describe('createSeededRandom', () => {
     expect(Array.from({ length: 3 }, () => random.pickIndex(count))).toEqual(indices);
   });
 
-  it('keeps the released version 1 genre choice for every supported seed', () => {
+  it('keeps the released genre choice for every supported seed', () => {
     for (let seed = 0; seed < 21760; seed += 1) {
       const originalIndex = Math.floor((createSeededRandom(seed).nextUint32() * 3) / 2 ** 32);
 

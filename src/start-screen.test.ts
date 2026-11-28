@@ -124,11 +124,11 @@ describe('renderStartScreen', () => {
 
   it('clears the error once a valid word is opened', () => {
     openShareWord('nope');
-    openShareWord('silverlantern');
+    openShareWord('sunlitsaucer2');
 
     expect(get('#share-word-error').textContent).toBe('');
     expect(get('#share-word').hasAttribute('aria-invalid')).toBe(false);
-    expect(onStart).toHaveBeenCalledExactlyOnceWith(parseShareWord('silverlantern'));
+    expect(onStart).toHaveBeenCalledExactlyOnceWith(parseShareWord('sunlitsaucer2'));
   });
 
   it('never turns typed text into HTML', () => {
@@ -160,8 +160,8 @@ describe('renderStartScreen', () => {
   });
 
   it('opens an incoming share word through the same callback as a typed word', () => {
-    renderStartScreen(app, { onStart, shareWord: ' Silver-Lantern ' });
-    expect(onStart).toHaveBeenCalledExactlyOnceWith(parseShareWord('silverlantern'));
+    renderStartScreen(app, { onStart, shareWord: ' Sunlit-Saucer-2 ' });
+    expect(onStart).toHaveBeenCalledExactlyOnceWith(parseShareWord('sunlitsaucer2'));
   });
 
   it('focuses an invalid incoming word and lets the player correct it', () => {
@@ -170,7 +170,7 @@ describe('renderStartScreen', () => {
     expect(get<HTMLInputElement>('#share-word').value).toBe('silverlantern3');
     expect(get('#share-word-error').textContent).toContain('version 3');
     expect(document.activeElement).toBe(get('#share-word'));
-    openShareWord('silverlantern');
-    expect(onStart).toHaveBeenCalledExactlyOnceWith(parseShareWord('silverlantern'));
+    openShareWord('sunlitsaucer2');
+    expect(onStart).toHaveBeenCalledExactlyOnceWith(parseShareWord('sunlitsaucer2'));
   });
 });
