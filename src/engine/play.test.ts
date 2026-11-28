@@ -1334,6 +1334,22 @@ describe('hints', () => {
     expect(replayCommands(world, ['hint', 'hint', 'hint']).hintStage).toBe(3);
   });
 
+  it('gives a clue-direction hint for a required item in stage two', () => {
+    const world = sampleWorld();
+    const state = replayCommands(world, ['go study']);
+    const gentle = playCommand(world, state, 'hint').state;
+    const second = playCommand(world, gentle, 'hint');
+    expect(second.message).toBe('Look for an item that belongs near here.');
+  });
+
+  it('keeps an optional item on the generic clue-direction hint in stage two', () => {
+    const world = sampleWorld();
+    const state = replayCommands(world, ['take pebble']);
+    const gentle = playCommand(world, state, 'hint').state;
+    const second = playCommand(world, gentle, 'hint');
+    expect(second.message).toBe('Look for something useful nearby or a way you have discovered.');
+  });
+
   it('point at the next useful step without naming puzzle answers', () => {
     const world = sampleWorld();
     const finalHint = (inputs: string[]) => {
@@ -1384,12 +1400,16 @@ function playByHints(world: PlayWorld, commands: string[] = []): PlayState {
   let state = startPlay(world);
   for (let guard = 0; guard < 200 && !state.goalReached; guard++) {
     let message = '';
-    for (let stage = 0; stage < 3; stage++) {
+    while ((state.hintStage ?? 0) < 2) {
       commands.push('hint');
       const turn = playCommand(world, state, 'hint');
       state = turn.state;
       message = turn.message;
     }
+    commands.push('hint');
+    const finalTurn = playCommand(world, state, 'hint');
+    state = finalTurn.state;
+    message = finalTurn.message;
     const place = /^Try going to the (.+)\.$/.exec(message);
     const taking = /^Try taking the (.+)\.$/.exec(message);
     const using = /^Try using the (.+) here\.$/.exec(message);

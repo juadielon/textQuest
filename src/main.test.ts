@@ -8,6 +8,7 @@ import { describePlay, playScreenTitle, renderPlayScreen, unplayableMessage } fr
 import { createSave, createSaveStore, PLAYED_KEY_PREFIX, SAVE_KEY_PREFIX } from './saves';
 import { formatSaveTime, SAVE_LOCK_NAME } from './saves-screen';
 import { summariseAdventure } from './start-screen-model';
+import { findWinningCommands } from './solution';
 
 let app: HTMLElement;
 const settings = Array.from({ length: 100 }, (_, seed) =>
@@ -138,6 +139,106 @@ it.each<adventureSettings.AdventureGenre>(['light-fantasy', 'cosy-mystery', 'sci
     expect(random).toHaveBeenCalledOnce();
     expect(create).toHaveBeenCalledExactlyOnceWith('short', undefined, genre);
     expectPlay(newSettings);
+  },
+);
+
+it.each([
+  ['light-fantasy', 0,
+    'A flood is coming. someone asks you to restore the valley warning stations in order.',
+    'Objective: Restore each valley warning station and light the beacon.',
+    'Look for an item that belongs near here.',
+    'Your work gives the valley a warning before the flood. Boats reach shelter in time.'],
+  ['cosy-mystery', 1,
+    'The Silver Teapot has vanished before the fete. Mrs Finch the organiser asks you to follow its trail, one clue at a time.',
+    'Objective: Find who borrowed the Silver Teapot and return it before judging.',
+    'Look for something useful nearby or a way you have discovered.',
+    'The trail ends with a well-meaning borrower. The Silver Teapot is back on Village green before the judging.'],
+  ['science-fiction', 2,
+    'someone has heard a faint call from the late supply ship. Follow two lines of repairs and bring them together to guide it home.',
+    'Objective: Repair the station, trace the ship and guide it home.',
+    'Look for an item that belongs near here.',
+    'The supply ship docks safely. Pip the signaller finally takes off their headset.'],
+] as const)(
+  'proves the complete browser story loop for %s',
+  (genre, seed, introduction, objective, stageTwoHint, endingText) => {
+    const shared = adventureSettings.createAdventureSettings(seed, 'short');
+    expect(shared.genre).toBe(genre);
+    openAdventure(adventureSettings.encodeShareWord(shared));
+
+    expect(get('.play-introduction').textContent).toBe(introduction);
+    expect(get('.play-objective').textContent).toBe(objective);
+
+    const world = generateAdventureWorld(shared);
+    const pack = adventurePack(shared.genre);
+    const named = { ...world, names: worldNamesFrom(pack, world) };
+    const person = discoveredTargets(named, startPlay(named))
+      .find((target) => target.kind === 'person');
+    expect(person).toBeDefined();
+    if (person) {
+      const alias = person.aliases?.[0] ?? person.name;
+      const character = pack.characters.find(({ id }) => id === person.id);
+      expect(character?.conversations?.length).toBeGreaterThan(0);
+      const topics = [...app.querySelectorAll<HTMLButtonElement>('.play-conversation-topic')]
+        .map((button) => button.textContent);
+      expect(topics.length).toBeGreaterThan(0);
+      expect(topics.every((topic) => Boolean(topic))).toBe(true);
+
+      const topic = character?.conversations?.[0];
+      if (topic) {
+        const topicAlias = topic.aliases?.[0] ?? topic.label;
+        get<HTMLInputElement>('#play-command').value = `talk to ${alias} about ${topicAlias}`;
+        get<HTMLFormElement>('.play-command').requestSubmit();
+        expect(get('.play-log').lastElementChild?.lastElementChild?.textContent)
+          .toContain('discusses that topic');
+      }
+
+      get<HTMLInputElement>('#play-command').value = `talk to ${alias}`;
+      get<HTMLFormElement>('.play-command').requestSubmit();
+      expect(get('.play-log').lastElementChild?.lastElementChild?.textContent)
+        .toContain('greets you');
+
+      get<HTMLInputElement>('#play-command').value = `talk to ${alias} about unknown topic`;
+      get<HTMLFormElement>('.play-command').requestSubmit();
+      expect(get('.play-log').lastElementChild?.lastElementChild?.textContent)
+        .toContain('does not recognise that topic');
+    }
+
+    const hintResponses: string[] = [];
+    for (let stage = 0; stage < 3; stage += 1) {
+      get<HTMLInputElement>('#play-command').value = 'hint';
+      get<HTMLFormElement>('.play-command').requestSubmit();
+      hintResponses.push(get('.play-log').lastElementChild?.lastElementChild?.textContent ?? '');
+    }
+    expect(hintResponses[0]).toBe('Pause and look at the situation before choosing an action.');
+    expect(hintResponses[1]).toBe(stageTwoHint);
+    expect(hintResponses[2]).not.toBe('');
+    expect(hintResponses.join(' ')).not.toMatch(/river guest|silver teapot|supply ship|hidden|secret/i);
+    expect(get('.play-sidebar > p:last-child').textContent).toBe('Turns taken: 0');
+
+    const beforeInvalid = {
+      place: get('.play-place-name').textContent,
+      turns: get('.play-sidebar > p:last-child').textContent,
+    };
+    get<HTMLInputElement>('#play-command').value = 'unrecognised command';
+    get<HTMLFormElement>('.play-command').requestSubmit();
+    expect(get('.play-log').lastElementChild?.lastElementChild?.textContent)
+      .toBe('That command is not supported. Type help for commands.');
+    expect(get('.play-place-name').textContent).toBe(beforeInvalid.place);
+    expect(get('.play-sidebar > p:last-child').textContent).toBe(beforeInvalid.turns);
+
+    const route = findWinningCommands(named);
+    expect(route.length).toBeGreaterThan(0);
+    for (const command of route) {
+      get<HTMLInputElement>('#play-command').value = command;
+      get<HTMLFormElement>('.play-command').requestSubmit();
+    }
+    const endingPanel = get<HTMLElement>('.play-ending');
+    expect(endingPanel.hidden).toBe(false);
+    expect(get('.play-authored-ending').textContent).toBe(endingText);
+
+    get<HTMLInputElement>('#play-command').value = 'undo';
+    get<HTMLFormElement>('.play-command').requestSubmit();
+    expect(endingPanel.hidden).toBe(true);
   },
 );
 

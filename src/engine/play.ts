@@ -943,7 +943,19 @@ function hintFinal(world: PlayWorld, progress: Progress, canUndo: boolean): stri
 
 function hintStageMessage(world: PlayWorld, progress: Progress, state: PlayState, stage: number): string {
   if (stage === 1) return 'Pause and look at the situation before choosing an action.';
-  if (stage === 2) return 'Look for something useful nearby or a way you have discovered.';
+  if (stage === 2) {
+    const neededItems = new Set(
+      [world.solution.goal, ...world.solution.steps]
+        .flatMap(({ conditions }) => conditions.itemsHeld ?? []),
+    );
+    if (itemsHere(world, progress).some((id) => neededItems.has(id))) {
+      return 'Look for an item that belongs near here.';
+    }
+    if (actionsReadyHere(world, progress).length) {
+      return 'Look for a use for an item you are carrying.';
+    }
+    return 'Look for something useful nearby or a way you have discovered.';
+  }
   return hintFinal(world, progress, state.previous !== null);
 }
 

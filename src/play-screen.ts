@@ -186,10 +186,10 @@ export function renderPlayScreen(
     const targets = discoveredTargets(world, state);
     const knownPlaces = knownPlacesByState.get(state) ?? currentPlaceTargets(state);
     placeName.textContent = view.placeName;
-    introduction.textContent = renderProse(plot.introduction, pack, world, state, targets, knownPlaces);
-    objective.textContent = `Objective: ${hideUndiscoveredNames(
-      storyView(pack, settings).objective, pack, world, state, targets, knownPlaces,
-    )}`;
+    introduction.textContent = renderProse(
+      plot.introduction, pack, world, state, targets, knownPlaces, false,
+    );
+    objective.textContent = `Objective: ${storyView(pack, settings).objective}`;
     const authoredPlace = pack.places.find(({ id }) => id === state.placeId);
     description.textContent = authoredPlace
       ? renderProse(authoredPlace.description, pack, world, state, targets, knownPlaces) : '';
@@ -479,10 +479,11 @@ function fillDetails(
 function renderProse(
   prose: Prose, pack: ReturnType<typeof adventurePack>, world: PlayWorld,
   state: PlayState, targets: readonly CommandTarget[], knownPlaces: ReadonlySet<string>,
+  hideNames = true,
 ): string {
   const text = prose.map((part) => typeof part === 'string'
     ? part : entityName(part, pack, world, state, targets, knownPlaces)).join('');
-  return hideUndiscoveredNames(text, pack, world, state, targets, knownPlaces);
+  return hideNames ? hideUndiscoveredNames(text, pack, world, state, targets, knownPlaces) : text;
 }
 
 function hideUndiscoveredNames(
