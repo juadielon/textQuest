@@ -16,8 +16,8 @@ to generate the story while you play.
    where you are, `go` followed by a place's name to move, or `take`
    followed by an item's name to pick it up. Type `use` followed by an item
    you are carrying to try it. Use the names shown in the game.
-3. Type `help` for more commands, `hint` for a nudge, `inventory` to see what
-   you are carrying, or `undo` to go back a turn.
+3. Type `help` for more commands, `hint` for one of three optional hint stages,
+   `inventory` to see what you are carrying, or `undo` to go back a turn.
 
 A short adventure has 8 places and 4 required puzzle steps. A medium one has
 16 places and 8 steps; a long one has 24 places and 12 steps. There are also

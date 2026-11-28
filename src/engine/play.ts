@@ -30,6 +30,8 @@ export interface PlayState {
   readonly goalReached: boolean;
   /** The state before the last turn, for undo. Null at the start. */
   readonly previous: PlayState | null;
+  /** The progressive hint stage reached at this state: 0 through 3. */
+  readonly hintStage?: number;
 }
 
 /** A player-facing name for a place, item, clue or choice, plus other names to accept. */
@@ -859,8 +861,12 @@ function nextPlaceToGoal(
   return null;
 }
 
-function hint(world: PlayWorld, progress: Progress, canUndo: boolean): string {
-  if (choicesHere(world, progress).length) return 'There is a choice to make here. Think before you choose.';
+function hintFinal(world: PlayWorld, progress: Progress, canUndo: boolean): string {
+  const choices = choicesHere(world, progress);
+  if (choices.length) {
+    const name = stateNameOf(world, progress, 'choice', choices[0].id);
+    return `Try choosing ${name}.`;
+  }
   if (world.solution.steps.some(isDecision)) {
     const hasClosedChoice = [...progress.stepsDone].some((id) =>
       world.solution.steps.find((step) => step.id === id)?.choiceId !== undefined);
@@ -870,17 +876,30 @@ function hint(world: PlayWorld, progress: Progress, canUndo: boolean): string {
   }
   const { steps, goal } = world.solution;
   const neededItems = new Set([goal, ...steps].flatMap(({ conditions }) => conditions.itemsHeld ?? []));
-  if (itemsHere(world, progress).some((id) => neededItems.has(id))) {
-    return 'Look around. Something here is worth taking.';
+  const itemHere = itemsHere(world, progress).find((id) => neededItems.has(id));
+  if (itemHere) {
+    const name = stateNameOf(world, progress, 'item', itemHere);
+    return `Try taking ${withThe(name, Boolean(world.names))}.`;
   }
-  if (actionsReadyHere(world, progress).length) return 'Something you are carrying could be useful here.';
-  if (world.solution.steps.some(isDecision)) {
-    return `Look around and think about what you could do next.${canUndo ? ' You can also try undo.' : ''}`;
+  const ready = actionsReadyHere(world, progress);
+  if (ready.length) {
+    const itemId = ready.flatMap((step) => step.conditions.itemsHeld ?? [])
+      .find((id) => progress.itemsHeld.has(id));
+    if (itemId) {
+      const name = stateNameOf(world, progress, 'item', itemId);
+      return `Try using ${withThe(name, Boolean(world.names))} here.`;
+    }
   }
   const next = nextPlaceToGoal(world, progress);
   if (next === searchLimitReached) return 'Try exploring somewhere you have not been yet.';
   if (next === null) return `There seems to be no way forward from here.${canUndo ? ' Try undo.' : ''}`;
   return `Try going to ${stateThe(world, progress, 'place', next)}.`;
+}
+
+function hintStageMessage(world: PlayWorld, progress: Progress, state: PlayState, stage: number): string {
+  if (stage === 1) return 'Pause and look at the situation before choosing an action.';
+  if (stage === 2) return 'Look for something useful nearby or a way you have discovered.';
+  return hintFinal(world, progress, state.previous !== null);
 }
 
 /**
@@ -925,8 +944,16 @@ export function runAction(world: PlayWorld, state: PlayState, action: CommandAct
         ? `You are carrying ${stateListNames(world, progress, 'item', state.itemsHeld)}.`
         : 'You are not carrying anything.');
     case 'hint':
-      return reply(state.goalReached ? 'You have already finished this adventure.'
-        : hint(world, progress, state.previous !== null));
+      if (state.goalReached) {
+        return reply('You have already finished this adventure.');
+      }
+      {
+        const stage = Math.min((state.hintStage ?? 0) + 1, 3);
+        return {
+          state: { ...state, hintStage: stage },
+          message: hintStageMessage(world, progress, state, stage),
+        };
+      }
     case 'undo':
       return state.previous
         ? { state: state.previous, message: 'You undo your last turn.' }
@@ -959,7 +986,10 @@ export function runAction(world: PlayWorld, state: PlayState, action: CommandAct
   if (endedWell) messages.push('Your adventure ends here, and you have won. Well done!');
   else if (goalReached) messages.push('You have reached your goal. Well done!');
   return {
-    state: { ...stateFrom(world, progress), turns: state.turns + 1, goalReached, previous: state },
+    state: {
+      ...stateFrom(world, progress), turns: state.turns + 1, goalReached,
+      previous: state, hintStage: 0,
+    },
     message: messages.join(' '),
   };
 }

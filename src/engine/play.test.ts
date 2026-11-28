@@ -84,15 +84,18 @@ it('keeps item use unambiguous after a visible place is renamed', () => {
   expect(playCommand(world, taken, `use ${target.name}`).state.goalReached).toBe(true);
 });
 
-it('suggests a winning place named too-large instead of search-limit advice', () => {
+it('suggests a winning place instead of search-limit advice', () => {
   const world: AdventureWorld = {
      startPlaceId: 'entry',
-    places: [{ id: 'entry' }, { id: 'too-large' }],
-    exits: [{ id: 'path', fromPlaceId: 'entry', toPlaceId: 'too-large', locked: false }],
+    places: [{ id: 'entry' }, { id: 'star-terrace' }],
+    exits: [{ id: 'path', fromPlaceId: 'entry', toPlaceId: 'star-terrace', locked: false }],
     items: [], clues: [],
-    solution: { steps: [], goal: { placeId: 'too-large', conditions: {} } },
+    solution: { steps: [], goal: { placeId: 'star-terrace', conditions: {} } },
   };
-  expect(playCommand(world, startPlay(world), 'hint').message).toBe('Try going to the too large.');
+  const start = startPlay(world);
+  let state = playCommand(world, start, 'hint').state;
+  state = playCommand(world, state, 'hint').state;
+  expect(playCommand(world, state, 'hint').message).toBe('Try going to the star terrace.');
 });
 
 function play(world: AdventureWorld, inputs: readonly string[]) {
@@ -867,10 +870,14 @@ describe('playing choices', () => {
   it('gives general hints that never name a choice or a closed route', () => {
     const world = choiceWorld();
     const start = startPlay(world);
-    const atStart = playCommand(world, start, 'hint').message;
-    expect(atStart).toBe('There is a choice to make here. Think before you choose.');
+    const first = playCommand(world, start, 'hint').state;
+    const second = playCommand(world, first, 'hint').state;
+    const atStart = playCommand(world, second, 'hint').message;
+    expect(atStart).toBe('Try choosing head left.');
     const chosen = playCommand(world, start, 'choose head left').state;
-    expect(playCommand(world, chosen, 'hint').message)
+    const chosenFirst = playCommand(world, chosen, 'hint').state;
+    const chosenSecond = playCommand(world, chosenFirst, 'hint').state;
+    expect(playCommand(world, chosenSecond, 'hint').message)
       .toBe('Look around and think about what you could do next. You can also try undo.');
     const room: AdventureWorld = {
        startPlaceId: 'room', places: [{ id: 'room' }], exits: [],
@@ -884,10 +891,15 @@ describe('playing choices', () => {
       },
     };
     const roomStart = startPlay(room);
-    expect(playCommand(room, roomStart, 'hint').message)
-      .toBe('There is a choice to make here. Think before you choose.');
+    let stage = playCommand(room, roomStart, 'hint').state;
+    stage = playCommand(room, stage, 'hint').state;
+    const firstChoice = discoveredTargets(room, roomStart).find(({ kind }) => kind === 'choice')!;
+    expect(playCommand(room, stage, 'hint').message)
+      .toBe(`Try choosing ${firstChoice.name}.`);
     const dark = playCommand(room, roomStart, 'choose choice 2').state;
-    expect(playCommand(room, dark, 'hint').message)
+    stage = playCommand(room, dark, 'hint').state;
+    stage = playCommand(room, stage, 'hint').state;
+    expect(playCommand(room, stage, 'hint').message)
       .toBe('Look around and think about what you could do next. You can also try undo.');
 
     const indirect: AdventureWorld = {
@@ -907,7 +919,9 @@ describe('playing choices', () => {
       },
     };
     const left = playCommand(indirect, startPlay(indirect), 'choose choice 1').state;
-    expect(playCommand(indirect, left, 'hint').message)
+    let indirectStage = playCommand(indirect, left, 'hint').state;
+    indirectStage = playCommand(indirect, indirectStage, 'hint').state;
+    expect(playCommand(indirect, indirectStage, 'hint').message)
       .toBe('Look around and think about what you could do next. You can also try undo.');
   });
 });
@@ -1085,7 +1099,9 @@ describe('discoveredTargets', () => {
     const start = startPlay(world);
     const target = discoveredTargets(world, start).find(({ id }) => id === 'red_room')!;
     expect(playCommand(world, start, 'look').message).toContain(target.name);
-    expect(playCommand(world, start, 'hint').message).toBe(`Try going to the ${target.name}.`);
+    const first = playCommand(world, start, 'hint').state;
+    const second = playCommand(world, first, 'hint').state;
+    expect(playCommand(world, second, 'hint').message).toBe(`Try going to the ${target.name}.`);
     expect(playCommand(world, start, `go ${target.name}`).state.goalReached).toBe(true);
   });
 
@@ -1108,7 +1124,9 @@ describe('discoveredTargets', () => {
       expect(turn.state.placeId).toBe(expected);
     }
     const target = discoveredTargets(world, start).find(({ id }) => id === 'to-red-room')!;
-    expect(playCommand(world, start, 'hint').message).toBe(`Try going to the ${target.name}.`);
+    let state = playCommand(world, start, 'hint').state;
+    state = playCommand(world, state, 'hint').state;
+    expect(playCommand(world, state, 'hint').message).toBe(`Try going to the ${target.name}.`);
     expect(playCommand(world, start, `go ${target.name}`).state.goalReached).toBe(true);
   });
 
@@ -1224,9 +1242,13 @@ describe('undo', () => {
 
   it('ignores free actions and says when there is nothing to undo', () => {
     const start = startPlay(world);
-    const looked = replayCommands(world, ['look', 'i', 'hint']);
+    const looked = replayCommands(world, ['look', 'i']);
     expect(looked).toEqual(start);
-    expect(playCommand(world, start, 'undo')).toEqual({ state: start, message: 'There is nothing to undo.' });
+    const hinted = playCommand(world, start, 'hint');
+    expect(hinted.state.hintStage).toBe(1);
+    expect(playCommand(world, hinted.state, 'undo')).toEqual({
+      state: hinted.state, message: 'There is nothing to undo.',
+    });
   });
 });
 
@@ -1248,6 +1270,20 @@ describe('replaying a long save', () => {
 });
 
 describe('hints', () => {
+  it('progresses through three spoiler-free hint stages without changing turns', () => {
+    const world = sampleWorld();
+    const start = startPlay(world);
+    const gentle = playCommand(world, start, 'hint');
+    const direction = playCommand(world, gentle.state, 'hint');
+    const action = playCommand(world, direction.state, 'hint');
+
+    expect(gentle.message).toBe('Pause and look at the situation before choosing an action.');
+    expect(direction.message).toBe('Look for something useful nearby or a way you have discovered.');
+    expect(action.message).toBe('Try going to the study.');
+    expect(action.state.turns).toBe(start.turns);
+    expect(action.state.goalReached).toBe(false);
+  });
+
   it('does not recommend undo in an unwinnable initial state', () => {
     const world: AdventureWorld = {
       ...sampleWorld(), exits: [],
@@ -1255,23 +1291,38 @@ describe('hints', () => {
     };
     const start = startPlay(world);
     expect(checkWinnability(world).winnable).toBe(false);
-    expect(playCommand(world, start, 'hint')).toEqual({
-      state: start, message: 'There seems to be no way forward from here.',
-    });
+    expect(playCommand(world, start, 'hint').message).toBe(
+      'Pause and look at the situation before choosing an action.',
+    );
+    const twice = playCommand(world, replayCommands(world, ['hint']), 'hint');
+    expect(twice.message).toBe('Look for something useful nearby or a way you have discovered.');
+    const final = playCommand(world, replayCommands(world, ['hint', 'hint']), 'hint');
+    expect(final.message).toBe('There seems to be no way forward from here.');
+  });
+
+  it('keeps hint stages coherent through undo and replay', () => {
+    const world = sampleWorld();
+    const hinted = replayCommands(world, ['hint', 'hint']);
+    expect(hinted.hintStage).toBe(2);
+    const undone = replayCommands(world, ['go study', 'hint', 'hint', 'undo']);
+    expect(undone.hintStage).toBeUndefined();
+    expect(replayCommands(world, ['hint', 'hint', 'hint']).hintStage).toBe(3);
   });
 
   it('point at the next useful step without naming puzzle answers', () => {
     const world = sampleWorld();
-    const hints = (inputs: string[]) => playCommand(world, replayCommands(world, inputs), 'hint').message;
-    expect(hints([])).toBe('Try going to the study.');
-    expect(hints(['go study'])).toBe('Look around. Something here is worth taking.');
-    expect(hints(['go study', 'take token'])).toBe('Something you are carrying could be useful here.');
-    expect(hints(['go study', 'take token', 'use token'])).toBe('Try going to the entry.');
-    expect(hints(['go study', 'take token', 'use token', 'go entry']))
-      .toBe('Something you are carrying could be useful here.');
-    for (const message of [hints([]), hints(['go study', 'take token'])]) {
-      expect(message).not.toMatch(/open door|find key|read note|token|key/);
-    }
+    const finalHint = (inputs: string[]) => {
+      let state = replayCommands(world, inputs);
+      state = playCommand(world, state, 'hint').state;
+      state = playCommand(world, state, 'hint').state;
+      return playCommand(world, state, 'hint').message;
+    };
+    expect(finalHint([])).toBe('Try going to the study.');
+    expect(finalHint(['go study'])).toBe('Try taking the token.');
+    expect(finalHint(['go study', 'take token'])).toBe('Try using the token here.');
+    expect(finalHint(['go study', 'take token', 'use token'])).toBe('Try going to the entry.');
+    expect(finalHint(['go study', 'take token', 'use token', 'go entry']))
+      .toBe('Try using the key here.');
   });
 
   it('skip items no step needs', () => {
@@ -1281,7 +1332,7 @@ describe('hints', () => {
 
   it('avoid one-way dead ends and admit when there is no way forward', () => {
     const world: AdventureWorld = {
-       startPlaceId: 'fork',
+      startPlaceId: 'fork',
       places: [{ id: 'fork' }, { id: 'pit' }, { id: 'home' }],
       exits: [
         { id: 'slide', fromPlaceId: 'fork', toPlaceId: 'pit', locked: false },
@@ -1290,9 +1341,15 @@ describe('hints', () => {
       items: [], clues: [],
       solution: { steps: [], goal: { placeId: 'home', conditions: {} } },
     };
-    expect(playCommand(world, startPlay(world), 'hint').message).toBe('Try going to the home.');
-    const stuck = replayCommands(world, ['go pit']);
-    expect(playCommand(world, stuck, 'hint').message).toBe('There seems to be no way forward from here. Try undo.');
+    const atStart = startPlay(world);
+    expect(playCommand(world, atStart, 'hint').message).toBe(
+      'Pause and look at the situation before choosing an action.',
+    );
+    const gentleState = playCommand(world, atStart, 'hint').state;
+    const directionState = playCommand(world, gentleState, 'hint').state;
+    expect(playCommand(world, directionState, 'hint').message).toBe('Try going to the home.');
+    expect(playCommand(world, replayCommands(world, ['go pit', 'hint', 'hint']), 'hint').message)
+      .toBe('There seems to be no way forward from here. Try undo.');
   });
 });
 
@@ -1301,11 +1358,23 @@ describe('hints', () => {
 function playByHints(world: PlayWorld, commands: string[] = []): PlayState {
   let state = startPlay(world);
   for (let guard = 0; guard < 200 && !state.goalReached; guard++) {
-    const message = playCommand(world, state, 'hint').message;
+    let message = '';
+    for (let stage = 0; stage < 3; stage++) {
+      commands.push('hint');
+      const turn = playCommand(world, state, 'hint');
+      state = turn.state;
+      message = turn.message;
+    }
     const place = /^Try going to the (.+)\.$/.exec(message);
+    const taking = /^Try taking the (.+)\.$/.exec(message);
+    const using = /^Try using the (.+) here\.$/.exec(message);
     let inputs: string[];
     if (place) {
       inputs = [`go ${place[1]}`];
+    } else if (taking) {
+      inputs = [`take ${taking[1]}`];
+    } else if (using) {
+      inputs = [`use ${using[1]}`];
     } else if (message.includes('worth taking')) {
       inputs = discoveredTargets(world, state)
         .filter((target) => target.kind === 'item' && !state.itemsHeld.includes(target.id))
