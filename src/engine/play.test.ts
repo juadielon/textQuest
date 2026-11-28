@@ -1429,7 +1429,6 @@ function namedWorld(): PlayWorld {
 describe('play with content-pack names', () => {
   it('projects and accepts authored conversation topics through world names', () => {
     const base: AdventureWorld = {
-      version: 2,
       startPlaceId: 'mill',
       places: [{ id: 'mill' }],
       exits: [],
