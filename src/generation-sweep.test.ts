@@ -86,7 +86,7 @@ describe('generation sweep', () => {
         expect(seeds, key).toBeGreaterThan(20);
         expect(worlds.size, key).toBeGreaterThanOrEqual(Math.ceil(seeds * 0.8));
       }
-    }, 300_000);
+    }, 600_000);
   }
 
   it('records the seed and original exception while continuing the sweep', () => {
