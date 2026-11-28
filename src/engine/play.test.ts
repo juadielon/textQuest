@@ -1414,7 +1414,12 @@ function namedWorld(): PlayWorld {
       ],
       clues: [{ id: 'note', name: 'Torn note' }, { id: 'answer', name: 'Hidden answer' }],
       people: [
-        { id: 'guard', name: 'The old guard', placeId: 'entry', aliases: ['guard'] },
+        {
+          id: 'guard', name: 'The old guard', placeId: 'entry', aliases: ['guard'],
+          conversations: [{
+            id: 'locked-door', label: 'The locked door',
+          }],
+        },
         { id: 'ghost', name: 'Ghost', placeId: 'elsewhere' },
       ],
     },
@@ -1422,6 +1427,29 @@ function namedWorld(): PlayWorld {
 }
 
 describe('play with content-pack names', () => {
+  it('projects and accepts authored conversation topics through world names', () => {
+    const base: AdventureWorld = {
+      startPlaceId: 'mill',
+      places: [{ id: 'mill' }],
+      exits: [],
+      items: [],
+      clues: [],
+      solution: { steps: [], goal: { placeId: 'mill', conditions: {} } },
+    };
+    const names = worldNamesFrom(lightFantasy, base);
+    const miller = names.people.find(({ id }) => id === 'miller');
+    expect(miller?.conversations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'mill-work',
+        label: 'The mill repairs',
+        aliases: expect.arrayContaining(['mill', 'repairs']),
+      }),
+    ]));
+    const world: PlayWorld = { ...base, names };
+    expect(playCommand(world, startPlay(world), 'talk to mara about repairs').message)
+      .toBe('Mara the miller discusses that topic.');
+  });
+
   it('describes places with pack names and people, without naming unknown places', () => {
     const world = namedWorld();
     const look = playCommand(world, startPlay(world), 'look').message;
@@ -1597,6 +1625,16 @@ describe('play with content-pack names', () => {
       .toBe('There is no one here to talk to.');
     const finished = { ...start, goalReached: true };
     expect(playCommand(world, finished, 'talk to guard').message).toBe('The old guard greets you.');
+  });
+
+  it('matches authored topic aliases and gives a safe fallback for unknown topics', () => {
+    const world = namedWorld();
+    const start = startPlay(world);
+
+    expect(playCommand(world, start, 'talk to guard about the locked door').message)
+      .toBe('The old guard discusses that topic.');
+    expect(playCommand(world, start, 'talk to guard about sandwiches').message)
+      .toBe('The old guard does not recognise that topic. Try one of the visible topics.');
   });
 
   it('keeps the same state as ID names for the same moves', () => {

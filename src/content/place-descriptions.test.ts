@@ -61,6 +61,15 @@ function expectReferences(
 }
 
 describe('place descriptions', () => {
+  it('keeps character advice independent of places absent from short adventures', () => {
+    const conversationText = (pack: ContentPack) =>
+      pack.characters.flatMap(({ conversations }) =>
+        conversations?.flatMap(({ response }) =>
+          response.filter((part): part is string => typeof part === 'string')) ?? []);
+    expect(conversationText(lightFantasy).join(' ')).not.toMatch(/\btower\b|\bhill\b/i);
+    expect(conversationText(scienceFiction).join(' ')).not.toMatch(/\brelay\b/i);
+  });
+
   it.each(packs)('validates the $genre current content pack', (pack) => {
     expectUniqueIds(pack.places, 'place');
     expectUniqueIds(pack.characters, 'character');
@@ -113,9 +122,9 @@ describe('place descriptions', () => {
   });
 
   it.each([
-    [lightFantasyWithWording, '0052f8fcb439824060ad74dc23b8dc2ff35c5188b3711be845c07e57881fabfd'],
-    [cosyMysteryWithWording, 'ee4efdb87fac595c2c25a4ef64229c2d9b5f036e498cf7abe75a66491ecaa998'],
-    [scienceFictionWithWording, '917462866615636de44f46c23212153ab1a13297a2a194128a499e962e1ff504'],
+    [lightFantasyWithWording, 'ad047458aadf68edef8d972e3cfad7dc07ff16655873a33e6fa7dda9b25e1996'],
+    [cosyMysteryWithWording, '38365cef1fe55305f2cbc9eb5444d7a908db65a8f4b2a89e45c834f8faeb8526'],
+    [scienceFictionWithWording, '780f9064301cca3752cdd3d40ed6970dd8653626fae05f9da0629808105a8503'],
   ] as const)('pins the complete final $genre content', async (pack, pin) => {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(pack)));
     expect([...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')).toBe(pin);

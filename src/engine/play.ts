@@ -46,6 +46,15 @@ export interface NamedThing {
 export interface NamedPerson extends NamedThing {
   /** Where the person stays. */
   readonly placeId: string;
+  /** Authored conversation topics offered when this person is present. */
+  readonly conversations?: readonly NamedConversationTopic[];
+}
+
+/** A conversation topic and all authored words that select it. */
+export interface NamedConversationTopic {
+  readonly id: string;
+  readonly label: string;
+  readonly aliases?: readonly string[];
 }
 
 /**
@@ -664,13 +673,23 @@ function isPresent(world: PlayWorld, progress: Progress, { kind, id }: Target): 
   }
 }
 
-function talk(world: PlayWorld, progress: Progress, { kind, id }: Target): string {
+function talk(world: PlayWorld, progress: Progress, { kind, id }: Target, topic?: string): string {
   const people = peopleHere(world, progress);
   if (!people.length) return 'There is no one here to talk to.';
   if (kind !== 'person') return 'You can only talk to people.';
   if (!people.includes(id)) return 'They are not here.';
   const targets = stateTargets(world, progress);
-  return `${capitalise(stateNameOf(world, progress, 'person', id, targets).replace(/^The\s/, 'the '))} greets you.`;
+  const personName = stateNameOf(world, progress, 'person', id, targets);
+  if (!topic) {
+    return `${capitalise(personName.replace(/^The\s/, 'the '))} greets you.`;
+  }
+  const conversation = world.names?.people.find((person) => person.id === id)
+    ?.conversations?.find((entry) =>
+      [entry.label, ...(entry.aliases ?? [])].some((label) =>
+        normaliseName(label) === normaliseName(topic)));
+  return conversation
+    ? `${capitalise(personName.replace(/^The\s/, 'the '))} discusses that topic.`
+    : `${capitalise(personName.replace(/^The\s/, 'the '))} does not recognise that topic. Try one of the visible topics.`;
 }
 
 interface Change {
@@ -899,7 +918,8 @@ export function runAction(world: PlayWorld, state: PlayState, action: CommandAct
     case 'examine':
       return reply(examine(world, progress, { kind: action.targetKind, id: action.targetId }));
     case 'talk':
-      return reply(talk(world, progress, { kind: action.targetKind, id: action.targetId }));
+      return reply(talk(world, progress,
+        { kind: action.targetKind, id: action.targetId }, 'topic' in action ? action.topic : undefined));
     case 'inventory':
       return reply(state.itemsHeld.length
         ? `You are carrying ${stateListNames(world, progress, 'item', state.itemsHeld)}.`

@@ -63,6 +63,12 @@ const tinyPack: ContentPackWithWording = {
     id: 'keeper', name: 'The old keeper', placeId: 'gate',
     description: ['The keeper holds a lamp.'],
     motive: ['She wants ', { kind: 'item', id: 'hidden-gem' }, ' kept safe.'],
+    conversations: [{
+      id: 'situation',
+      label: 'The lost lamp',
+      aliases: ['lamp', 'lost lamp'],
+      response: ['The lamp went out at the old tower. Try taking the brass key.'],
+    }],
   }],
   items: [
     { id: 'brass-key', placeId: 'gate', name: 'brass key', description: [] },
@@ -430,7 +436,7 @@ describe('renderPlayScreen', () => {
     expect(append).toHaveBeenCalledTimes(recorded.length + shortHistory.length);
     expect(text(resumed, '#play-response')[0]).toContain('save file limit');
     expect(() => exportSaveFile(createSave('A', settings, shortHistory, new Date(), shortModes))).not.toThrow();
-  });
+  }, 15_000);
 
   it('shows a generated world with a labelled command box and empty log', () => {
     const settings = settingsFor('light-fantasy');
@@ -1026,6 +1032,48 @@ describe('renderPlayScreen', () => {
     type(target, 'talk to old keeper');
     expect(target.querySelector('.play-log')?.textContent).toContain('She wants something kept safe.');
     expect(target.querySelector('.play-people')?.textContent).not.toContain('She wants');
+  });
+
+  it('offers authored topics and keeps dialogue in the log', () => {
+    const target = renderTiny();
+    const button = [...target.querySelectorAll<HTMLButtonElement>('.play-conversation-topic')]
+      .find((candidate) => candidate.textContent === 'The lost lamp');
+
+    expect(button).toBeInstanceOf(HTMLButtonElement);
+    button!.click();
+
+    expect(target.querySelector('.play-log')?.textContent)
+      .toContain('The lamp went out');
+    expect(target.querySelector('.play-log')?.textContent)
+      .toContain('Try taking the brass key.');
+    expect(target.querySelector('.play-sidebar')?.textContent).not.toContain('Try taking');
+  });
+
+  it('matches topic aliases and safely handles unknown topics', () => {
+    const target = renderTiny();
+
+    type(target, 'talk to old keeper about lamp');
+    expect(target.querySelector('.play-log')?.textContent)
+      .toContain('The lamp went out');
+    type(target, 'talk to old keeper about sandwiches');
+    expect(target.querySelector('.play-log')?.textContent)
+      .toContain('does not recognise that topic');
+  });
+
+  it('replays dialogue without adding clues and keeps undo coherent', () => {
+    vi.mocked(generateAdventureWorld).mockReturnValueOnce(tinyWorld);
+    vi.mocked(adventurePack).mockReturnValueOnce(tinyPack);
+    const target = document.createElement('main');
+    document.body.append(target);
+    renderPlayScreen(target, settingsFor('light-fantasy'), {
+      commands: ['talk to old keeper about lamp', 'undo'],
+      commandModes: ['content', 'content'],
+    });
+
+    expect(target.querySelector('.play-log')?.textContent)
+      .toContain('The lamp went out');
+    expect(target.querySelector('.play-sidebar')?.textContent).toContain('carved note');
+    expect(target.querySelector('.play-sidebar')?.textContent).not.toContain('hidden note');
   });
 
   it('shows a plain message when the world cannot be generated', () => {
