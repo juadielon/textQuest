@@ -29,11 +29,11 @@ readers. They have not yet been checked with a real screen reader.
 
 ### What's unfinished
 
-The play screen shows each version's authored names and story text. References
+The play screen shows the authored names and story text. References
 to hidden places, people, items and clues stay generic until they are
 discovered. Command suggestions and recovery checkpoints are still planned.
-Hand-built world-format version 2 adventures support mutually exclusive
-choices and winning endings, but released generators do not expose them.
+Hand-built worlds support mutually exclusive choices and winning endings,
+but released generators do not expose them.
 Failure endings remain blocked until checkpoint recovery is available. There
 is no turn-based combat.
 
@@ -42,7 +42,7 @@ is no turn-based combat.
 The play screen's heading is a readable story title, based on the selected
 plot's authored name ([issue #81](https://github.com/juadielon/textQuest/issues/81)).
 If the name contains a hidden name or alias, it uses a generic genre title instead.
-It stays the same for new and shared adventures in versions 1 and 2, without
+It stays the same for new and shared adventures, without
 revealing hidden discoveries. Titles can repeat: use the exact share word or
 link to identify an adventure, not just its title. An unplayable adventure
 keeps the fallback heading "Your adventure".
@@ -50,8 +50,7 @@ keeps the fallback heading "Your adventure".
 Each adventure has a **Share word** and an **Adventure link**. Give either to
 someone else and they can start the same adventure from the beginning. They
 will get the same genre, length, places and puzzles, but not your progress.
-Older share words still open their original starting adventures, and older
-saves still resume their saved progress.
+Share words and saves use one adventure format.
 
 To open a word, enter it under **Open a shared adventure** on the start
 screen. Capitals, spaces and hyphens are fine. To share a link, select
@@ -114,27 +113,26 @@ size: 8 places and 4 required puzzle steps for a short adventure, 16 places
 and 8 steps for a medium one, or 24 places and 12 steps for a long one. The
 seed also helps choose where some items and clues appear.
 
-Each released version has 65,280 possible share words. They do not all make
-unique adventures: version 1 has 27 generated worlds, and version 2 varies
-item and clue locations, but stories and layouts can still repeat. A share
-word records the version, seed and length so it can recreate the same
+There are 65,280 possible share words. They do not all make unique
+adventures: item and clue locations vary, but stories and layouts can still
+repeat. A share word records the seed and length so it can recreate the same
 starting adventure.
 
 The game tracks your commands, location and discoveries. A save holds the
 starting details and the commands you entered. When you resume, the game
 recreates the adventure and replays those commands to restore your progress.
 Each saved command keeps whether it used internal ID names or authored names,
-so older histories keep their original meaning. Format 1 saves migrate to
-ID-name replay; new saves use format 2 and preserve mixed histories.
+so histories keep their original meaning.
 
-World-format version 2 adds mutually exclusive choices and early endings to
-the world rules. The play engine supports these choices and winning endings
+The world rules support mutually exclusive choices and early endings.
+The play engine supports these choices and winning endings
 in hand-built worlds; no released generator creates them. Choices appear only
 when they are available, can be undone, and do not reveal hidden outcomes or
 puzzle answers. Hints stay general because route hints do not yet model
 choices. Worlds with failure endings are refused until checkpoint recovery
 is available. See the roadmap for the related work and current limitations.
-Released adventures, share words and saves remain unchanged.
+Current adventures, share words and saves use one format. This retirement
+does not preserve compatibility with older share words or saves.
 
 The project is written in TypeScript. Vite turns it into the HTML, CSS and
 JavaScript files used by the browser. The written content is in
@@ -247,7 +245,7 @@ By default, the same build can be hosted at the root of a site or in a folder
 such as `https://example.com/textQuest/`. Serve `index.html` at that address
 and keep `assets/` beside it. Shared links use the same page, so no special
 redirect is needed. The host must serve the page even when its address
-includes something like `?adventure=sunlitsaucer2`.
+includes something like `?adventure=sunlitsaucer`.
 
 To build specifically for a folder, pass its path with a leading and
 trailing slash:

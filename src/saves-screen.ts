@@ -122,7 +122,7 @@ export interface SaveFormOptions {
   readonly settings: AdventureSettings;
   /** Every command typed so far, oldest first. */
   readonly commands: () => readonly string[];
-  /** Replay mode for each command, oldest first. Defaults to legacy ID names. */
+  /** Replay mode for each command, oldest first. Defaults to ID names. */
   readonly commandModes?: () => readonly CommandReplayMode[];
   /** The save this adventure was resumed from, so saving updates it. */
   readonly resumed?: StoredSave;
@@ -148,13 +148,13 @@ export interface SaveFormOptions {
  *
  * @remarks
  * An update happens under a lock shared by every tab, and only if the stored
- * save is still exactly the version this form last loaded or wrote. If
+ * save is still exactly the snapshot this form last loaded or wrote. If
  * another tab or window changed or deleted it, nothing is overwritten or
  * brought back; the player is told and can save again as a new save.
  * Submissions queued before that warning cannot create the retry's new save.
  * Browsers without Web Locks always save as a new save instead of updating.
  * Results and problems go to a polite status message as plain text.
- * A failed save leaves any stored version as it was.
+ * A failed save leaves the stored save as it was.
  * Pending changes let the caller keep this form visible until all requests finish.
  * Success is announced only when no other save is waiting; errors remain visible.
  * Name errors and unacknowledged save failures remain visible together until
@@ -478,7 +478,7 @@ export function renderSavesScreen(target: HTMLElement, options: SavesScreenOptio
       }));
     } else {
       item.append(create('p', { className: 'error' }, entry.message),
-        create('p', { className: 'hint' }, 'It has been kept in case a later version of textQuest can read it.'));
+        create('p', { className: 'hint' },         'It has been kept without replacing the saved data.'));
     }
 
     const remove = button('Delete', name, () => {

@@ -1,5 +1,5 @@
 /*
- * The data format for an adventure's world: places, exits, items, clues,
+ * The data model for an adventure's world: places, exits, items, clues,
  * puzzle steps and the goal. IDs are plain strings and must be unique within
  * their own kind.
  */
@@ -54,7 +54,7 @@ export interface Conditions {
  * A change a puzzle step makes to the world when it's done.
  *
  * @remarks
- * `end-adventure` needs world version 2. It ends the adventure straight away
+ * `end-adventure` ends the adventure straight away
  * with one of the world's {@link Ending | endings}.
  */
 export type Effect =
@@ -74,7 +74,7 @@ export interface PuzzleStep {
   /** What happens when the step is done. */
   readonly effects: readonly Effect[];
   /**
-   * Needs world version 2. Steps that share a choice ID are mutually
+   * Steps that share a choice ID are mutually
    * exclusive: once one is done, the others can never be done. Each choice
    * needs at least two steps.
    */
@@ -82,7 +82,7 @@ export interface PuzzleStep {
 }
 
 /**
- * A way a world version 2 adventure can end early through an
+ * A way an adventure can end early through an
  * `end-adventure` effect. Reaching the goal is always a win as well.
  *
  * @remarks
@@ -114,13 +114,10 @@ export interface Goal {
  * `solution` holds puzzle answers. Keep it separate from anything the player
  * sees, so hints and suggestions never give answers away.
  *
- * Version 1 worlds only ever add progress. Version 2 adds mutually exclusive
- * choices and early endings. Released adventures generate version 1 worlds.
- * Play accepts version 2 worlds only when every ending is a win.
+ * Worlds support mutually exclusive choices and early endings.
+ * Play accepts a world only when every ending is a win.
  */
 export interface AdventureWorld {
-  /** World format version. */
-  readonly version: 1 | 2;
   /** Where the player begins. */
   readonly startPlaceId: string;
   /** Every place in the world. */
@@ -135,7 +132,7 @@ export interface AdventureWorld {
   readonly solution: {
     readonly steps: readonly PuzzleStep[];
     readonly goal: Goal;
-    /** Needs world version 2. Endings that steps can lead to. */
+    /** Endings that steps can lead to. */
     readonly endings?: readonly Ending[];
   };
 }

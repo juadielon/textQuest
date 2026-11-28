@@ -240,8 +240,8 @@ describe('buildSaveForm', () => {
     expect(lock.request.mock.calls.map(([lockName]) => lockName)).toEqual([SAVE_LOCK_NAME, SAVE_LOCK_NAME]);
   });
 
-  it.each([1, 2])('updates a resumed version %i save and keeps its adventure version', async (version) => {
-    const resumedSettings = createAdventureSettings(7, 'short', version);
+  it('updates a resumed save and keeps its adventure settings', async () => {
+    const resumedSettings = createAdventureSettings(7, 'short');
     const save = createSave('Old trip', resumedSettings, ['look'], earlier);
     const id = store.add(save);
     const { form, name } = mountForm(['look', 'hint'], {
@@ -1099,12 +1099,10 @@ describe('renderSavesScreen', () => {
   });
 
   it.each([
-    [1, '../Tower: <b>trip</b>?', 'textquest-Tower-b-trip-b.json'],
-    [2, '../Tower: <b>trip</b>?', 'textquest-Tower-b-trip-b.json'],
-    [1, '???', 'textquest-save.json'],
-    [2, '???', 'textquest-save.json'],
-  ] as const)('downloads version %i save %j as JSON with a safe file name and releases the URL', async (version, name, fileName) => {
-    const id = store.add(createSave(name, createAdventureSettings(7, 'short', version), ['look', 'hint'], earlier));
+    ['../Tower: <b>trip</b>?', 'textquest-Tower-b-trip-b.json'],
+    ['???', 'textquest-save.json'],
+  ] as const)('downloads save %j as JSON with a safe file name and releases the URL', async (name, fileName) => {
+    const id = store.add(createSave(name, createAdventureSettings(7, 'short'), ['look', 'hint'], earlier));
     const before = new Map(storage.items);
     let blob: Blob | undefined;
     vi.useFakeTimers();
@@ -1363,8 +1361,8 @@ describe('renderSavesScreen', () => {
     } else expect(storage.items).toEqual(beforeImport);
   });
 
-  it.each([1, 2])('imports a matching-name version %i adventure as a new save and can resume it', async (version) => {
-    const save = createSave('<b>Trip</b>', createAdventureSettings(7, 'short', version), ['look', 'hint'], earlier);
+  it('imports a matching-name adventure as a new save and can resume it', async () => {
+    const save = createSave('<b>Trip</b>', createAdventureSettings(7, 'short'), ['look', 'hint'], earlier);
     const id = store.add(save);
     const before = storage.items.get(`${SAVE_KEY_PREFIX}${id}`);
     render();
@@ -1398,7 +1396,6 @@ describe('renderSavesScreen', () => {
   it.each([
     ['{broken', /not valid JSON/],
     ['{}', /damaged/],
-    [JSON.stringify({ ...createSave('Future', settings, [], earlier), formatVersion: 3 }), /newer version/],
     [' '.repeat(MAX_SAVE_FILE_LENGTH + 1), /too large/],
   ])('rejects a bad file without changing any saves', async (text, message) => {
     store.add(createSave('Trip', settings, [], earlier));

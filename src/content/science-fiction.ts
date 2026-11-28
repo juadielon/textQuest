@@ -36,9 +36,8 @@ const lengths = {
   },
 } as const satisfies Readonly<Record<'short' | 'medium' | 'long', LengthPlan>>;
 
-/** Version 1's released science fiction pack; changes require a new content version. */
+/** Released science fiction content used by the adventure generator. */
 export const scienceFiction = {
-  version: 1,
   genre: 'science-fiction',
   startPlaceId: 'docking-ring',
   places: [
