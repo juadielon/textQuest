@@ -1417,7 +1417,7 @@ function namedWorld(): PlayWorld {
         {
           id: 'guard', name: 'The old guard', placeId: 'entry', aliases: ['guard'],
           conversations: [{
-            id: 'locked-door', label: 'The locked door', aliases: ['door', 'lock'],
+            id: 'locked-door', label: 'The locked door',
           }],
         },
         { id: 'ghost', name: 'Ghost', placeId: 'elsewhere' },
@@ -1631,7 +1631,7 @@ describe('play with content-pack names', () => {
     const world = namedWorld();
     const start = startPlay(world);
 
-    expect(playCommand(world, start, 'talk to guard about door').message)
+    expect(playCommand(world, start, 'talk to guard about the locked door').message)
       .toBe('The old guard discusses that topic.');
     expect(playCommand(world, start, 'talk to guard about sandwiches').message)
       .toBe('The old guard does not recognise that topic. Try one of the visible topics.');

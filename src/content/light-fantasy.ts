@@ -135,7 +135,7 @@ export const lightFantasy = {
       description: ['A boat builder who carries a notebook of river signs.'],
       motive: ['She wants safe crossings and news of the missing hill keeper.'],
       conversations: [
-        { id: 'missing-keeper', label: 'The missing keeper', aliases: ['keeper', 'hill keeper'], response: ['The hill keeper left before the warning post went quiet. Look for their signs at the river and tower.'] },
+        { id: 'missing-keeper', label: 'The missing keeper', aliases: ['keeper', 'hill keeper'], response: ['The missing keeper left before the warning post went quiet. Look for their signs by the river and compare them with the nearest open route.'] },
         { id: 'safe-crossings', label: 'Safe crossings', aliases: ['crossings', 'boats'], response: ['A sound ferry needs its plans and a clear crossing. Search for a way through the reeds.'] },
       ],
     },
@@ -144,7 +144,7 @@ export const lightFantasy = {
       description: ['A small water spirit in a coat of woven rushes.'],
       motive: ['They want people to honour the old flood-warning pact.'],
       conversations: [
-        { id: 'old-pact', label: 'The flood pact', aliases: ['pact', 'warning'], response: ['The old warning belongs to everyone near the river. Someone must carry the warning to the hill.'] },
+        { id: 'old-pact', label: 'The flood pact', aliases: ['pact', 'warning'], response: ['The old warning belongs to everyone near the river. Carry the warning along an open river route and look for the nearest safe crossing.'] },
         { id: 'river-signs', label: 'The river signs', aliases: ['signs', 'water'], response: ['The river speaks through rushes and bells. Look for a place where old and new warnings meet.'] },
       ],
     },

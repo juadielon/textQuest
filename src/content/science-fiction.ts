@@ -140,7 +140,7 @@ export const scienceFiction = {
       description: ['A young radio operator who never takes off their headset.'],
       motive: ['They want news of the overdue supply ship and its pilot.'],
       conversations: [
-        { id: 'supply-news', label: 'The supply ship', aliases: ['ship', 'pilot'], response: ['The missing ship was still on the outer approach. Check the relay and listen for its old call sign.'] },
+        { id: 'supply-news', label: 'The supply ship', aliases: ['ship', 'pilot'], response: ['The missing ship was still on the outer approach. Read the nearby signal log and listen for its old call sign.'] },
         { id: 'comms-fault', label: 'The radio fault', aliases: ['radio', 'relay'], response: ['Read the signal log nearby. It explains how to decode the pulses for useful names and distances.'] },
       ],
     },

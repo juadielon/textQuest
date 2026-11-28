@@ -298,7 +298,7 @@ export function renderPlayScreen(
       ? parsed.action.topic : undefined;
     const conversation = person && topic
       ? person.conversations?.find((entry) =>
-        [entry.label, ...entry.aliases].some((label) => normaliseName(label) === normaliseName(topic)))
+        [entry.label, ...(entry.aliases ?? [])].some((label) => normaliseName(label) === normaliseName(topic)))
       : undefined;
     const response = person
       ? conversation
