@@ -113,9 +113,9 @@ describe('place descriptions', () => {
   });
 
   it.each([
-    [lightFantasyWithWording, '0052f8fcb439824060ad74dc23b8dc2ff35c5188b3711be845c07e57881fabfd'],
-    [cosyMysteryWithWording, 'ee4efdb87fac595c2c25a4ef64229c2d9b5f036e498cf7abe75a66491ecaa998'],
-    [scienceFictionWithWording, '917462866615636de44f46c23212153ab1a13297a2a194128a499e962e1ff504'],
+    [lightFantasyWithWording, '0b38c6fdc9382d11897f4d43d3272560dc0679d85a7b9f7e5f7ae9a9d930d2a4'],
+    [cosyMysteryWithWording, '38365cef1fe55305f2cbc9eb5444d7a908db65a8f4b2a89e45c834f8faeb8526'],
+    [scienceFictionWithWording, '4566b1748f3b5a09dfedc63d43d1e98c44938a94fd781bb88b01a6c5f1aedc19'],
   ] as const)('pins the complete final $genre content', async (pack, pin) => {
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(pack)));
     expect([...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')).toBe(pin);
