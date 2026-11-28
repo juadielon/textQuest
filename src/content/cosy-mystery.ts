@@ -31,9 +31,8 @@ const lengths = {
   },
 } as const satisfies Readonly<Record<'short' | 'medium' | 'long', LengthPlan>>;
 
-/** Version 1's released cosy mystery pack; changes require a new content version. */
+/** Released cosy mystery content used by the adventure generator. */
 export const cosyMystery = {
-  version: 1,
   genre: 'cosy-mystery',
   startPlaceId: 'green',
   places: [
@@ -117,41 +116,73 @@ export const cosyMystery = {
       id: 'organiser', name: 'Mrs Finch the organiser', placeId: 'green',
       description: ['A brisk organiser with a clipboard and a kind smile.'],
       motive: ['She wants the fete to open on time with the Silver Teapot back on its stand.'],
+      conversations: [
+        { id: 'missing-teapot', label: 'The missing teapot', aliases: ['teapot', 'silver teapot'], response: ['The teapot vanished during judging. Compare the last sighting with the cabinet key.'] },
+        { id: 'fete-opening', label: 'Opening the fete', aliases: ['fete', 'opening'], response: ['The stalls can open once the cabinet and side door are accounted for. Start with the nearest lock.'] },
+      ],
     },
     {
       id: 'regular', name: 'Aunt Vi', placeId: 'tea-room',
       description: ['A tea room regular who hears the news before anyone else.'],
       motive: ['She wants the right person thanked and nobody wrongly suspected.'],
+      conversations: [
+        { id: 'village-rumour', label: 'The village rumours', aliases: ['rumours', 'news'], response: ['Rumour says the baker saw the teapot, but not who carried it. Ask the baker only for the exact last sighting.'] },
+        { id: 'fair-credit', label: 'Who deserves credit', aliases: ['credit', 'thanks'], response: ['The finder should be thanked before gossip chooses a suspect. Look for a signed record.'] },
+      ],
     },
     {
       id: 'baker', name: 'Bea the baker', placeId: 'bakery',
       description: ['A cheerful baker dusted with flour and worry.'],
       motive: ['She was the last to see the teapot and wants her name cleared.'],
+      conversations: [
+        { id: 'last-sighting', label: 'The last sighting', aliases: ['sighting', 'teapot'], response: ['The teapot left the tent with a ribbon near the side door. The route is worth checking.'] },
+        { id: 'cleared-name', label: 'Clearing her name', aliases: ['name', 'baker'], response: ['A witness can confirm the baker stayed with the ovens. Find the lost key or a clear record.'] },
+      ],
     },
     {
       id: 'courier', name: 'Sam the delivery lad', placeId: 'bakery',
       description: ['A delivery lad guarding a cart piled with bread crates.'],
       motive: ['He wants to finish his round without a single loaf spilt.'],
+      conversations: [
+        { id: 'delivery-route', label: 'The delivery route', aliases: ['route', 'round'], response: ['The cart passed the fête tent, but no one touched the bread crates. Check the old gate before the next turn.'] },
+        { id: 'spilled-loaves', label: 'The loose loaves', aliases: ['loaves', 'bread'], response: ['The bread is safest if the cart stays level. Clear a place in the yard, then continue the round.'] },
+      ],
     },
     {
       id: 'librarian', name: 'Hal the librarian', placeId: 'library',
       description: ['A quiet librarian who remembers every borrower.'],
       motive: ['He wants the truth found before gossip settles on the wrong reader.'],
+      conversations: [
+        { id: 'borrower-record', label: 'The borrower record', aliases: ['record', 'borrowers'], response: ['The loans desk keeps names and dates. Compare the loan card with the raffle bookmark.'] },
+        { id: 'reading-room-news', label: 'Reading-room news', aliases: ['reading', 'gossip'], response: ['A quiet witness may have seen the carrier. Search the returned books, then listen in the reading room.'] },
+      ],
     },
     {
       id: 'bowler', name: 'Mr Doyle the bowler', placeId: 'bowls-club',
       description: ['A retired bowler fretting over a lost scorecard.'],
       motive: ['He wants his winning score recorded before he shares what he saw.'],
+      conversations: [
+        { id: 'lost-score', label: 'The lost scorecard', aliases: ['scorecard', 'score'], response: ['The winning total proves the match before it proves the mystery. Check the records near the club.'] },
+        { id: 'pavilion-sighting', label: 'What he saw', aliases: ['saw', 'sighting'], response: ['He saw someone carrying a parcel after the match. Ask what people nearby remember.'] },
+      ],
     },
     {
       id: 'neighbour', name: 'Rosie the gardener', placeId: 'rose-cottage',
       description: ['A gardener waiting on a parcel that never arrived.'],
       motive: ['She wants her parcel found and thinks it was mixed up with another.'],
+      conversations: [
+        { id: 'missing-parcel', label: 'The missing parcel', aliases: ['parcel', 'delivery'], response: ['The parcel was meant for Rose Cottage, not the fete. Search the lane and read the address before opening it.'] },
+        { id: 'garden-plant', label: 'The garden plant', aliases: ['plant', 'garden'], response: ['The parcel belongs beside the potting ledger. A key or label may show where it was moved.'] },
+      ],
     },
     {
       id: 'keeper', name: 'Mr Pike the old keeper', placeId: 'lamp-room',
       description: ['A retired lighthouse keeper who polishes anything made of brass.'],
       motive: ['He meant to surprise the village and now worries he caused a fuss.'],
+      conversations: [
+        { id: 'lamp-room-secrets', label: 'The lamp room secret', aliases: ['secret', 'lamp room'], response: ['The lighthouse keeper meant to return the old key, not hide it. Check the sea chest with care.'] },
+        { id: 'brass-repair', label: 'The brass repair', aliases: ['brass', 'lighthouse'], response: ['The great lamp needs only a fitting and an honest witness. Look for the anchor key and the old record.'] },
+      ],
     },
   ],
   items: [

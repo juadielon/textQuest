@@ -26,12 +26,11 @@ facts. Ask for them when they affect the work.
   to focus on.
 - Do not mix unrelated changes.
 
-## Keep old adventures working
+## Keep one adventure format
 
-Released share-word lists, content and generation rules must stay unchanged.
-If a change would alter an adventure opened from an existing share word or
-resumed from an existing save, add a new version and keep the old version's
-rules working.
+Released share-word lists, content and generation rules belong to the one
+supported adventure format. Do not add version fields or branches, or retain
+compatibility code for old share words or saves.
 
 ## Commit messages
 
@@ -50,7 +49,7 @@ Examples:
 
 ```text
 docs: explain the planned game and current status
-feat(sharing): recreate adventures from a versioned code
+feat(sharing): recreate adventures from a share word
 fix(saves): keep existing progress when an import is invalid
 ```
 
@@ -118,7 +117,7 @@ Use the pull request template. A good pull request:
 - Includes the ESLint check: `docker compose run --rm app npm run lint`.
 - Includes passing unit tests for every code change, or says `N/A` only when
   the pull request changes no code.
-- Notes changes to README, roadmap, save formats, shared adventure
+- Notes changes to README, roadmap, saved adventures and shared adventures
   compatibility or generated content when relevant.
 - Includes screenshots for meaningful browser interface changes when useful.
 - Says what remains unfinished rather than implying the whole roadmap is

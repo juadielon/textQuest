@@ -1,4 +1,4 @@
-import type { AdventureWorld, Clue, Conditions, Exit, Item, PuzzleStep } from './adventure-world';
+import type { AdventureWorld, Conditions, Exit, PuzzleStep } from './adventure-world';
 import { useStepOptions } from './use-rules';
 
 /**
@@ -8,7 +8,7 @@ import { useStepOptions } from './use-rules';
  * This is a conservative first value. It will be retuned once the adventure
  * generator can produce real worlds to measure.
  */
-export const MAX_SEARCH_STATES = 10_000;
+export const MAX_SEARCH_STATES = 250_000;
 
 /** The result for a world that the checker searched completely. */
 export interface CheckedWinnability {
@@ -16,10 +16,10 @@ export interface CheckedWinnability {
   readonly winnable: boolean;
   /** IDs of puzzle steps that no route can complete, in world order. */
   readonly unreachableStepIds: readonly string[];
-  /** World version 2 only. IDs of endings some route can reach, in world order. */
+  /** IDs of endings some route can reach, in world order. */
   readonly reachableEndingIds?: readonly string[];
   /**
-   * World version 2 only. True when some route reaches a point where the
+   * True when some route reaches a point where the
    * player can no longer win. Failure endings don't count, but the point just
    * before each one must still be able to win, so recovery from it works.
    */
@@ -50,24 +50,16 @@ interface SearchState {
 }
 
 /**
- * Checks that a world uses a supported version, has unique non-empty IDs and
+ * Checks that a world has unique non-empty IDs and
  * only refers to things that exist. The world is not changed.
  *
  * @remarks
- * Choices, endings and `end-adventure` effects need world version 2. Each
+ * Choices, endings and `end-adventure` effects are supported. Each
  * choice needs at least two steps, and a step can end the adventure only once.
  *
  * @throws RangeError when the world is invalid, with a message naming the problem.
  */
 export function validateWorld(world: AdventureWorld): void {
-  if (world.version !== 1 && world.version !== 2) {
-    throw new RangeError(`World version ${world.version} is not supported.`);
-  }
-  const needsVersionTwo = () => {
-    if (world.version === 1) {
-      throw new RangeError('Choices and endings need world version 2.');
-    }
-  };
 
   const idsFor = (entries: readonly { readonly id: string }[], kind: string) => {
     const ids = new Set<string>();
@@ -84,7 +76,6 @@ export function validateWorld(world: AdventureWorld): void {
   const items = idsFor(world.items, 'item');
   const clues = idsFor(world.clues, 'clue');
   const steps = idsFor(world.solution.steps, 'step');
-  if (world.solution.endings !== undefined) needsVersionTwo();
   const endings = idsFor(world.solution.endings ?? [], 'ending');
   for (const ending of world.solution.endings ?? []) {
     if (ending.outcome !== 'win' && ending.outcome !== 'failure') {
@@ -118,7 +109,6 @@ export function validateWorld(world: AdventureWorld): void {
     requireId(places, step.placeId, 'place');
     checkConditions(step.conditions);
     if (step.choiceId !== undefined) {
-      needsVersionTwo();
       if (typeof step.choiceId !== 'string' || !step.choiceId.trim()) {
         throw new RangeError(`The step "${step.id}" has an empty choice ID.`);
       }
@@ -131,7 +121,6 @@ export function validateWorld(world: AdventureWorld): void {
         case 'give-item': requireId(items, effect.itemId, 'item'); break;
         case 'reveal-clue': requireId(clues, effect.clueId, 'clue'); break;
         case 'end-adventure':
-          needsVersionTwo();
           requireId(endings, effect.endingId, 'ending');
           endingEffects++;
           break;
@@ -204,60 +193,6 @@ function isOpen(state: SearchState, exit: Exit): boolean {
   return !exit.locked || state.unlockedExits.has(exit.id);
 }
 
-function placesLinkedTo(
-  state: SearchState, links: Map<string, Exit[]>, next: (exit: Exit) => string,
-): Set<string> {
-  const found = new Set([state.placeId]);
-  for (const placeId of found) {
-    for (const exit of links.get(placeId)!) {
-      if (isOpen(state, exit)) found.add(next(exit));
-    }
-  }
-  return found;
-}
-
-// Places the player can walk to and still get back from. Visiting them all
-// only adds progress, so the search treats them as one area.
-function returnablePlaces(world: AdventureWorld, state: SearchState, links: Links): string[] {
-  const forward = placesLinkedTo(state, links.outgoing, (exit) => exit.toPlaceId);
-  const back = placesLinkedTo(state, links.incoming, (exit) => exit.fromPlaceId);
-  return world.places.map(({ id }) => id).filter((id) => forward.has(id) && back.has(id));
-}
-
-function visitPlace(world: AdventureWorld, state: SearchState, placeId: string): boolean {
-  let changed = !state.placesVisited.has(placeId);
-  state.placesVisited.add(placeId);
-  const pickUp = (entries: readonly (Item | Clue)[], found: Set<string>) => {
-    for (const { id, placeId: foundAt } of entries) {
-      if (foundAt !== placeId || found.has(id)) continue;
-      found.add(id);
-      changed = true;
-    }
-  };
-  pickUp(world.items, state.itemsHeld);
-  pickUp(world.clues, state.cluesRevealed);
-  for (const step of world.solution.steps) {
-    if (step.placeId !== placeId || isDecision(step) || !canTakeStep(state, step)) continue;
-    completeStep(state, step);
-    changed = true;
-  }
-  return changed;
-}
-
-// Steps taken here only add progress, so taking everything in the area cannot
-// block a win. Decisions are tried separately by the search.
-function settleArea(world: AdventureWorld, state: SearchState, links: Links): string[] {
-  let area: string[];
-  let changed: boolean;
-  do {
-    area = returnablePlaces(world, state, links);
-    changed = false;
-    for (const placeId of area) {
-      if (visitPlace(world, state, placeId)) changed = true;
-    }
-  } while (changed);
-  return area;
-}
 
 // Automatic steps are not decisions and need no items, so arrival can take them.
 function automaticStepsByPlace(world: AdventureWorld): Map<string, PuzzleStep[]> {
@@ -347,14 +282,13 @@ function stateKey(areaId: string, state: SearchState): string {
  * `TooLargeToCheck` result. The same world always gives the same result.
  *
  * @remarks
- * For world version 2, the search tries moves, item takes, uses and decisions
+ * The search tries moves, item takes, uses and decisions
  * separately, stopping each route at its goal or early ending. Uses follow
  * play's first-ready-step rule, including the preference for a named local
  * exit. It also reports reachable endings and whether a player can get stuck.
- * Version 1 keeps its original area search and result shape.
  *
  * @throws RangeError when the world has invalid references, empty or repeated
- * IDs, an unsupported version or an unknown effect.
+ * IDs or an unknown effect.
  */
 export function checkWinnability(world: AdventureWorld): WinnabilityResult {
   validateWorld(world);
@@ -370,6 +304,8 @@ export function checkWinnability(world: AdventureWorld): WinnabilityResult {
   // A running total, not the queue length, so the cap still holds if the queue is ever drained.
   let statesCreated = queue.length;
   const seen = new Set<string>();
+  const queued = new Set<string>();
+  queued.add(stateKey(world.startPlaceId, queue[0]));
   const reachableSteps = new Set<string>();
   const reachedEndings = new Set<string>();
   const winningOutcome = new Set((world.solution.endings ?? [])
@@ -377,54 +313,53 @@ export function checkWinnability(world: AdventureWorld): WinnabilityResult {
   const decisions = world.solution.steps.filter(isDecision);
   const isChoice = new Set(decisions);
   // Item uses are never decisions, so they have no choice to close.
-  const itemUses = world.version === 2 ? world.solution.steps.filter((step) =>
-    !isChoice.has(step) && (step.conditions.itemsHeld ?? []).length > 0) : [];
+  const itemUses = world.solution.steps.filter((step) =>
+    !isChoice.has(step) && (step.conditions.itemsHeld ?? []).length > 0);
   const automatic = automaticStepsByPlace(world);
   const choiceOfStep = new Map(world.solution.steps.flatMap(({ id, choiceId }) =>
     choiceId === undefined ? [] : [[id, choiceId] as const]));
   // Links each searched state to the states it leads to, to find any that can't win.
-  const parents: (string | null)[] = [null];
   const ledFrom = new Map<string, string[]>();
   const winningKeys: string[] = [];
   let winnable = false;
   const enqueue = (next: SearchState, parentKey: string): boolean => {
-    // Count every state created, including repeats, so both work and memory stay capped.
+    const nextArea = settleHere(world, next, automatic);
+    const nextKey = stateKey(nextArea[0], next);
+    const sources = ledFrom.get(nextKey);
+    if (sources) {
+      if (!sources.includes(parentKey)) sources.push(parentKey);
+    } else {
+      ledFrom.set(nextKey, [parentKey]);
+    }
+    if (seen.has(nextKey) || queued.has(nextKey)) return true;
+    queued.add(nextKey);
+    // Count each state queued, so work and memory stay capped.
     if (statesCreated >= MAX_SEARCH_STATES) return false;
     statesCreated++;
     queue.push(next);
-    parents.push(parentKey);
     return true;
   };
 
   for (let index = 0; index < queue.length; index++) {
     const state = queue[index];
-    const area = world.version === 1
-      ? settleArea(world, state, links) : settleHere(world, state, automatic);
+    const area = settleHere(world, state, automatic);
     const key = stateKey(area[0], state);
-    const parentKey = parents[index];
-    if (parentKey !== null && world.version === 2) {
-      const sources = ledFrom.get(key);
-      if (sources) sources.push(parentKey);
-      else ledFrom.set(key, [parentKey]);
-    }
     if (seen.has(key)) continue;
     seen.add(key);
     for (const id of state.stepsDone) reachableSteps.add(id);
     const goal = world.solution.goal;
     let wins = area.includes(goal.placeId) && meetsConditions(state, goal.conditions);
-    if (wins && world.version === 2) {
+    if (wins) {
       winnable = true;
       winningKeys.push(key);
       continue;
     }
     const inArea = new Set(area);
-    if (world.version === 2) {
-      for (const item of world.items) {
-        if (item.placeId !== state.placeId || state.itemsHeld.has(item.id)) continue;
-        const taken = copyState(state, state.placeId);
-        taken.itemsHeld.add(item.id);
-        if (!enqueue(taken, key)) return { winnable: false, tooLarge: true };
-      }
+    for (const item of world.items) {
+      if (item.placeId !== state.placeId || state.itemsHeld.has(item.id)) continue;
+      const taken = copyState(state, state.placeId);
+      taken.itemsHeld.add(item.id);
+      if (!enqueue(taken, key)) return { winnable: false, tooLarge: true };
     }
     // Built once per state, so each option is checked without rescanning every step.
     const closedChoices = new Set<string>();
@@ -433,16 +368,14 @@ export function checkWinnability(world: AdventureWorld): WinnabilityResult {
       if (choiceId !== undefined) closedChoices.add(choiceId);
     }
     let candidates = decisions;
-    if (world.version === 2) {
-      const readyUses = itemUses.filter((step) => step.placeId === state.placeId
-        && canTakeStep(state, step));
-      const uses = useStepOptions(readyUses);
-      const selected = new Set(uses.byItem.values());
-      for (const exit of links.outgoing.get(state.placeId)!) {
-        for (const step of uses.byExit.get(exit.id)?.values() ?? []) selected.add(step);
-      }
-      candidates = world.solution.steps.filter((step) => isChoice.has(step) || selected.has(step));
+    const readyUses = itemUses.filter((step) => step.placeId === state.placeId
+      && canTakeStep(state, step));
+    const uses = useStepOptions(readyUses);
+    const selected = new Set(uses.byItem.values());
+    for (const exit of links.outgoing.get(state.placeId)!) {
+      for (const step of uses.byExit.get(exit.id)?.values() ?? []) selected.add(step);
     }
+    candidates = world.solution.steps.filter((step) => isChoice.has(step) || selected.has(step));
     for (const step of candidates) {
       if (!inArea.has(step.placeId) || !canTakeStep(state, step, closedChoices)) continue;
       if (statesCreated >= MAX_SEARCH_STATES) return { winnable: false, tooLarge: true };
@@ -472,7 +405,6 @@ export function checkWinnability(world: AdventureWorld): WinnabilityResult {
 
   const unreachableStepIds = world.solution.steps
     .filter((step) => !reachableSteps.has(step.id)).map((step) => step.id);
-  if (world.version === 1) return { winnable, unreachableStepIds };
 
   const canStillWin = new Set(winningKeys);
   for (const key of canStillWin) {

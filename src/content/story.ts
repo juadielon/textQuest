@@ -1,9 +1,9 @@
-import type { AdventureSettings } from '../../adventure-settings';
-import type { Conditions } from '../../adventure-world';
-import type { PlayState } from '../../engine/play';
-import { adventurePlot } from '../../generate-world';
+import type { AdventureSettings } from '../adventure-settings';
+import type { Conditions } from '../adventure-world';
+import type { PlayState } from '../engine/play';
+import { adventurePlot } from '../generate-world';
 import type { ContentPack, ContentEnding, PlotStructure, Prose } from './format';
-import type { VersionTwoContentPack } from '../v2/place-wording';
+import type { ContentPackWithWording } from './place-wording';
 
 /** The story information the play screen can show for an adventure. */
 export interface StoryView {
@@ -34,7 +34,7 @@ export interface StoryState {
  * @returns Newly completed puzzle text in pack order.
  */
 export function puzzleCompletions(
-  pack: ContentPack | VersionTwoContentPack,
+  pack: ContentPack | ContentPackWithWording,
   before: StoryState,
   after: StoryState,
 ): readonly string[] {
@@ -51,7 +51,7 @@ export function puzzleCompletions(
  * @param prose - Literal text and entity references.
  * @throws RangeError if a reference names an entity absent from the pack.
  */
-export function resolveProse(pack: ContentPack | VersionTwoContentPack, prose: Prose): string {
+export function resolveProse(pack: ContentPack | ContentPackWithWording, prose: Prose): string {
   const nameOf = (kind: 'place' | 'character' | 'item' | 'clue', id: string): string => {
     const entries = kind === 'place' ? pack.places
       : kind === 'character' ? pack.characters
@@ -72,7 +72,7 @@ export function resolveProse(pack: ContentPack | VersionTwoContentPack, prose: P
  * @throws RangeError if the settings or story references are invalid.
  */
 export function storyView(
-  pack: ContentPack | VersionTwoContentPack,
+  pack: ContentPack | ContentPackWithWording,
   settings: AdventureSettings,
   state?: PlayState | StoryState,
 ): StoryView {
@@ -122,7 +122,7 @@ function objectiveFor(plotId: string): string {
  * @returns The matching ending, or undefined if none matches.
  */
 export function matchingEnding(
-  pack: ContentPack | VersionTwoContentPack,
+  pack: ContentPack | ContentPackWithWording,
   plot: PlotStructure,
   state: StoryState,
 ): ContentEnding | undefined {

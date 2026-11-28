@@ -3,12 +3,11 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import * as adventureSettings from './adventure-settings';
 import { discoveredTargets, replayCommands, startPlay } from './engine/play';
 import { adventurePack, generateAdventureWorld } from './generate-world';
-import { worldNamesFrom } from './content/v1/world-names';
+import { worldNamesFrom } from './content/world-names';
 import { describePlay, playScreenTitle, renderPlayScreen, unplayableMessage } from './play-screen';
 import { createSave, createSaveStore, PLAYED_KEY_PREFIX, SAVE_KEY_PREFIX } from './saves';
 import { formatSaveTime, SAVE_LOCK_NAME } from './saves-screen';
 import { summariseAdventure } from './start-screen-model';
-import { findWinningCommands } from './solution';
 
 let app: HTMLElement;
 const settings = Array.from({ length: 100 }, (_, seed) =>
@@ -52,7 +51,7 @@ function shownDetails(): Record<string, string> {
 
 function expectPlay(settings: adventureSettings.AdventureSettings): void {
   const world = generateAdventureWorld(settings);
-  const named = { ...world, names: worldNamesFrom(adventurePack(settings.version, settings.genre), world) };
+  const named = { ...world, names: worldNamesFrom(adventurePack(settings.genre), world) };
   const view = describePlay(named, startPlay(named));
   expect(get('.play-place-name').textContent).toBe(view.placeName);
   expect(get('.play-place p:nth-of-type(4)').textContent).toBe(view.placeText);
@@ -81,28 +80,10 @@ it('mounts the start screen and focuses its heading', () => {
   expect(document.activeElement).toBe(get('h1'));
 });
 
-it('offers three progressive hint stages without changing turns', () => {
-  openAdventure(adventureSettings.encodeShareWord(settings));
-  const input = get<HTMLInputElement>('#play-command');
-  const form = get<HTMLFormElement>('.play-command');
-  const responses: string[] = [];
-
-  for (let index = 0; index < 3; index += 1) {
-    input.value = 'hint';
-    form.requestSubmit();
-    responses.push(get('.play-log').lastElementChild?.lastElementChild?.textContent ?? '');
-  }
-
-  expect(responses[0]).not.toBe('');
-  expect(responses[1]).not.toBe(responses[0]);
-  expect(responses[2]).not.toBe(responses[1]);
-  expect(get('.play-sidebar > p:last-child').textContent).toBe('Turns taken: 0');
-});
-
 it.each<adventureSettings.AdventureGenre>(['light-fantasy', 'cosy-mystery', 'science-fiction'])(
   'starts a playable %s adventure from a fresh random seed', async (genre) => {
     const matchingSeeds = Array.from(
-      { length: adventureSettings.seedCountFor(2) },
+      { length: adventureSettings.seedCountFor() },
       (_, seed) => adventureSettings.createAdventureSettings(seed, 'short'),
     ).filter((value) => value.genre === genre);
     const newSettings = matchingSeeds[0];
@@ -160,92 +141,10 @@ it.each<adventureSettings.AdventureGenre>(['light-fantasy', 'cosy-mystery', 'sci
   },
 );
 
-it.each<adventureSettings.AdventureGenre>(['light-fantasy', 'cosy-mystery', 'science-fiction'])(
-  'proves the browser story loop for %s', (genre) => {
-    const shared = Array.from(
-      { length: adventureSettings.seedCountFor(1) },
-      (_, seed) => adventureSettings.createAdventureSettings(seed, 'short', 1),
-    ).find((value) => value.genre === genre)!;
-    openAdventure(adventureSettings.encodeShareWord(shared));
-
-    const expectedStory: Record<adventureSettings.AdventureGenre, { introduction: string; objective: string }> = {
-      'light-fantasy': {
-        introduction: 'A flood is coming. someone asks you to restore the valley warning stations in order.',
-        objective: 'Objective: Restore each valley warning station and light the place.',
-      },
-      'cosy-mystery': {
-        introduction: 'The Silver Teapot has vanished before the fete. Mrs Finch the organiser asks you to follow its trail, one clue at a time.',
-        objective: 'Objective: Find who borrowed the Silver Teapot and return it before judging.',
-      },
-      'science-fiction': {
-        introduction: 'someone has heard a faint call from the late supply ship. Follow two lines of repairs and bring them together to a clue it home.',
-        objective: 'Objective: Repair the station, trace the ship and a clue it home.',
-      },
-    };
-    expect(get('.play-introduction').textContent).toBe(expectedStory[genre].introduction);
-    expect(get('.play-objective').textContent).toBe(expectedStory[genre].objective);
-
-    const world = generateAdventureWorld(shared);
-    const pack = adventurePack(shared.version, shared.genre);
-    const named = { ...world, names: worldNamesFrom(pack, world) };
-    const person = discoveredTargets(named, startPlay(named))
-      .find((target) => target.kind === 'person');
-    expect(person).toBeDefined();
-    if (person) {
-      const alias = person.aliases?.[0] ?? person.name;
-      get<HTMLInputElement>('#play-command').value = `talk to ${alias}`;
-      get<HTMLFormElement>('.play-command').requestSubmit();
-      expect(get('.play-log').lastElementChild?.lastElementChild?.textContent)
-        .toContain('greets you');
-    }
-
-    const hintResponses: string[] = [];
-    for (let stage = 0; stage < 3; stage += 1) {
-      get<HTMLInputElement>('#play-command').value = 'hint';
-      get<HTMLFormElement>('.play-command').requestSubmit();
-      hintResponses.push(get('.play-log').lastElementChild?.lastElementChild?.textContent ?? '');
-    }
-    expect(new Set(hintResponses).size).toBe(3);
-    expect(get('.play-sidebar > p:last-child').textContent).toBe('Turns taken: 0');
-
-    const beforeInvalid = {
-      place: get('.play-place-name').textContent,
-      turns: get('.play-sidebar > p:last-child').textContent,
-    };
-    get<HTMLInputElement>('#play-command').value = 'unrecognised command';
-    get<HTMLFormElement>('.play-command').requestSubmit();
-    expect(get('.play-log').lastElementChild?.lastElementChild?.textContent).not.toBe('');
-    expect(get('.play-place-name').textContent).toBe(beforeInvalid.place);
-    expect(get('.play-sidebar > p:last-child').textContent).toBe(beforeInvalid.turns);
-
-    const route = findWinningCommands(named);
-    expect(route.length).toBeGreaterThan(0);
-    for (const command of route) {
-      get<HTMLInputElement>('#play-command').value = command;
-      get<HTMLFormElement>('.play-command').requestSubmit();
-    }
-    const ending = get<HTMLElement>('.play-ending');
-    expect(ending.hidden).toBe(false);
-    const expectedEndings: Record<adventureSettings.AdventureGenre, string> = {
-      'light-fantasy':
-        'The river guest joins the warning watch. Your promise brings help from both banks.',
-      'cosy-mystery':
-        'Because you asked first, Mrs Finch the organiser thanks you in her opening speech.',
-      'science-fiction':
-        'The supply ship docks safely. Pip the signaller finally takes off their headset.',
-    };
-    expect(get('.play-authored-ending').textContent).toBe(expectedEndings[genre]);
-
-    get<HTMLInputElement>('#play-command').value = 'undo';
-    get<HTMLFormElement>('.play-command').requestSubmit();
-    expect(ending.hidden).toBe(true);
-  },
-);
-
-it.each([1, 2])('opens all version %i shared genres directly in play, accepting capitals and hyphens', (version) => {
+it('opens all shared genres directly in play, accepting capitals and hyphens', () => {
   for (const genre of adventureSettings.adventureGenres) {
     const sharedSettings = Array.from({ length: 100 }, (_, seed) =>
-      adventureSettings.createAdventureSettings(seed, 'short', version))
+      adventureSettings.createAdventureSettings(seed, 'short'))
       .find((value) => value.genre === genre)!;
     openAdventure(` ${adventureSettings.encodeShareWord(sharedSettings).toUpperCase()}- `);
 
@@ -269,7 +168,7 @@ it('returns to start with heading focus and restarts the share word without prog
   const generated = generateAdventureWorld(settings);
   const world = {
     ...generated,
-    names: worldNamesFrom(adventurePack(settings.version, settings.genre), generated),
+    names: worldNamesFrom(adventurePack(settings.genre), generated),
   };
   const state = startPlay(world);
   const exit = world.exits.find((value) => value.fromPlaceId === state.placeId && !value.locked)!;
@@ -294,7 +193,7 @@ it('returns to start with heading focus and restarts the share word without prog
 it('shows a generation error and still lets the player return to start', async () => {
   const generator = await import('./generate-world');
   vi.spyOn(generator, 'generateAdventureWorld').mockImplementationOnce(() => {
-    throw new RangeError('The genre does not match this seed and version.');
+    throw new RangeError('The genre does not match this seed.');
   });
   openAdventure(adventureSettings.encodeShareWord(settings));
 
@@ -310,14 +209,14 @@ it('shows a generation error and still lets the player return to start', async (
   expect(document.activeElement).toBe(get('h1'));
 });
 
-it.each([1, 2])('saves, exports, imports and resumes version %i from a share link without sharing progress', async (version) => {
+it('saves, exports, imports and resumes from a share link without sharing progress', async () => {
   // Like Web Locks shared by every tab: tasks run one at a time, later, in order.
   let queue: Promise<unknown> = Promise.resolve();
   const request = vi.fn((_name: string, task: () => unknown) => (queue = queue.then(task)));
   Object.defineProperty(navigator, 'locks', { configurable: true, value: { request } });
   // A short world keeps this test quick, as it is generated several times.
   const short = Array.from({ length: 100 }, (_, seed) =>
-    adventureSettings.createAdventureSettings(seed, 'short', version))
+    adventureSettings.createAdventureSettings(seed, 'short'))
     .find((value) => value.genre === 'light-fantasy')!;
   const word = adventureSettings.encodeShareWord(short);
   await openLink(word, '/textQuest/?unrelated=private#progress');
@@ -326,7 +225,7 @@ it.each([1, 2])('saves, exports, imports and resumes version %i from a share lin
   const generated = generateAdventureWorld(short);
   const world = {
     ...generated,
-    names: worldNamesFrom(adventurePack(short.version, short.genre), generated),
+    names: worldNamesFrom(adventurePack(short.genre), generated),
   };
   const exit = world.exits.find((value) => value.fromPlaceId === world.startPlaceId && !value.locked)!;
   const name = discoveredTargets(world, startPlay(world)).find((value) => value.id === exit.id)!.name;
@@ -363,7 +262,6 @@ it.each([1, 2])('saves, exports, imports and resumes version %i from a share lin
   get<HTMLButtonElement>('button[aria-label="Export: My trip"]').click();
   expect(exported).toBeDefined();
   const text = await exported!.text();
-  expect(JSON.parse(text).settings.version).toBe(version);
   expect(JSON.parse(text).commandModes).toEqual(commandModes);
   const input = get<HTMLInputElement>('#import-save');
   Object.defineProperty(input, 'files', {
@@ -426,15 +324,15 @@ it.each([1, 2])('saves, exports, imports and resumes version %i from a share lin
     .toEqual([...commands, 'inventory'].map((command) => `> ${command}`));
 });
 
-it.each([1, 2])('keeps a failed legacy character talk separate from new content talk in version %i saves', async (version) => {
+it('keeps failed ID-name character talk separate from content-name talk in saves', async () => {
   let queue: Promise<unknown> = Promise.resolve();
   Object.defineProperty(navigator, 'locks', {
     configurable: true,
     value: { request: (_name: string, task: () => void) => (queue = queue.then(task)) },
   });
-  const mixedSettings = adventureSettings.createAdventureSettings(0, 'short', version);
+  const mixedSettings = adventureSettings.createAdventureSettings(0, 'short');
   const generated = generateAdventureWorld(mixedSettings);
-  const pack = adventurePack(version, mixedSettings.genre);
+  const pack = adventurePack(mixedSettings.genre);
   const person = pack.characters.find(({ placeId }) => placeId === generated.startPlaceId)!;
   const talk = `talk to ${person.name}`;
   const motive = person.motive.map((part) => typeof part === 'string' ? part : '').join('');
@@ -1340,11 +1238,11 @@ it('announces a rejected play-time lock without stopping play', async () => {
   expect(store.list()[0]).not.toHaveProperty('lastPlayedAt');
 });
 
-it.each([1, 2])('opens version %i links in fresh play for all genres and lengths', async (version) => {
+it('opens links in fresh play for all genres and lengths', async () => {
   for (const genre of adventureSettings.adventureGenres) {
     for (const length of adventureSettings.adventureLengths) {
       const shared = Array.from({ length: 100 }, (_, seed) =>
-        adventureSettings.createAdventureSettings(seed, length, version))
+        adventureSettings.createAdventureSettings(seed, length))
         .find((value) => value.genre === genre)!;
       await openLink(` ${adventureSettings.encodeShareWord(shared).toUpperCase()}- `);
       expectPlay(shared);
@@ -1357,14 +1255,13 @@ it.each([1, 2])('opens version %i links in fresh play for all genres and lengths
   }
 });
 
-it.each(['', 'nope', 'silverlantern3', '<img src=x onerror=alert(1)>'])(
+it.each(['', 'nope', 'invalid123', '<img src=x onerror=alert(1)>'])(
   'keeps the incoming word %j in an accessible error field', async (word) => {
     await openLink(word);
     expect(get<HTMLInputElement>('#share-word').value).toBe(word);
     expect(get('#share-word').getAttribute('aria-invalid')).toBe('true');
     expect(get('#share-word-error').getAttribute('role')).toBe('alert');
     expect(get('#share-word-error').textContent).not.toBe('');
-    if (word === 'silverlantern3') expect(get('#share-word-error').textContent).toContain('version 3');
     expect(document.activeElement).toBe(get('#share-word'));
     expect(app.querySelector('.play-screen')).toBeNull();
     expect(app.querySelector('img')).toBeNull();
@@ -1443,8 +1340,8 @@ it('clears the incoming adventure on return to start so reloading does not resta
   expect(document.activeElement).toBe(get('h1'));
 });
 
-it.each([1, 2])('opens a link without reading or overwriting an existing version %i save', async (version) => {
-  const savedSettings = adventureSettings.createAdventureSettings(settings.seed, 'short', version);
+it('opens a link without reading or overwriting an existing save', async () => {
+  const savedSettings = adventureSettings.createAdventureSettings(settings.seed, 'short');
   const saved = createSave('Existing trip', savedSettings, ['look'], new Date('2026-10-01T09:00:00.000Z'));
   const store = createSaveStore(localStorage);
   const id = store.add(saved);
@@ -1458,11 +1355,11 @@ it.each([1, 2])('opens a link without reading or overwriting an existing version
   expect(store.load(id)).toEqual(saved);
 });
 
-it('keeps a changed version 1 save when deleting it after opening a share link', async () => {
+it('keeps a changed save when deleting it after opening a share link', async () => {
   let queue: Promise<unknown> = Promise.resolve();
   const request = vi.fn((_name: string, task: () => unknown) => (queue = queue.then(task)));
   Object.defineProperty(navigator, 'locks', { configurable: true, value: { request } });
-  const oldSettings = adventureSettings.createAdventureSettings(settings.seed, 'short', 1);
+  const oldSettings = adventureSettings.createAdventureSettings(settings.seed, 'short');
   const old = createSave('Old trip', oldSettings, ['look'], new Date('2026-10-01T09:00:00.000Z'));
   const store = createSaveStore(localStorage);
   const id = store.add(old);
@@ -1492,8 +1389,8 @@ it('opens saves and returns to start after an invalid adventure link', async () 
   const saved = createSave('Existing trip', settings, ['look'], new Date('2026-10-01T09:00:00.000Z'));
   const store = createSaveStore(localStorage);
   const id = store.add(saved);
-  await openLink('silverlantern3', '/textQuest/index.html?theme=dark&lang=en#saves');
-  expect(get('#share-word-error').textContent).toContain('version 3');
+  await openLink('invalid123', '/textQuest/index.html?theme=dark&lang=en#saves');
+  expect(get('#share-word-error').textContent).not.toBe('');
   expect(document.activeElement).toBe(get('#share-word'));
 
   get<HTMLButtonElement>('#open-saves').click();

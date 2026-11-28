@@ -107,9 +107,9 @@ describe('renderStartScreen', () => {
   it('shows the existing message for an invalid word and marks the field', () => {
     const input = get<HTMLInputElement>('#share-word');
 
-    openShareWord('silverlantern3');
+    openShareWord('nope');
 
-    expect(get('#share-word-error').textContent).toMatch(/version 3/);
+    expect(get('#share-word-error').textContent).toMatch(/not one textQuest knows/);
     expect(input.getAttribute('aria-invalid')).toBe('true');
     expect(input.getAttribute('aria-describedby')).toContain('share-word-error');
     expect(document.activeElement).toBe(input);
@@ -124,11 +124,11 @@ describe('renderStartScreen', () => {
 
   it('clears the error once a valid word is opened', () => {
     openShareWord('nope');
-    openShareWord('silverlantern');
+    openShareWord('sunlitsaucer');
 
     expect(get('#share-word-error').textContent).toBe('');
     expect(get('#share-word').hasAttribute('aria-invalid')).toBe(false);
-    expect(onStart).toHaveBeenCalledExactlyOnceWith(parseShareWord('silverlantern'));
+    expect(onStart).toHaveBeenCalledExactlyOnceWith(parseShareWord('sunlitsaucer'));
   });
 
   it('never turns typed text into HTML', () => {
@@ -160,17 +160,17 @@ describe('renderStartScreen', () => {
   });
 
   it('opens an incoming share word through the same callback as a typed word', () => {
-    renderStartScreen(app, { onStart, shareWord: ' Silver-Lantern ' });
-    expect(onStart).toHaveBeenCalledExactlyOnceWith(parseShareWord('silverlantern'));
+    renderStartScreen(app, { onStart, shareWord: ' Sunlit-Saucer ' });
+    expect(onStart).toHaveBeenCalledExactlyOnceWith(parseShareWord('sunlitsaucer'));
   });
 
   it('focuses an invalid incoming word and lets the player correct it', () => {
-    renderStartScreen(app, { onStart, shareWord: 'silverlantern3' });
+    renderStartScreen(app, { onStart, shareWord: 'nope' });
     expect(onStart).not.toHaveBeenCalled();
-    expect(get<HTMLInputElement>('#share-word').value).toBe('silverlantern3');
-    expect(get('#share-word-error').textContent).toContain('version 3');
+    expect(get<HTMLInputElement>('#share-word').value).toBe('nope');
+    expect(get('#share-word-error').textContent).toContain('not one textQuest knows');
     expect(document.activeElement).toBe(get('#share-word'));
-    openShareWord('silverlantern');
-    expect(onStart).toHaveBeenCalledExactlyOnceWith(parseShareWord('silverlantern'));
+    openShareWord('sunlitsaucer');
+    expect(onStart).toHaveBeenCalledExactlyOnceWith(parseShareWord('sunlitsaucer'));
   });
 });

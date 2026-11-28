@@ -1,12 +1,5 @@
-/*
- * Share-word lists for adventure version 1. A share word joins one word from
- * each list, such as "silverlantern". Never edit, reorder or remove these
- * words: released share words depend on each position. Make a new version
- * with new lists instead.
- */
-
-/** The 256 version 1 first words, such as "silver". Never change this list. */
-export const versionOneFirstWords: readonly string[] = [
+/** The 256 released first words, such as "silver". Never change this list. */
+const baseFirstWords: readonly string[] = [
   'able', 'amber', 'ancient', 'autumn', 'azure', 'balmy', 'bold', 'bouncy',
   'brave', 'breezy', 'bright', 'brisk', 'bronze', 'bubbly', 'busy', 'calm',
   'candid', 'careful', 'cheeky', 'cheerful', 'chilly', 'chirpy', 'clever', 'cloudy',
@@ -41,8 +34,8 @@ export const versionOneFirstWords: readonly string[] = [
   'bumpy', 'chunky', 'crunchy', 'fizzy', 'minty', 'peppy', 'sleek', 'sunlit',
 ];
 
-/** The 255 version 1 second words, such as "lantern". Never change this list. */
-export const versionOneSecondWords: readonly string[] = [
+/** The 255 released second words, such as "lantern". Never change this list. */
+const baseSecondWords: readonly string[] = [
   'acorn', 'anchor', 'apple', 'arrow', 'badger', 'balloon', 'banjo', 'barrel',
   'basket', 'beacon', 'beetle', 'bell', 'berry', 'biscuit', 'blossom', 'boat',
   'bonnet', 'boulder', 'bramble', 'bridge', 'brook', 'bucket', 'budgie', 'button',
@@ -77,8 +70,8 @@ export const versionOneSecondWords: readonly string[] = [
   'toucan', 'unicorn', 'walnut', 'harmonica', 'jellyfish', 'magnet', 'saucer',
 ];
 
-/** Version 2 first words, in reverse released version 1 order. Never change this order. */
-export const versionTwoFirstWords: readonly string[] = [...versionOneFirstWords].reverse();
+/** First words. Never change this order. */
+export const firstWords: readonly string[] = [...baseFirstWords].reverse();
 
-/** Version 2 second words, in reverse released version 1 order. Never change this order. */
-export const versionTwoSecondWords: readonly string[] = [...versionOneSecondWords].reverse();
+/** Second words. Never change this order. */
+export const secondWords: readonly string[] = [...baseSecondWords].reverse();

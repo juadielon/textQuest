@@ -20,6 +20,7 @@ export type CommandAction =
     readonly kind: 'move' | 'examine' | 'take' | 'talk' | 'choose';
     readonly targetId: string;
     readonly targetKind: CommandTarget['kind'];
+    readonly topic?: string;
   }
   | { readonly kind: 'use'; readonly itemId: string }
   | {
@@ -47,7 +48,7 @@ export type CommandResult =
 /** Help for the supported grammar, without world details or puzzle advice. */
 export const commandHelp =
   'Try north (n), go <place or exit>, look (l), examine <name> (x), inventory (i), '
-  + 'take <item>, use <item> [on <name>], talk [to] <person>, choose <option>, '
+  + 'take <item>, use <item> [on <name>], talk [to] <person> [about <topic>], choose <option>, '
   + 'hint (h), undo (u) or help (?). Use names you have discovered.';
 
 const directions = new Map<string, Direction>([
@@ -208,6 +209,15 @@ export function parseCommand(input: string, targets: readonly CommandTarget[]): 
       kind = 'talk';
       kinds = ['person'];
       name = rest.replace(/^to(?: |$)/, '');
+      const topicMatch = name.match(/^(.+?)\s+about(?:\s+(.*))?$/i);
+      if (topicMatch) {
+        name = topicMatch[1];
+        const topic = topicMatch[2]?.trim() ?? '';
+        const person = findTarget(name, targets, kinds);
+        if (!person.found) return person.error;
+        if (!topic) return error('incomplete', 'Add a conversation topic after about.');
+        return action({ kind, targetId: person.target.id, targetKind: person.target.kind, topic });
+      }
       break;
     case 'choose': case 'c':
       kind = 'choose';

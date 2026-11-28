@@ -38,6 +38,9 @@ describe('parseCommand', () => {
     ['use lamp on keeper', { kind: 'use', itemId: 'lamp', targetId: 'keeper', targetKind: 'person' }],
     ['talk gate keeper', { kind: 'talk', targetId: 'keeper', targetKind: 'person' }],
     ['talk to the keeper', { kind: 'talk', targetId: 'keeper', targetKind: 'person' }],
+    ['talk to the keeper about the locked door', {
+      kind: 'talk', targetId: 'keeper', targetKind: 'person', topic: 'the locked door',
+    }],
     ['t keeper', { kind: 'talk', targetId: 'keeper', targetKind: 'person' }],
     ['choose wait by the gate', { kind: 'choose', targetId: 'wait', targetKind: 'choice' }],
     ['choose 1', { kind: 'choose', targetId: 'wait', targetKind: 'choice' }],
@@ -112,7 +115,7 @@ describe('parseCommand', () => {
     expect(parseCommand(input, targets)).toMatchObject({ ok: false, problem: 'unknown-command' });
   });
 
-  it.each(['', '   ', 'take', 'take the', 'x', 'look at', 'go', 'go to', 'talk', 'talk to', 'choose', 'use', 'use lamp on', 'use on lock'])(
+  it.each(['', '   ', 'take', 'take the', 'x', 'look at', 'go', 'go to', 'talk', 'talk to', 'talk to keeper about', 'choose', 'use', 'use lamp on', 'use on lock'])(
     'reports incomplete input %j',
     (input) => {
       expect(parseCommand(input, targets)).toMatchObject({ ok: false, problem: 'incomplete' });

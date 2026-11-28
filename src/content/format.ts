@@ -1,5 +1,5 @@
-import type { AdventureGenre, AdventureLength } from '../../adventure-settings';
-import type { Clue, Conditions, Exit, Goal, Item, Place, PuzzleStep } from '../../adventure-world';
+import type { AdventureGenre, AdventureLength } from '../adventure-settings';
+import type { Clue, Conditions, Exit, Goal, Item, Place, PuzzleStep } from '../adventure-world';
 
 /** A name reference, resolved only from entities included in the adventure. */
 export type EntityReference = {
@@ -16,13 +16,22 @@ export interface ContentPlace extends Place {
   readonly description: Prose;
 }
 
-/** A character and the reason they take part in the story. */
+/** An authored topic that a character can discuss. */
+export interface ConversationTopic {
+  readonly id: string;
+  readonly label: string;
+  readonly aliases: readonly string[];
+  readonly response: Prose;
+}
+
+/** A named character and the reason they take part in the story. */
 export interface ContentCharacter {
   readonly id: string;
   readonly name: string;
   readonly placeId: string;
   readonly description: Prose;
   readonly motive: Prose;
+  readonly conversations?: readonly ConversationTopic[];
 }
 
 /** An item, either placed initially or awarded by a step. */
@@ -77,7 +86,6 @@ export interface PlotStructure {
 
 /** Released authored data; arrays and IDs are part of seed compatibility. */
 export interface ContentPack {
-  readonly version: 1;
   readonly genre: AdventureGenre;
   readonly startPlaceId: string;
   readonly places: readonly ContentPlace[];

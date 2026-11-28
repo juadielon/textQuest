@@ -1,15 +1,15 @@
 import type { AdventureSettings } from './adventure-settings';
 import type { AdventureWorld, Conditions } from './adventure-world';
 import type { CommandTarget } from './engine/commands';
-import { parseCommand } from './engine/commands';
+import { normaliseName, parseCommand } from './engine/commands';
 import {
   discoveredTargets, playCommand, startPlay, type CommandReplayMode, type PlayState, type PlayWorld,
 } from './engine/play';
-import type { EntityReference, PlotStructure, Prose } from './content/v1/format';
-import { aliasesFor, worldNamesFrom } from './content/v1/world-names';
+import type { EntityReference, PlotStructure, Prose } from './content/format';
+import { aliasesFor, worldNamesFrom } from './content/world-names';
 import { createSeededRandom } from './seeded-random';
 import { adventurePack, generateAdventureWorld } from './generate-world';
-import { storyView } from './content/v1/story';
+import { storyView } from './content/story';
 import { genreLabels } from './start-screen-model';
 import { findWinningCommands, solutionModeEnabled } from './solution';
 import {
@@ -20,7 +20,7 @@ import {
 export interface PlayScreenOptions {
   /** Commands to replay first, such as a save's. They fill the log without being announced. */
   readonly commands?: readonly string[];
-  /** Replay mode for each initial command. Missing modes keep legacy ID-name behaviour. */
+  /** Replay mode for each initial command. Missing modes use ID-name behaviour. */
   readonly commandModes?: readonly CommandReplayMode[];
   /** Called after each typed command with the full history and matching modes. */
   readonly onCommand?: (commands: readonly string[], modes: readonly CommandReplayMode[]) => void;
@@ -104,7 +104,7 @@ export function renderPlayScreen(
   let state: PlayState;
   try {
     const generated = generateAdventureWorld(settings);
-    pack = adventurePack(settings.version, settings.genre);
+    pack = adventurePack(settings.genre);
     world = { ...generated, names: worldNamesFrom(pack, generated) };
     const random = createSeededRandom(settings.seed);
     random.nextUint32();
@@ -197,10 +197,30 @@ export function renderPlayScreen(
     placeText.textContent = view.placeText;
     const presentPeople = pack.characters.filter(({ placeId }) =>
       placeId === state.placeId && world.places.some(({ id }) => id === placeId));
-    fillDetails(people, presentPeople.map((person) => ({
-      name: person.name,
-      text: renderProse(person.description, pack, world, state, targets, knownPlaces),
-    })));
+    people.replaceChildren(...presentPeople.map((person) => {
+      const row = element('li', undefined,
+        element('strong', undefined, person.name),
+        element('p', undefined, renderProse(
+          person.description, pack, world, state, targets, knownPlaces)));
+      if (person.conversations?.length) {
+        const topics = element('div', 'play-conversation-topics');
+        for (const topic of person.conversations) {
+          const visibleLabel = hideUndiscoveredNames(
+            topic.label, pack, world, state, targets, knownPlaces,
+          );
+          const button = element('button', 'play-conversation-topic', visibleLabel);
+          button.type = 'button';
+          button.setAttribute('aria-label', `Ask ${person.name} about ${visibleLabel}`);
+          button.addEventListener('click', () => {
+            input.value = `talk to ${person.name} about ${topic.label}`;
+            form.requestSubmit();
+          });
+          topics.append(button);
+        }
+        row.append(topics);
+      }
+      return row;
+    }));
     peopleHeading.hidden = !presentPeople.length;
     people.hidden = !presentPeople.length;
 
@@ -274,13 +294,29 @@ export function renderPlayScreen(
     const personId = parsed.ok && parsed.action.kind === 'talk' && 'targetId' in parsed.action
       ? parsed.action.targetId : undefined;
     const person = personId ? pack.characters.find(({ id }) => id === personId) : undefined;
+    const topic = parsed.ok && parsed.action.kind === 'talk' && 'topic' in parsed.action
+      ? parsed.action.topic : undefined;
+    const conversation = person && topic
+      ? person.conversations?.find((entry) =>
+        [entry.label, ...(entry.aliases ?? [])].some((label) => normaliseName(label) === normaliseName(topic)))
+      : undefined;
     const response = person
-      ? `${turn.message} ${renderProse(
-        person.motive, pack, world, state, discoveredTargets(world, state), knownPlaces,
-      )}`
+      ? conversation
+        ? `${turn.message} ${renderProse(
+          conversation.response, pack, world, state, discoveredTargets(world, state), knownPlaces,
+        )}`
+        : topic
+          ? turn.message
+          : `${turn.message} ${renderProse(
+            person.motive, pack, world, state, discoveredTargets(world, state), knownPlaces,
+          )}`
       : turn.message;
     log.append(element('li', 'play-entry',
-      element('p', 'play-typed', `> ${command}`), element('p', undefined, response)));
+      element('p', 'play-typed', `> ${hideUndiscoveredNames(
+        command, pack, world, state, discoveredTargets(world, state), knownPlaces,
+      )}`), element('p', undefined, hideUndiscoveredNames(
+        response, pack, world, state, discoveredTargets(world, state), knownPlaces,
+      ))));
     return response;
   };
   commands.forEach((command, index) => run(command, commandModes[index]));

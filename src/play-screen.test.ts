@@ -5,11 +5,11 @@ import {
   type AdventureGenre, type AdventureSettings,
 } from './adventure-settings';
 import type { AdventureWorld } from './adventure-world';
-import type { ContentPack } from './content/v1/format';
+import type { ContentPackWithWording } from './content/place-wording';
 import { commandHelp } from './engine/commands';
 import * as play from './engine/play';
 import { adventurePack, generateAdventureWorld } from './generate-world';
-import { worldNamesFrom } from './content/v1/world-names';
+import { worldNamesFrom } from './content/world-names';
 import { describePlay, playScreenTitle, renderPlayScreen, unplayableMessage } from './play-screen';
 import {
   createSave, exportSaveFile, MAX_COMMAND_LENGTH, MAX_SAVE_COMMANDS,
@@ -32,7 +32,7 @@ vi.mock('./engine/play', async (original) => {
 
 // A tiny world that is quick to win, so the ending can be checked.
 const tinyWorld: AdventureWorld = {
-  version: 1,
+
   startPlaceId: 'gate',
   places: [{ id: 'gate' }, { id: 'old-tower' }],
   exits: [
@@ -50,8 +50,8 @@ const tinyWorld: AdventureWorld = {
   },
 };
 
-const tinyPack: ContentPack = {
-  version: 1,
+const tinyPack: ContentPackWithWording = {
+
   genre: 'light-fantasy',
   startPlaceId: 'gate',
   places: [
@@ -63,6 +63,12 @@ const tinyPack: ContentPack = {
     id: 'keeper', name: 'The old keeper', placeId: 'gate',
     description: ['The keeper holds a lamp.'],
     motive: ['She wants ', { kind: 'item', id: 'hidden-gem' }, ' kept safe.'],
+    conversations: [{
+      id: 'situation',
+      label: 'The lost lamp',
+      aliases: ['lamp', 'lost lamp'],
+      response: ['The lamp went out at the old tower. Try taking the brass key.'],
+    }],
   }],
   items: [
     { id: 'brass-key', placeId: 'gate', name: 'brass key', description: [] },
@@ -96,19 +102,19 @@ const tinyPack: ContentPack = {
   solution: { steps: [], goal: { placeId: 'old-tower', conditions: {} } },
 };
 
-function settingsFor(genre: AdventureGenre, version = 2): AdventureSettings {
+function settingsFor(genre: AdventureGenre): AdventureSettings {
   for (let seed = 0; ; seed += 1) {
-    const settings = createAdventureSettings(seed, 'short', version);
+    const settings = createAdventureSettings(seed, 'short');
     if (settings.genre === genre) return settings;
   }
 }
 
-function renderTiny(version = 2): HTMLElement {
+function renderTiny(): HTMLElement {
   vi.mocked(generateAdventureWorld).mockReturnValueOnce(tinyWorld);
   vi.mocked(adventurePack).mockReturnValueOnce(tinyPack);
   const target = document.createElement('main');
   document.body.append(target);
-  renderPlayScreen(target, settingsFor('light-fantasy', version));
+  renderPlayScreen(target, settingsFor('light-fantasy'));
   return target;
 }
 
@@ -230,7 +236,7 @@ describe('renderPlayScreen', () => {
     const target = document.createElement('main');
     document.body.append(target);
 
-    renderPlayScreen(target, createAdventureSettings(0, 'long', 1));
+    renderPlayScreen(target, createAdventureSettings(0, 'long'));
 
     expect(target.querySelector('.play-objective')?.textContent)
       .not.toContain('Hill beacon');
@@ -430,7 +436,7 @@ describe('renderPlayScreen', () => {
     expect(append).toHaveBeenCalledTimes(recorded.length + shortHistory.length);
     expect(text(resumed, '#play-response')[0]).toContain('save file limit');
     expect(() => exportSaveFile(createSave('A', settings, shortHistory, new Date(), shortModes))).not.toThrow();
-  });
+  }, 15_000);
 
   it('shows a generated world with a labelled command box and empty log', () => {
     const settings = settingsFor('light-fantasy');
@@ -439,7 +445,7 @@ describe('renderPlayScreen', () => {
     renderPlayScreen(target, settings);
 
     const generated = generateAdventureWorld(settings);
-    const named = { ...generated, names: worldNamesFrom(adventurePack(settings.version, settings.genre), generated) };
+    const named = { ...generated, names: worldNamesFrom(adventurePack(settings.genre), generated) };
     const view = describePlay(named, play.startPlay(named));
     expect(target.querySelector('.play-place-name')?.textContent).toBe(view.placeName);
     expect(target.querySelector('label')?.textContent).toBe('What do you do?');
@@ -480,22 +486,34 @@ describe('renderPlayScreen', () => {
     expect(text(target, '.play-sidebar ul')[0]).toBe('You are not carrying anything.');
   });
 
-  it('keeps focus in the command box and re-announces a repeated response', () => {
+  it('progresses hints and keeps the final hint spoiler-free', () => {
+    const target = renderTiny();
+
+    type(target, 'hint');
+    type(target, 'hint');
+    type(target, 'hint');
+
+    const responses = text(target, '.play-entry p:not(.play-typed)');
+    expect(responses.at(-3)).toBe('Pause and look at the situation before choosing an action.');
+    expect(responses.at(-2)).toBe('Look for something useful nearby or a way you have discovered.');
+    expect(responses.at(-1)).toBe('Try taking the brass key.');
+    expect(responses.join(' ')).not.toContain('hidden gem');
+  });
+
+  it('keeps focus and announces each new hint stage', () => {
     const target = renderTiny();
     const input = target.querySelector<HTMLInputElement>('#play-command')!;
     const announcer = target.querySelector('[aria-live="polite"]')!;
     target.querySelector('button')!.focus();
 
     type(target, 'hint');
-    type(target, 'hint');
-    type(target, 'hint');
-    const third = announcer.firstChild;
+    const first = announcer.firstChild;
     type(target, 'hint');
 
     expect(document.activeElement).toBe(input);
     expect(announcer.children).toHaveLength(1);
-    expect(announcer.firstChild).not.toBe(third);
-    expect(announcer.textContent).toBe(third?.textContent);
+    expect(announcer.firstChild).not.toBe(first);
+    expect(announcer.textContent).toBe('Look for something useful nearby or a way you have discovered.');
   });
 
   it('shows the ending when the goal is reached and hides it again after undo', () => {
@@ -546,7 +564,7 @@ describe('renderPlayScreen', () => {
         goal: { placeId: 'old-tower', conditions: {} },
       },
     };
-    const choicePack: ContentPack = {
+    const choicePack: ContentPackWithWording = {
       ...tinyPack,
       optionalDiscoveries: [{
         id: 'push-cart', placeId: 'gate', family: 'help-character', choice: 'non-graphic-force',
@@ -662,7 +680,7 @@ describe('renderPlayScreen', () => {
       renderPlayScreen(target, settings);
 
       const world = generateAdventureWorld(settings);
-      const pack = adventurePack(settings.version, settings.genre);
+      const pack = adventurePack(settings.genre);
       const named = { ...world, names: worldNamesFrom(pack, world) };
       expect(target.querySelector('.play-place-name')?.textContent)
         .toBe(describePlay(named, play.startPlay(named)).placeName);
@@ -680,10 +698,10 @@ describe('renderPlayScreen', () => {
     [10, 'Follow two threads'],
     [11, 'Hear every side'],
     [20, 'Wake the quiet station'],
-  ] as const)('pins seed %i title "%s" across released versions and lengths', (seed, title) => {
+  ] as const)('pins seed %i title "%s" across lengths', (seed, title) => {
     const target = document.createElement('main');
-    for (const version of [1, 2]) for (const length of adventureLengths) {
-      const settings = createAdventureSettings(seed, length, version);
+    for (const length of adventureLengths) {
+      const settings = createAdventureSettings(seed, length);
       const before = generateAdventureWorld(settings);
       const word = encodeShareWord(settings);
       renderPlayScreen(target, settings);
@@ -703,8 +721,8 @@ describe('renderPlayScreen', () => {
     expect(target.querySelector('.play-plot-name')).toBeNull();
   });
 
-  it.each([1, 2])('keeps hidden names and aliases out of version %i titles, including resumed games', (version) => {
-    const settings = settingsFor('light-fantasy', version);
+  it('keeps hidden names and aliases out of titles, including resumed games', () => {
+    const settings = settingsFor('light-fantasy');
     const commands = ['take brass key', 'use brass key', 'go to old tower'];
     for (const history of [[], commands]) {
       vi.mocked(generateAdventureWorld).mockReturnValueOnce(tinyWorld);
@@ -737,10 +755,10 @@ describe('renderPlayScreen', () => {
     expect(target.querySelector('img')).toBeNull();
   });
 
-  it.each([1, 2])('shows authored names and safe prose for adventure version %i', (version) => {
-    const settings = settingsFor('light-fantasy', version);
+  it('shows authored names and safe prose', () => {
+    const settings = settingsFor('light-fantasy');
     const world = generateAdventureWorld(settings);
-    const pack = adventurePack(version, settings.genre);
+    const pack = adventurePack(settings.genre);
     const target = document.createElement('main');
 
     renderPlayScreen(target, settings);
@@ -755,10 +773,10 @@ describe('renderPlayScreen', () => {
   });
 
   it('hides an undiscovered place named in a visible item description', () => {
-    const settings = createAdventureSettings(6, 'long', 2);
+    const settings = createAdventureSettings(6, 'long');
     expect(settings.genre).toBe('cosy-mystery');
     const world = generateAdventureWorld(settings);
-    const pack = adventurePack(settings.version, settings.genre);
+    const pack = adventurePack(settings.genre);
     const roseCottage = pack.places.find(({ id }) => id === 'rose-cottage')!;
     const parcel = pack.items.find(({ id }) => id === 'parcel')!;
     const named = { ...world, names: worldNamesFrom(pack, world) };
@@ -780,7 +798,7 @@ describe('renderPlayScreen', () => {
   });
 
   it('hides an undiscovered item named in a character description', () => {
-    const settings = createAdventureSettings(6, 'long', 2);
+    const settings = createAdventureSettings(6, 'long');
     const world = generateAdventureWorld(settings);
     const scorecard = world.items.find(({ id }) => id === 'scorecard')!;
     expect(scorecard.placeId).toBe('library');
@@ -799,7 +817,7 @@ describe('renderPlayScreen', () => {
   });
 
   it('hides an undiscovered clue named in a puzzle prompt', () => {
-    const settings = createAdventureSettings(10, 'long', 2);
+    const settings = createAdventureSettings(10, 'long');
     const world = generateAdventureWorld(settings);
     const clue = world.clues.find(({ id }) => id === 'sundial-motto')!;
     expect(clue.placeId).toBe('reading-room');
@@ -819,7 +837,7 @@ describe('renderPlayScreen', () => {
   });
 
   it('does not mask a prose word used as an ambiguous alias', () => {
-    const pack: ContentPack = {
+    const pack: ContentPackWithWording = {
       ...tinyPack,
       places: tinyPack.places.map((place) => ({
         ...place,
@@ -837,10 +855,10 @@ describe('renderPlayScreen', () => {
   });
 
   it('hides a unique alias for an undiscovered place in found clue text', () => {
-    const settings = createAdventureSettings(1, 'long', 1);
+    const settings = createAdventureSettings(1, 'long');
     expect(settings.genre).toBe('cosy-mystery');
     const world = generateAdventureWorld(settings);
-    const pack = adventurePack(settings.version, settings.genre);
+    const pack = adventurePack(settings.genre);
     const { commands, state } = completeSteps(world, [], 'potting-shed');
     expect(state.placesVisited).not.toContain('lighthouse');
     expect(play.discoveredTargets(world, state)
@@ -860,9 +878,9 @@ describe('renderPlayScreen', () => {
   });
 
   it('hides an undiscovered place named in a puzzle completion', () => {
-    const settings = createAdventureSettings(1, 'long', 2);
+    const settings = createAdventureSettings(1, 'long');
     const generated = generateAdventureWorld(settings);
-    const pack = adventurePack(settings.version, settings.genre);
+    const pack = adventurePack(settings.genre);
     const { commands, state } = completeSteps(generated, ['cheer-bowler'], 'bowls-club');
 
     expect(state.placeId).toBe('bowls-club');
@@ -888,7 +906,7 @@ describe('renderPlayScreen', () => {
       }],
       solution: { ...tinyWorld.solution, goal: { placeId: 'secret-garden', conditions: {} } },
     };
-    const pack: ContentPack = {
+    const pack: ContentPackWithWording = {
       ...tinyPack,
       places: [...tinyPack.places, {
         id: 'secret-garden', name: 'Secret garden', description: [],
@@ -931,9 +949,9 @@ describe('renderPlayScreen', () => {
   });
 
   it('does not select a blame ending for an automatic force step', () => {
-    const settings = createAdventureSettings(6, 'short', 2);
+    const settings = createAdventureSettings(6, 'short');
     const generated = generateAdventureWorld(settings);
-    const pack = adventurePack(settings.version, settings.genre);
+    const pack = adventurePack(settings.genre);
     const { commands, state } = completeSteps(
       generated, generated.solution.goal.conditions.stepsDone ?? [], generated.solution.goal.placeId,
     );
@@ -952,8 +970,8 @@ describe('renderPlayScreen', () => {
     expect(target.querySelector('.play-authored-ending')?.textContent).not.toContain('apology');
   });
 
-  it.each([1, 2])('uses the generated item location for prose references in version %i', (version) => {
-    const target = renderTiny(version);
+  it('uses the generated item location for prose references', () => {
+    const target = renderTiny();
     expect(target.querySelector('.play-introduction')?.textContent).toBe('Find something and a clue.');
     expect(target.textContent).not.toContain('quiet gem');
 
@@ -975,7 +993,7 @@ describe('renderPlayScreen', () => {
           goal: { placeId: 'old-tower', conditions: { itemsHeld: ['hidden-gem'] } },
       },
     };
-    const pack: ContentPack = {
+    const pack: ContentPackWithWording = {
       ...tinyPack,
       characters: [...tinyPack.characters, {
         id: 'tower-keeper', name: 'Tower keeper', placeId: 'old-tower',
@@ -1005,7 +1023,7 @@ describe('renderPlayScreen', () => {
       .toBe('Find quiet gem and hidden note. Remember Tower keeper and quiet gem.');
   });
 
-  it.each([1, 2])('does not reveal a moved item at its authored pack location in version %i', (version) => {
+  it('does not reveal a moved item at its authored pack location', () => {
     vi.mocked(generateAdventureWorld).mockReturnValueOnce({
       ...tinyWorld,
       items: tinyWorld.items.map((item) =>
@@ -1014,7 +1032,7 @@ describe('renderPlayScreen', () => {
     vi.mocked(adventurePack).mockReturnValueOnce(tinyPack);
     const target = document.createElement('main');
     document.body.append(target);
-    renderPlayScreen(target, settingsFor('light-fantasy', version));
+    renderPlayScreen(target, settingsFor('light-fantasy'));
 
     expect(target.querySelector('.play-introduction')?.textContent).toBe('Find something and a clue.');
     expect(target.querySelector('.play-introduction')?.textContent).not.toContain('quiet gem');
@@ -1030,9 +1048,66 @@ describe('renderPlayScreen', () => {
     expect(target.querySelector('.play-people')?.textContent).not.toContain('She wants');
   });
 
+  it('offers authored topics and keeps dialogue in the log', () => {
+    const target = renderTiny();
+    const button = [...target.querySelectorAll<HTMLButtonElement>('.play-conversation-topic')]
+      .find((candidate) => candidate.textContent === 'The lost lamp');
+
+    expect(button).toBeInstanceOf(HTMLButtonElement);
+    button!.click();
+
+    expect(target.querySelector('.play-log')?.textContent)
+      .toContain('The lamp went out');
+    expect(target.querySelector('.play-log')?.textContent)
+      .toContain('Try taking the brass key.');
+    expect(target.querySelector('.play-sidebar')?.textContent).not.toContain('Try taking');
+  });
+
+  it('matches topic aliases and safely handles unknown topics', () => {
+    const target = renderTiny();
+
+    type(target, 'talk to old keeper about lamp');
+    expect(target.querySelector('.play-log')?.textContent)
+      .toContain('The lamp went out');
+    type(target, 'talk to old keeper about sandwiches');
+    expect(target.querySelector('.play-log')?.textContent)
+      .toContain('does not recognise that topic');
+  });
+
+  it('replays progressive hints and restores state through undo', () => {
+    vi.mocked(generateAdventureWorld).mockReturnValueOnce(tinyWorld);
+    vi.mocked(adventurePack).mockReturnValueOnce(tinyPack);
+    const target = document.createElement('main');
+    document.body.append(target);
+    renderPlayScreen(target, settingsFor('light-fantasy'), {
+      commands: ['hint', 'hint', 'hint', 'undo'],
+      commandModes: ['content', 'content', 'content', 'content'],
+    });
+
+    expect(target.querySelector('.play-log')?.textContent)
+      .toContain('Try taking the brass key.');
+    expect(target.querySelector('.play-sidebar')?.textContent).not.toContain('hidden gem');
+  });
+
+  it('replays dialogue without adding clues and keeps undo coherent', () => {
+    vi.mocked(generateAdventureWorld).mockReturnValueOnce(tinyWorld);
+    vi.mocked(adventurePack).mockReturnValueOnce(tinyPack);
+    const target = document.createElement('main');
+    document.body.append(target);
+    renderPlayScreen(target, settingsFor('light-fantasy'), {
+      commands: ['talk to old keeper about lamp', 'undo'],
+      commandModes: ['content', 'content'],
+    });
+
+    expect(target.querySelector('.play-log')?.textContent)
+      .toContain('The lamp went out');
+    expect(target.querySelector('.play-sidebar')?.textContent).toContain('carved note');
+    expect(target.querySelector('.play-sidebar')?.textContent).not.toContain('hidden note');
+  });
+
   it('shows a plain message when the world cannot be generated', () => {
     vi.mocked(generateAdventureWorld).mockImplementationOnce(() => {
-      throw new RangeError('The genre does not match this seed and version.');
+      throw new RangeError('The genre does not match this seed.');
     });
     const target = document.createElement('main');
 

@@ -55,10 +55,10 @@ describe('isAdventureLength', () => {
 
 describe('summariseAdventure', () => {
   it('gives the share word and readable genre and length', () => {
-    const settings = createAdventureSettings(0, 'short', 1);
+    const settings = createAdventureSettings(0, 'short');
 
     expect(summariseAdventure(settings)).toEqual({
-      shareWord: 'ableacorn',
+      shareWord: 'sunlitsaucer',
       genreLabel: genreLabels[settings.genre],
       lengthLabel: 'Short',
     });
@@ -67,9 +67,9 @@ describe('summariseAdventure', () => {
 
 describe('readShareWord', () => {
   it('reads a valid word typed with capitals and spaces', () => {
-    const result = readShareWord('  Silver Lantern ');
+    const result = readShareWord('  Sunlit Saucer ');
 
-    const settings = parseShareWord('silverlantern');
+    const settings = parseShareWord('sunlitsaucer');
     expect(result).toEqual({ ok: true, settings, summary: summariseAdventure(settings) });
   });
 
@@ -84,11 +84,10 @@ describe('readShareWord', () => {
     expect(readShareWord('silverlanturn')).toEqual({ ok: false, message: messageFor('silverlanturn') });
   });
 
-  it('uses the existing message for a newer version', () => {
-    const result = readShareWord('silverlantern3');
+  it('uses the existing malformed-word message', () => {
+    const result = readShareWord('silver lantern 3');
 
-    expect(result).toEqual({ ok: false, message: messageFor('silverlantern3') });
-    expect(result.ok === false && result.message).toMatch(/version 3/);
+    expect(result).toEqual({ ok: false, message: messageFor('silver lantern 3') });
   });
 
   it('asks for a word when the input is blank', () => {

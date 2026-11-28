@@ -104,7 +104,7 @@ function buildShareWordForm(): HTMLFormElement {
     { className: 'panel', id: 'open-share-word', noValidate: true },
     create('h2', {}, 'Open a shared adventure'),
     create('label', { htmlFor: input.id }, 'Share word'),
-    create('p', { className: 'hint', id: 'share-word-hint' }, 'For example, silverlantern. Capitals, spaces and hyphens are fine.'),
+    create('p', { className: 'hint', id: 'share-word-hint' }, 'For example, sunlitsaucer. Capitals, spaces and hyphens are fine.'),
     input,
     error,
     create('button', { type: 'submit' }, 'Open adventure'),

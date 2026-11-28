@@ -1,41 +1,23 @@
 import { createAdventureSettings, type AdventureGenre, type AdventureSettings } from './adventure-settings';
 import type { AdventureWorld } from './adventure-world';
-import type { ContentPack, PlotStructure } from './content/v1/format';
-import { cosyMystery } from './content/v1/cosy-mystery';
-import { lightFantasy } from './content/v1/light-fantasy';
-import { scienceFiction } from './content/v1/science-fiction';
+import type { ContentPack, PlotStructure } from './content/format';
 import {
-  cosyMysteryV2, lightFantasyV2, scienceFictionV2, type VersionTwoContentPack,
-} from './content/v2/place-wording';
+  cosyMysteryWithWording, lightFantasyWithWording, scienceFictionWithWording, type ContentPackWithWording,
+} from './content/place-wording';
 import { createSeededRandom } from './seeded-random';
 import { prepareSeededPlacement } from './seeded-placement';
 
-// A full record makes the compiler reject a version 1 genre without a pack.
-const versionOnePacks: Readonly<Record<AdventureGenre, ContentPack>> = {
-  'light-fantasy': lightFantasy,
-  'cosy-mystery': cosyMystery,
-  'science-fiction': scienceFiction,
+const packs: Readonly<Record<AdventureGenre, ContentPackWithWording>> = {
+  'light-fantasy': lightFantasyWithWording,
+  'cosy-mystery': cosyMysteryWithWording,
+  'science-fiction': scienceFictionWithWording,
 };
-
-const versionTwoPacks: Readonly<Record<AdventureGenre, VersionTwoContentPack>> = {
-  'light-fantasy': lightFantasyV2,
-  'cosy-mystery': cosyMysteryV2,
-  'science-fiction': scienceFictionV2,
-};
-
-/** Returns the version 1 content pack used for a genre. */
-export function versionOnePack(genre: AdventureGenre): ContentPack {
-  return versionOnePacks[genre];
-}
 
 /**
- * Returns the matching released content for an adventure version and genre.
- * @throws RangeError if the adventure version is unsupported.
+ * Returns the matching released content for a genre.
  */
-export function adventurePack(version: number, genre: AdventureGenre): ContentPack | VersionTwoContentPack {
-  if (version === 1) return versionOnePacks[genre];
-  if (version === 2) return versionTwoPacks[genre];
-  throw new RangeError(`Adventure version ${version} is not supported.`);
+export function adventurePack(genre: AdventureGenre): ContentPackWithWording {
+  return packs[genre];
 }
 
 /**
@@ -49,11 +31,11 @@ export function adventurePack(version: number, genre: AdventureGenre): ContentPa
  */
 export function adventurePlot(
   settings: AdventureSettings,
-  pack: ContentPack | VersionTwoContentPack = adventurePack(settings.version, settings.genre),
+  pack: ContentPack | ContentPackWithWording = adventurePack(settings.genre),
 ): PlotStructure {
-  const expected = createAdventureSettings(settings.seed, settings.length, settings.version);
+  const expected = createAdventureSettings(settings.seed, settings.length);
   if (settings.genre !== expected.genre) {
-    throw new RangeError('The genre does not match this seed and version.');
+    throw new RangeError('The genre does not match this seed.');
   }
   if (pack.genre !== settings.genre) {
     throw new RangeError('The content pack does not match this adventure genre.');
@@ -64,20 +46,19 @@ export function adventurePlot(
 }
 
 /**
- * Builds a detached world from the matching adventure version's content.
+ * Builds a detached world from the matching content.
  *
- * @param settings - Valid settings whose genre matches the seed and version.
+ * @param settings - Valid settings whose genre matches the seed.
  * @returns The same world for the same settings, without changing the content pack.
  * @throws RangeError for invalid settings.
- * @remarks Version 1 keeps authored placement. Version 2 draws item then clue
- * positions after genre and plot. Changes to either version need a new version.
+ * @remarks Item then clue positions are drawn after genre and plot.
  */
 export function generateAdventureWorld(settings: AdventureSettings): AdventureWorld {
-  const expected = createAdventureSettings(settings.seed, settings.length, settings.version);
+  const expected = createAdventureSettings(settings.seed, settings.length);
   if (settings.genre !== expected.genre) {
-    throw new RangeError('The genre does not match this seed and version.');
+    throw new RangeError('The genre does not match this seed.');
   }
-  const pack = adventurePack(settings.version, settings.genre);
+  const pack = adventurePack(settings.genre);
 
   const random = createSeededRandom(settings.seed);
   // The first draw chose the genre; the next chooses the plot independently.
@@ -92,7 +73,6 @@ export function generateAdventureWorld(settings: AdventureSettings): AdventureWo
   ];
 
   const world = structuredClone({
-    version: 1,
     startPlaceId: pack.startPlaceId,
     places: pack.places.filter(({ id }) => plan.placeIds.includes(id)).map(({ id }) => ({ id })),
     exits: pack.exits.filter(({ fromPlaceId, toPlaceId }) =>
@@ -118,5 +98,5 @@ export function generateAdventureWorld(settings: AdventureSettings): AdventureWo
       },
     },
   } satisfies AdventureWorld);
-  return settings.version === 2 ? prepareSeededPlacement(world, random) : world;
+  return prepareSeededPlacement(world, random);
 }
