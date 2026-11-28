@@ -8,7 +8,7 @@ import { useStepOptions } from './use-rules';
  * This is a conservative first value. It will be retuned once the adventure
  * generator can produce real worlds to measure.
  */
-export const MAX_SEARCH_STATES = 100_000;
+export const MAX_SEARCH_STATES = 250_000;
 
 /** The result for a world that the checker searched completely. */
 export interface CheckedWinnability {

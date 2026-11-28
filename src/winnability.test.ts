@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AdventureWorld } from './adventure-world';
-import { checkWinnability } from './winnability';
+import { checkWinnability, MAX_SEARCH_STATES } from './winnability';
 
 function world(overrides: Partial<AdventureWorld> = {}): AdventureWorld {
   return {
@@ -19,6 +19,10 @@ function world(overrides: Partial<AdventureWorld> = {}): AdventureWorld {
 }
 
 describe('checkWinnability', () => {
+  it('uses a bounded search', () => {
+    expect(MAX_SEARCH_STATES).toBe(250_000);
+  });
+
   it('finds a winnable world', () => {
     expect(checkWinnability(world())).toMatchObject({ winnable: true });
   });

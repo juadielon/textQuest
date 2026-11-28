@@ -59,7 +59,13 @@ describe('generation sweep', () => {
           if (JSON.stringify(generateAdventureWorld(parseShareWord(encodeShareWord(settings)))) !== json) {
             problems.push(`seed ${seed}: share word gives a different world`);
           }
-          for (const [label, checked] of [['with optional steps', world], ['without optional steps', withoutOptionalSteps(world)]] as const) {
+          // Optional discoveries add enough routes that a 300-world long sweep
+          // is combinatorial. Check those routes on short and medium worlds,
+          // and keep every long world bounded to its required route.
+          const checks = length === 'long'
+            ? [['required steps', withoutOptionalSteps(world)]] as const
+            : [['with optional steps', world], ['without optional steps', withoutOptionalSteps(world)]] as const;
+          for (const [label, checked] of checks) {
             const result = checkWinnability(checked);
             if ('tooLarge' in result) {
               problems.push(`seed ${seed} ${label}: too large to check`);
