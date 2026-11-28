@@ -45,18 +45,18 @@ dependency update. It does not change adventure generation or player saves.
 
 ### 3. Repeatable adventures and sharing
 
-**Status:** In progress — versioned settings and share words merged in
+**Status:** In progress — adventure settings and share words merged in
 [pull request #11](https://github.com/juadielon/textQuest/pull/11)
 ([issue #3](https://github.com/juadielon/textQuest/issues/3)). Follow-up fixes merged:
 exact large-count picks in [pull request #17](https://github.com/juadielon/textQuest/pull/17) and pinned
-version 1 share-word lists in [pull request #18](https://github.com/juadielon/textQuest/pull/18).
+share-word lists in [pull request #18](https://github.com/juadielon/textQuest/pull/18).
 
 **Outcome:** A shared game code recreates the same starting adventure. The
 creator's personal progress stays in their own save.
 
 **Depends on:** Milestone 2.
 
-The first step provides versioned adventure settings (seed, length and genre) and
+The first step provides adventure settings (seed, length and genre) and
 two-word share words such as `silverlantern`, with unit tests. The start
 screen ([issue #41](https://github.com/juadielon/textQuest/issues/41)) opens
 play for new adventures or share words, and play shows the share word
@@ -64,20 +64,18 @@ play for new adventures or share words, and play shows the share word
 Play also shows the selected plot's readable title beside the share word
 ([issue #81](https://github.com/juadielon/textQuest/issues/81)).
 Names containing a hidden name or alias use a generic genre title instead.
-The same adventure has the same title in versions 1 and 2; titles can repeat,
-so only the share word identifies the exact starting adventure.
-Version 1 settings generate
+Titles can repeat, so only the share word identifies the exact starting adventure.
+The settings generate
 repeatable engine worlds ([issue #31](https://github.com/juadielon/textQuest/issues/31)),
 implemented in [pull request #35](https://github.com/juadielon/textQuest/pull/35).
 [Issue #40](https://github.com/juadielon/textQuest/issues/40) extends this to the
 cosy mystery and science fiction genres.
-New adventures now use separately versioned seeded placement
+New adventures now use deterministic seeded placement
 ([issue #51](https://github.com/juadielon/textQuest/issues/51)).
-Version 2 share words end in `2` and recreate the same starting world;
-version 1 words and saves retain their original rules. Both versions have
-exhaustive share-word round-trip tests. Browser saving and resuming are implemented.
+Share words recreate the same starting world.
+Exhaustive share-word round-trip tests and browser saving and resuming are implemented.
 Shareable links ([issue #80](https://github.com/juadielon/textQuest/issues/80))
-now open the exact versioned starting adventure without player progress.
+now open the exact starting adventure without player progress.
 They keep the hosting sub-path and report invalid or unsupported words through
 the start screen. A labelled link field, clipboard feedback and a normal
 new-tab link keep sharing usable when clipboard access is unavailable.
@@ -88,8 +86,8 @@ new-tab link keep sharing usable when clipboard access is unavailable.
 [pull request #13](https://github.com/juadielon/textQuest/pull/13)
 ([issue #12](https://github.com/juadielon/textQuest/issues/12)). A search limit for large
 worlds merged in [pull request #22](https://github.com/juadielon/textQuest/pull/22)
-([issue #16](https://github.com/juadielon/textQuest/issues/16)). The version 1 content
-format and light fantasy pack ([issue #26](https://github.com/juadielon/textQuest/issues/26)) are implemented in
+([issue #16](https://github.com/juadielon/textQuest/issues/16)). The light fantasy content pack
+([issue #26](https://github.com/juadielon/textQuest/issues/26)) is implemented in
 [pull request #30](https://github.com/juadielon/textQuest/pull/30).
 
 **Outcome:** Adventures have connected places, story goals, clues, items and
@@ -98,9 +96,9 @@ make choices that change routes or endings.
 
 **Depends on:** Milestone 3.
 
-The first step provides versioned plain data and a pure route search, checked
+The first step provides plain data and a pure route search, checked
 against hand-built worlds. Puzzle solutions are separate from discoverable
-data. The version 1 content format and light fantasy pack are implemented
+data. The light fantasy pack is implemented
 in [pull request #30](https://github.com/juadielon/textQuest/pull/30).
 The pack includes three plot dependency graphs, four puzzle
 families, short/medium/long selections, optional route choices and endings.
@@ -124,19 +122,18 @@ The browser screen shows matching pack names and story text, resolving
 references only after the player discovers the entity.
 Seeded item and clue placement
 ([issue #51](https://github.com/juadielon/textQuest/issues/51)) is now playable
-in adventure version 2, using the final matching wording prepared in
+using the final matching wording prepared in
 [pull request #63](https://github.com/juadielon/textQuest/pull/63).
 Its complete content, word lists and representative worlds are pinned
-separately. Tests sweep seeds 0 to 999 at every length, with at least 80%
-distinct worlds in each genre/plot/length group and winnability with and
-without optional steps. Places, routes and prose are still authored, not
-unique for every seed. Version 1 is released and
-keeps its original 27 worlds, share words, content and saved-command replay.
-The browser uses each version's authored names and prose. Save format 2 keeps
-an ID or content-name replay mode for every command; format 1 histories
-migrate to ID mode so old failed commands keep their meaning.
-Released generated worlds only add progress. World format version 2 rules
-and checks for mutually exclusive choices and early win or failure endings
+separately. Tests sweep 300 seeds at every length, with at least 80%
+distinct worlds in each genre/plot/length group. Short and medium worlds are
+checked with and without optional steps; long worlds use the bounded required-
+step route because full optional-route search is combinatorial. Places, routes
+and prose are still authored, not
+unique for every seed. The browser uses the released authored names and prose.
+Saves keep an ID or content-name replay mode for every command.
+Released generated worlds only add progress. World rules and checks for
+mutually exclusive choices and early win or failure endings
 are prepared ([issue #79](https://github.com/juadielon/textQuest/issues/79)),
 building on [pull request #89](https://github.com/juadielon/textQuest/pull/89).
 Play supports choices and winning endings in those worlds, but no adventure
@@ -169,7 +166,7 @@ implemented; checkpoint recovery is tracked in
 
 ### 6. Saves
 
-**Status:** In progress — save format and storage wrapper implemented
+**Status:** In progress — save storage wrapper implemented
 ([issue #34](https://github.com/juadielon/textQuest/issues/34)); saving,
 listing, resuming, deleting, exporting and importing in the browser implemented
 ([issue #43](https://github.com/juadielon/textQuest/issues/43)).
@@ -180,9 +177,8 @@ or import save files. Invalid files and storage errors are reported clearly.
 **Depends on:** Milestones 3 and 5.
 
 A save stores the settings, typed commands and one ID/content replay mode per
-command. Format 2 migrates format 1 histories to ID mode and retains mixed
-histories, including failed commands. Replaying commands into regenerated
-version 1 and version 2 worlds is covered by unit tests. Players save during
+command. Saves retain mixed histories, including failed commands. Replaying
+commands into regenerated worlds is covered by unit tests. Players save during
 play, see their saves listed and resume one by replaying its commands. Delete
 asks first, and unreadable saves are listed and kept. Export downloads a JSON
 file. Import validates files and adds a new save without overwriting others;
@@ -246,7 +242,7 @@ finished static app.
 The README explains how to build, preview and host the static app, including
 from a sub-path ([issue #49](https://github.com/juadielon/textQuest/issues/49)).
 
-## Out of scope for the first version
+## Out of scope for launch
 
 - LLM use while playing.
 - Accounts, cloud saves or a game server.

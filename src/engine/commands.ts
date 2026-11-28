@@ -209,17 +209,14 @@ export function parseCommand(input: string, targets: readonly CommandTarget[]): 
       kind = 'talk';
       kinds = ['person'];
       name = rest.replace(/^to(?: |$)/, '');
-      const topicParts = name.split(/\s+about\s+/i);
-      if (topicParts.length > 1) {
-        name = topicParts.shift()!;
-        const topic = topicParts.join(' about ').trim();
-        if (!topic) {
-          return error('incomplete', 'Add a conversation topic after about.');
-        }
+      const topicMatch = name.match(/^(.+?)\s+about(?:\s+(.*))?$/i);
+      if (topicMatch) {
+        name = topicMatch[1];
+        const topic = topicMatch[2]?.trim() ?? '';
         const person = findTarget(name, targets, kinds);
-        return !person.found ? person.error : action({
-          kind, targetId: person.target.id, targetKind: person.target.kind, topic,
-        });
+        if (!person.found) return person.error;
+        if (!topic) return error('incomplete', 'Add a conversation topic after about.');
+        return action({ kind, targetId: person.target.id, targetKind: person.target.kind, topic });
       }
       break;
     case 'choose': case 'c':

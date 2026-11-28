@@ -36,9 +36,8 @@ const lengths = {
   },
 } as const satisfies Readonly<Record<'short' | 'medium' | 'long', LengthPlan>>;
 
-/** Version 1's released science fiction pack; changes require a new content version. */
+/** Released science fiction content used by the adventure generator. */
 export const scienceFiction = {
-  version: 1,
   genre: 'science-fiction',
   startPlaceId: 'docking-ring',
   places: [
@@ -124,7 +123,7 @@ export const scienceFiction = {
       motive: ['She wants ', { kind: 'place', id: 'docking-ring' }, ' to have fresh food before the supply ship is late again.'],
       conversations: [
         { id: 'fresh-food', label: 'Fresh food', aliases: ['food', 'supply ship'], response: ['The trays need working water and a clear docking schedule. Check the tools nearest the bays.'] },
-        { id: 'hydroponics', label: 'The hydroponics fault', aliases: ['plants', 'trays'], response: ['The growers can keep the station fed if the coolant stays stable. Look for a repair patch.'] },
+        { id: 'hydroponics', label: 'The hydroponics fault', aliases: ['plants', 'trays'], response: ['The air valve needs sealant and the valve manual before it can work again.'] },
       ],
     },
     {
@@ -142,7 +141,7 @@ export const scienceFiction = {
       motive: ['They want news of the overdue supply ship and its pilot.'],
       conversations: [
         { id: 'supply-news', label: 'The supply ship', aliases: ['ship', 'pilot'], response: ['The missing ship was still on the outer approach. Check the relay and listen for its old call sign.'] },
-        { id: 'comms-fault', label: 'The radio fault', aliases: ['radio', 'relay'], response: ['Static is hiding the useful signal. A blank antenna part could make the relay precise.'] },
+        { id: 'comms-fault', label: 'The radio fault', aliases: ['radio', 'relay'], response: ['Read the signal log nearby. It explains how to decode the pulses for useful names and distances.'] },
       ],
     },
     {

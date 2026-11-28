@@ -5,11 +5,11 @@ import { normaliseName, parseCommand } from './engine/commands';
 import {
   discoveredTargets, playCommand, startPlay, type CommandReplayMode, type PlayState, type PlayWorld,
 } from './engine/play';
-import type { EntityReference, PlotStructure, Prose } from './content/v1/format';
-import { aliasesFor, worldNamesFrom } from './content/v1/world-names';
+import type { EntityReference, PlotStructure, Prose } from './content/format';
+import { aliasesFor, worldNamesFrom } from './content/world-names';
 import { createSeededRandom } from './seeded-random';
 import { adventurePack, generateAdventureWorld } from './generate-world';
-import { storyView } from './content/v1/story';
+import { storyView } from './content/story';
 import { genreLabels } from './start-screen-model';
 import { findWinningCommands, solutionModeEnabled } from './solution';
 import {
@@ -20,7 +20,7 @@ import {
 export interface PlayScreenOptions {
   /** Commands to replay first, such as a save's. They fill the log without being announced. */
   readonly commands?: readonly string[];
-  /** Replay mode for each initial command. Missing modes keep legacy ID-name behaviour. */
+  /** Replay mode for each initial command. Missing modes use ID-name behaviour. */
   readonly commandModes?: readonly CommandReplayMode[];
   /** Called after each typed command with the full history and matching modes. */
   readonly onCommand?: (commands: readonly string[], modes: readonly CommandReplayMode[]) => void;
@@ -104,7 +104,7 @@ export function renderPlayScreen(
   let state: PlayState;
   try {
     const generated = generateAdventureWorld(settings);
-    pack = adventurePack(settings.version, settings.genre);
+    pack = adventurePack(settings.genre);
     world = { ...generated, names: worldNamesFrom(pack, generated) };
     const random = createSeededRandom(settings.seed);
     random.nextUint32();
@@ -312,7 +312,11 @@ export function renderPlayScreen(
           )}`
       : turn.message;
     log.append(element('li', 'play-entry',
-      element('p', 'play-typed', `> ${command}`), element('p', undefined, response)));
+      element('p', 'play-typed', `> ${hideUndiscoveredNames(
+        command, pack, world, state, discoveredTargets(world, state), knownPlaces,
+      )}`), element('p', undefined, hideUndiscoveredNames(
+        response, pack, world, state, discoveredTargets(world, state), knownPlaces,
+      ))));
     return response;
   };
   commands.forEach((command, index) => run(command, commandModes[index]));

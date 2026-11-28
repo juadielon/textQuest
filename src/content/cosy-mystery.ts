@@ -31,9 +31,8 @@ const lengths = {
   },
 } as const satisfies Readonly<Record<'short' | 'medium' | 'long', LengthPlan>>;
 
-/** Version 1's released cosy mystery pack; changes require a new content version. */
+/** Released cosy mystery content used by the adventure generator. */
 export const cosyMystery = {
-  version: 1,
   genre: 'cosy-mystery',
   startPlaceId: 'green',
   places: [
@@ -154,7 +153,7 @@ export const cosyMystery = {
       description: ['A quiet librarian who remembers every borrower.'],
       motive: ['He wants the truth found before gossip settles on the wrong reader.'],
       conversations: [
-        { id: 'borrower-record', label: 'The borrower record', aliases: ['record', 'borrowers'], response: ['The loans desk keeps names and dates. Compare a marked book with the lost scorecard.'] },
+        { id: 'borrower-record', label: 'The borrower record', aliases: ['record', 'borrowers'], response: ['The loans desk keeps names and dates. Compare the loan card with the raffle bookmark.'] },
         { id: 'reading-room-news', label: 'Reading-room news', aliases: ['reading', 'gossip'], response: ['A quiet witness may have seen the carrier. Search the returned books, then listen in the reading room.'] },
       ],
     },
@@ -163,8 +162,8 @@ export const cosyMystery = {
       description: ['A retired bowler fretting over a lost scorecard.'],
       motive: ['He wants his winning score recorded before he shares what he saw.'],
       conversations: [
-        { id: 'lost-score', label: 'The lost scorecard', aliases: ['scorecard', 'score'], response: ['The winning total proves the match before it proves the mystery. Look beneath the pavilion bench.'] },
-        { id: 'pavilion-sighting', label: 'What he saw', aliases: ['saw', 'sighting'], response: ['A small parcel crossed the lane after the match. Ask in Rose Cottage before calling it a clue.'] },
+        { id: 'lost-score', label: 'The lost scorecard', aliases: ['scorecard', 'score'], response: ['The winning total proves the match before it proves the mystery. Check the records near the club.'] },
+        { id: 'pavilion-sighting', label: 'What he saw', aliases: ['saw', 'sighting'], response: ['He saw someone carrying a parcel after the match. Ask what people nearby remember.'] },
       ],
     },
     {

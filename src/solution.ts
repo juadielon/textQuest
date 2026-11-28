@@ -21,14 +21,13 @@ export function solutionModeEnabled(): boolean {
 /**
  * Finds a deterministic command route to the goal in a playable world.
  *
- * @param world - The generated version 1 world to solve.
+ * @param world - The generated world to solve.
  * @returns Oldest-first commands that reach the goal, or an empty list if no route is found.
  * @remarks
  * This is a development route finder. It uses the real parser and play module,
  * never changes the world, and does not write commands into saves.
  */
 export function findWinningCommands(world: PlayWorld, from?: PlayState): readonly string[] {
-  if (world.version !== 1 && world.version !== 2) return [];
   return deriveCommands(world, from ?? startPlay(world));
 }
 

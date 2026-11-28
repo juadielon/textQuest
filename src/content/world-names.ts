@@ -1,5 +1,5 @@
-import type { AdventureWorld } from '../../adventure-world';
-import type { NamedThing, WorldNames } from '../../engine/play';
+import type { AdventureWorld } from '../adventure-world';
+import type { NamedThing, WorldNames } from '../engine/play';
 import type { ContentPack } from './format';
 
 /**

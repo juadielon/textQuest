@@ -1,10 +1,10 @@
-import type { ContentPack } from '../v1/format';
-import { cosyMystery } from '../v1/cosy-mystery';
-import { lightFantasy } from '../v1/light-fantasy';
-import { scienceFiction } from '../v1/science-fiction';
+import type { ContentPack } from './format';
+import { cosyMystery } from './cosy-mystery';
+import { lightFantasy } from './light-fantasy';
+import { scienceFiction } from './science-fiction';
 
-/** Released version 2 content; its complete data and order are pinned separately. */
-export type VersionTwoContentPack = Omit<ContentPack, 'version'> & { readonly version: 2 };
+/** Released authored content; its complete data and order are pinned separately. */
+export type ContentPackWithWording = ContentPack;
 
 // Reuses the released data and rewrites only the place descriptions (and any
 // prompt) that named a starting item or clue the generator can now move.
@@ -12,10 +12,9 @@ function reword(
   pack: ContentPack,
   descriptions: Readonly<Record<string, string>>,
   prompts: Readonly<Record<string, string>> = {},
-): VersionTwoContentPack {
+): ContentPackWithWording {
   return {
     ...pack,
-    version: 2,
     places: pack.places.map((place) => place.id in descriptions
       ? { ...place, description: [descriptions[place.id]] } : place),
     puzzles: pack.puzzles.map((puzzle) => puzzle.id in prompts
@@ -24,7 +23,7 @@ function reword(
 }
 
 /** Light fantasy with place descriptions that stay true when starting items and clues move. */
-export const lightFantasyV2 = reword(lightFantasy, {
+export const lightFantasyWithWording = reword(lightFantasy, {
   mill: 'A narrow channel rushes beneath the mill floor.',
   bridge: 'Moss softens the old stone parapet.',
   orchard: 'Pale blossom hangs above a table for visitors.',
@@ -42,7 +41,7 @@ export const lightFantasyV2 = reword(lightFantasy, {
 }, { 'align-mirrors': 'Arrange the mirrors to follow the sun labels.' });
 
 /** Cosy mystery with place descriptions that stay true when starting items and clues move. */
-export const cosyMysteryV2 = reword(cosyMystery, {
+export const cosyMysteryWithWording = reword(cosyMystery, {
   'post-office': 'Pigeonholes and a brass scale line the counter.',
   library: 'Shelves of mysteries lean towards a tidy front desk.',
   'church-hall': 'A glass display case stands beside stacked folding chairs.',
@@ -59,7 +58,7 @@ export const cosyMysteryV2 = reword(cosyMystery, {
 });
 
 /** Science fiction with place descriptions that stay true when starting items and clues move. */
-export const scienceFictionV2 = reword(scienceFiction, {
+export const scienceFictionWithWording = reword(scienceFiction, {
   'med-bay': 'Clean bunks line a quiet, white room.',
   'comms-deck': 'Speakers hiss with faint static from deep space.',
   'airlock-hall': 'Suits hang in lockers beside the outer door.',
