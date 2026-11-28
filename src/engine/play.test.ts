@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { adventureLengths, createAdventureSettings } from '../adventure-settings';
 import type { AdventureWorld, PuzzleStep } from '../adventure-world';
 import { lightFantasy } from '../content/v1/light-fantasy';
@@ -92,7 +92,14 @@ it('suggests a winning place named too-large instead of search-limit advice', ()
     items: [], clues: [],
     solution: { steps: [], goal: { placeId: 'too-large', conditions: {} } },
   };
-  expect(playCommand(world, startPlay(world), 'hint').message).toBe('Try going to the too large.');
+  let state = startPlay(world);
+  let message = '';
+  for (let stage = 0; stage < 3; stage += 1) {
+    const hint = playCommand(world, state, 'hint');
+    state = hint.state;
+    message = hint.message;
+  }
+  expect(message).toBe('Try going to the too large.');
 });
 
 function play(world: AdventureWorld, inputs: readonly string[]) {
@@ -888,10 +895,21 @@ describe('playing world version 2 choices', () => {
   it('gives general hints that never name a choice or a closed route', () => {
     const world = choiceWorld();
     const start = startPlay(world);
-    const atStart = playCommand(world, start, 'hint').message;
-    expect(atStart).toBe('There is a choice to make here. Think before you choose.');
+    const stages = (testWorld: AdventureWorld, initial: PlayState) => {
+      const messages: string[] = [];
+      let state = initial;
+      for (let stage = 0; stage < 3; stage += 1) {
+        const hint = playCommand(testWorld, state, 'hint');
+        state = hint.state;
+        messages.push(hint.message);
+      }
+      return messages;
+    };
+    expect(stages(world, start)[0])
+      .toBe('Pause for a moment and look around. A small detail may help.');
+    expect(stages(world, start)[1]).toContain('choice');
     const chosen = playCommand(world, start, 'choose head left').state;
-    expect(playCommand(world, chosen, 'hint').message)
+    expect(stages(world, chosen).at(-1))
       .toBe('Look around and think about what you could do next. You can also try undo.');
     const room: AdventureWorld = {
       version: 2, startPlaceId: 'room', places: [{ id: 'room' }], exits: [],
@@ -905,10 +923,9 @@ describe('playing world version 2 choices', () => {
       },
     };
     const roomStart = startPlay(room);
-    expect(playCommand(room, roomStart, 'hint').message)
-      .toBe('There is a choice to make here. Think before you choose.');
+    expect(stages(room, roomStart)[1]).toContain('choice');
     const dark = playCommand(room, roomStart, 'choose choice 2').state;
-    expect(playCommand(room, dark, 'hint').message)
+    expect(stages(room, dark).at(-1))
       .toBe('Look around and think about what you could do next. You can also try undo.');
 
     const indirect: AdventureWorld = {
@@ -928,7 +945,7 @@ describe('playing world version 2 choices', () => {
       },
     };
     const left = playCommand(indirect, startPlay(indirect), 'choose choice 1').state;
-    expect(playCommand(indirect, left, 'hint').message)
+    expect(stages(indirect, left).at(-1))
       .toBe('Look around and think about what you could do next. You can also try undo.');
   });
 });
@@ -1106,7 +1123,14 @@ describe('discoveredTargets', () => {
     const start = startPlay(world);
     const target = discoveredTargets(world, start).find(({ id }) => id === 'red_room')!;
     expect(playCommand(world, start, 'look').message).toContain(target.name);
-    expect(playCommand(world, start, 'hint').message).toBe(`Try going to the ${target.name}.`);
+    let state = start;
+    let message = '';
+    for (let stage = 0; stage < 3; stage += 1) {
+      const hint = playCommand(world, state, 'hint');
+      state = hint.state;
+      message = hint.message;
+    }
+    expect(message).toBe(`Try going to the ${target.name}.`);
     expect(playCommand(world, start, `go ${target.name}`).state.goalReached).toBe(true);
   });
 
@@ -1129,7 +1153,14 @@ describe('discoveredTargets', () => {
       expect(turn.state.placeId).toBe(expected);
     }
     const target = discoveredTargets(world, start).find(({ id }) => id === 'to-red-room')!;
-    expect(playCommand(world, start, 'hint').message).toBe(`Try going to the ${target.name}.`);
+    let state = start;
+    let message = '';
+    for (let stage = 0; stage < 3; stage += 1) {
+      const hint = playCommand(world, state, 'hint');
+      state = hint.state;
+      message = hint.message;
+    }
+    expect(message).toBe(`Try going to the ${target.name}.`);
     expect(playCommand(world, start, `go ${target.name}`).state.goalReached).toBe(true);
   });
 
@@ -1253,7 +1284,7 @@ describe('undo', () => {
   it('ignores free actions and says when there is nothing to undo', () => {
     const start = startPlay(world);
     const looked = replayCommands(world, ['look', 'i', 'hint']);
-    expect(looked).toEqual(start);
+    expect(looked).toEqual({ ...start, hintCount: 1 });
     expect(playCommand(world, start, 'undo')).toEqual({ state: start, message: 'There is nothing to undo.' });
   });
 });
@@ -1283,14 +1314,70 @@ describe('hints', () => {
     };
     const start = startPlay(world);
     expect(checkWinnability(world).winnable).toBe(false);
-    expect(playCommand(world, start, 'hint')).toEqual({
-      state: start, message: 'There seems to be no way forward from here.',
-    });
+    let state = start;
+    let message = '';
+    for (let stage = 0; stage < 3; stage += 1) {
+      const hint = playCommand(world, state, 'hint');
+      state = hint.state;
+      message = hint.message;
+    }
+    expect(message).toBe('There seems to be no way forward from here.');
+  });
+
+  it('gives a clue-direction hint for a required item held in the inventory', () => {
+    const world = sampleWorld();
+    let state = replayCommands(world, ['go study', 'take token']);
+    state = playCommand(world, state, 'hint').state;
+    const second = playCommand(world, state, 'hint');
+    expect(second.message).toBe('An item in your inventory may fit something near you.');
+  });
+
+  it('uses the generic clue-direction hint for only an optional item', () => {
+    const world = sampleWorld();
+    let state = replayCommands(world, ['take pebble']);
+    state = playCommand(world, state, 'hint').state;
+    const second = playCommand(world, state, 'hint');
+    expect(second.message).toBe('The next useful step should involve something you have already discovered.');
+  });
+
+  it('keeps hint stages through progress, undo and replay', () => {
+    const world = sampleWorld();
+    let state = startPlay(world);
+
+    for (let stage = 0; stage < 2; stage += 1) {
+      state = playCommand(world, state, 'hint').state;
+    }
+    expect(state.hintCount).toBe(2);
+    expect(state.turns).toBe(0);
+
+    const progressed = playCommand(world, state, 'go study');
+    expect(progressed.state.hintCount).toBe(2);
+    expect(progressed.state.turns).toBe(1);
+
+    const third = playCommand(world, progressed.state, 'hint');
+    expect(third.state.hintCount).toBe(3);
+    expect(third.state.turns).toBe(1);
+    expect(third.message).toBe('Look around. Something here is worth taking.');
+
+    const undone = playCommand(world, third.state, 'undo');
+    expect(undone.state.hintCount).toBe(2);
+    expect(undone.state.turns).toBe(0);
+    expect(replayCommands(world, ['hint', 'hint', 'go study', 'hint']))
+      .toEqual(third.state);
   });
 
   it('point at the next useful step without naming puzzle answers', () => {
     const world = sampleWorld();
-    const hints = (inputs: string[]) => playCommand(world, replayCommands(world, inputs), 'hint').message;
+    const hints = (inputs: string[]) => {
+      let state = replayCommands(world, inputs);
+      let message = '';
+      for (let stage = 0; stage < 3; stage += 1) {
+        const hint = playCommand(world, state, 'hint');
+        state = hint.state;
+        message = hint.message;
+      }
+      return message;
+    };
     expect(hints([])).toBe('Try going to the study.');
     expect(hints(['go study'])).toBe('Look around. Something here is worth taking.');
     expect(hints(['go study', 'take token'])).toBe('Something you are carrying could be useful here.');
@@ -1318,18 +1405,39 @@ describe('hints', () => {
       items: [], clues: [],
       solution: { steps: [], goal: { placeId: 'home', conditions: {} } },
     };
-    expect(playCommand(world, startPlay(world), 'hint').message).toBe('Try going to the home.');
+    let state = startPlay(world);
+    let message = '';
+    for (let stage = 0; stage < 3; stage += 1) {
+      const hint = playCommand(world, state, 'hint');
+      state = hint.state;
+      message = hint.message;
+    }
+    expect(message).toBe('Try going to the home.');
     const stuck = replayCommands(world, ['go pit']);
-    expect(playCommand(world, stuck, 'hint').message).toBe('There seems to be no way forward from here. Try undo.');
+    let stuckState = stuck;
+    for (let stage = 0; stage < 3; stage += 1) {
+      const hint = playCommand(world, stuckState, 'hint');
+      stuckState = hint.state;
+      message = hint.message;
+    }
+    expect(message).toBe('There seems to be no way forward from here. Try undo.');
   });
 });
 
 // A simple player that only types what the hints suggest. If the checker calls
 // a world winnable, following the hints must win it with typed commands.
 function playByHints(world: PlayWorld, commands: string[] = []): PlayState {
-  let state = startPlay(world);
+  let state = replayCommands(world, commands);
   for (let guard = 0; guard < 200 && !state.goalReached; guard++) {
-    const message = playCommand(world, state, 'hint').message;
+    let message = '';
+    while ((state.hintCount ?? 0) < 2) {
+      commands.push('hint');
+      state = playCommand(world, state, 'hint').state;
+    }
+    commands.push('hint');
+    const hint = playCommand(world, state, 'hint');
+    state = hint.state;
+    message = hint.message;
     const place = /^Try going to the (.+)\.$/.exec(message);
     let inputs: string[];
     if (place) {
@@ -1382,7 +1490,7 @@ describe.each([1, 2])('version %i generated play and saved replay', (version) =>
         }
       }
     }
-  }, 30_000);
+  }, 180_000);
 });
 
 describe('agreement with the winnability checker', () => {

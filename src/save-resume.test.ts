@@ -82,8 +82,16 @@ function commandsToWin(world: PlayWorld): string[] {
     state = playCommand(world, state, input).state;
   };
   for (let guard = 0; guard < 200 && !state.goalReached; guard += 1) {
+    let message = '';
+    while ((state.hintCount ?? 0) < 2) {
+      typed.push('hint');
+      state = playCommand(world, state, 'hint').state;
+    }
+    typed.push('hint');
+    const hint = playCommand(world, state, 'hint');
+    state = hint.state;
+    message = hint.message;
     const before = state;
-    const message = playCommand(world, state, 'hint').message;
     const place = /^Try going to the (.+)\.$/.exec(message);
     if (place) {
       type(`go ${place[1]}`);
@@ -149,7 +157,7 @@ describe.each([1, 2])('saved version %i games', (version) => {
             expect(roundTrips(settings, winning, packNames).goalReached).toBe(true);
           },
           // Long worlds search for a route at every hint, so allow extra time.
-          60_000,
+          180_000,
         );
       });
     });

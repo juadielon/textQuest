@@ -487,13 +487,15 @@ describe('renderPlayScreen', () => {
     target.querySelector('button')!.focus();
 
     type(target, 'hint');
-    const first = announcer.firstChild;
+    type(target, 'hint');
+    type(target, 'hint');
+    const third = announcer.firstChild;
     type(target, 'hint');
 
     expect(document.activeElement).toBe(input);
     expect(announcer.children).toHaveLength(1);
-    expect(announcer.firstChild).not.toBe(first);
-    expect(announcer.textContent).toBe(first?.textContent);
+    expect(announcer.firstChild).not.toBe(third);
+    expect(announcer.textContent).toBe(third?.textContent);
   });
 
   it('shows the ending when the goal is reached and hides it again after undo', () => {

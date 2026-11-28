@@ -26,6 +26,8 @@ export interface PlayState {
   readonly unlockedExits: readonly string[];
   /** Turns that changed progress: moves, takes, successful uses and choices. */
   readonly turns: number;
+  /** Number of opt-in hint requests made, including replayed requests. */
+  readonly hintCount?: number;
   /** True once the player has reached the goal or a winning ending. */
   readonly goalReached: boolean;
   /** The state before the last turn, for undo. Null at the start. */
@@ -557,7 +559,8 @@ export function startPlay(world: PlayWorld): PlayState {
   arrive(world, progress, world.startPlaceId);
   settle(world, progress, false);
   return {
-    ...stateFrom(world, progress), turns: 0, goalReached: goalMet(world, progress), previous: null,
+    ...stateFrom(world, progress), turns: 0,
+    goalReached: goalMet(world, progress), previous: null,
   };
 }
 
@@ -839,7 +842,33 @@ function nextPlaceToGoal(
   return null;
 }
 
-function hint(world: PlayWorld, progress: Progress, canUndo: boolean): string {
+function hint(world: PlayWorld, progress: Progress, canUndo: boolean, hintCount: number): string {
+  if (hintCount === 0) {
+    return 'Pause for a moment and look around. A small detail may help.';
+  }
+  if (hintCount === 1) {
+    if (world.version === 2) {
+      if (choicesHere(world, progress).length) {
+        return 'A useful choice is close to what you can already see.';
+      }
+      if (actionsReadyHere(world, progress).length) {
+        return 'Look at an item you are carrying and what is near you.';
+      }
+    } else {
+      const neededItems = new Set(
+        [world.solution.goal, ...world.solution.steps]
+          .flatMap(({ conditions }) => conditions.itemsHeld ?? []),
+      );
+      if (itemsHere(world, progress).some((id) => neededItems.has(id))) {
+        return 'Look closely at the items waiting where you are.';
+      }
+      if (actionsReadyHere(world, progress).length) {
+        return 'An item in your inventory may fit something near you.';
+      }
+    }
+    return 'The next useful step should involve something you have already discovered.';
+  }
+
   // shortcut: version 2 hints do not search routes; upgrade when search models choices.
   if (world.version === 2) {
     if (choicesHere(world, progress).length) return 'There is a choice to make here. Think before you choose.';
@@ -905,8 +934,14 @@ export function runAction(world: PlayWorld, state: PlayState, action: CommandAct
         ? `You are carrying ${stateListNames(world, progress, 'item', state.itemsHeld)}.`
         : 'You are not carrying anything.');
     case 'hint':
-      return reply(state.goalReached ? 'You have already finished this adventure.'
-        : hint(world, progress, state.previous !== null));
+      if (state.goalReached) {
+        return reply('You have already finished this adventure.');
+      }
+      const hintCount = state.hintCount ?? 0;
+      return {
+        state: { ...state, hintCount: hintCount + 1 },
+        message: hint(world, progress, state.previous !== null, hintCount),
+      };
     case 'undo':
       return state.previous
         ? { state: state.previous, message: 'You undo your last turn.' }
@@ -939,7 +974,13 @@ export function runAction(world: PlayWorld, state: PlayState, action: CommandAct
   if (endedWell) messages.push('Your adventure ends here, and you have won. Well done!');
   else if (goalReached) messages.push('You have reached your goal. Well done!');
   return {
-    state: { ...stateFrom(world, progress), turns: state.turns + 1, goalReached, previous: state },
+    state: {
+      ...stateFrom(world, progress),
+      turns: state.turns + 1,
+      ...(state.hintCount === undefined ? {} : { hintCount: state.hintCount }),
+      goalReached,
+      previous: state,
+    },
     message: messages.join(' '),
   };
 }

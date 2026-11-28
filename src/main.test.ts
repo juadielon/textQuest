@@ -8,6 +8,7 @@ import { describePlay, playScreenTitle, renderPlayScreen, unplayableMessage } fr
 import { createSave, createSaveStore, PLAYED_KEY_PREFIX, SAVE_KEY_PREFIX } from './saves';
 import { formatSaveTime, SAVE_LOCK_NAME } from './saves-screen';
 import { summariseAdventure } from './start-screen-model';
+import { findWinningCommands } from './solution';
 
 let app: HTMLElement;
 const settings = Array.from({ length: 100 }, (_, seed) =>
@@ -80,6 +81,24 @@ it('mounts the start screen and focuses its heading', () => {
   expect(document.activeElement).toBe(get('h1'));
 });
 
+it('offers three progressive hint stages without changing turns', () => {
+  openAdventure(adventureSettings.encodeShareWord(settings));
+  const input = get<HTMLInputElement>('#play-command');
+  const form = get<HTMLFormElement>('.play-command');
+  const responses: string[] = [];
+
+  for (let index = 0; index < 3; index += 1) {
+    input.value = 'hint';
+    form.requestSubmit();
+    responses.push(get('.play-log').lastElementChild?.lastElementChild?.textContent ?? '');
+  }
+
+  expect(responses[0]).not.toBe('');
+  expect(responses[1]).not.toBe(responses[0]);
+  expect(responses[2]).not.toBe(responses[1]);
+  expect(get('.play-sidebar > p:last-child').textContent).toBe('Turns taken: 0');
+});
+
 it.each<adventureSettings.AdventureGenre>(['light-fantasy', 'cosy-mystery', 'science-fiction'])(
   'starts a playable %s adventure from a fresh random seed', async (genre) => {
     const matchingSeeds = Array.from(
@@ -138,6 +157,88 @@ it.each<adventureSettings.AdventureGenre>(['light-fantasy', 'cosy-mystery', 'sci
     expect(random).toHaveBeenCalledOnce();
     expect(create).toHaveBeenCalledExactlyOnceWith('short', undefined, genre);
     expectPlay(newSettings);
+  },
+);
+
+it.each<adventureSettings.AdventureGenre>(['light-fantasy', 'cosy-mystery', 'science-fiction'])(
+  'proves the browser story loop for %s', (genre) => {
+    const shared = Array.from(
+      { length: adventureSettings.seedCountFor(1) },
+      (_, seed) => adventureSettings.createAdventureSettings(seed, 'short', 1),
+    ).find((value) => value.genre === genre)!;
+    openAdventure(adventureSettings.encodeShareWord(shared));
+
+    const expectedStory: Record<adventureSettings.AdventureGenre, { introduction: string; objective: string }> = {
+      'light-fantasy': {
+        introduction: 'A flood is coming. someone asks you to restore the valley warning stations in order.',
+        objective: 'Objective: Restore each valley warning station and light the place.',
+      },
+      'cosy-mystery': {
+        introduction: 'The Silver Teapot has vanished before the fete. Mrs Finch the organiser asks you to follow its trail, one clue at a time.',
+        objective: 'Objective: Find who borrowed the Silver Teapot and return it before judging.',
+      },
+      'science-fiction': {
+        introduction: 'someone has heard a faint call from the late supply ship. Follow two lines of repairs and bring them together to a clue it home.',
+        objective: 'Objective: Repair the station, trace the ship and a clue it home.',
+      },
+    };
+    expect(get('.play-introduction').textContent).toBe(expectedStory[genre].introduction);
+    expect(get('.play-objective').textContent).toBe(expectedStory[genre].objective);
+
+    const world = generateAdventureWorld(shared);
+    const pack = adventurePack(shared.version, shared.genre);
+    const named = { ...world, names: worldNamesFrom(pack, world) };
+    const person = discoveredTargets(named, startPlay(named))
+      .find((target) => target.kind === 'person');
+    expect(person).toBeDefined();
+    if (person) {
+      const alias = person.aliases?.[0] ?? person.name;
+      get<HTMLInputElement>('#play-command').value = `talk to ${alias}`;
+      get<HTMLFormElement>('.play-command').requestSubmit();
+      expect(get('.play-log').lastElementChild?.lastElementChild?.textContent)
+        .toContain('greets you');
+    }
+
+    const hintResponses: string[] = [];
+    for (let stage = 0; stage < 3; stage += 1) {
+      get<HTMLInputElement>('#play-command').value = 'hint';
+      get<HTMLFormElement>('.play-command').requestSubmit();
+      hintResponses.push(get('.play-log').lastElementChild?.lastElementChild?.textContent ?? '');
+    }
+    expect(new Set(hintResponses).size).toBe(3);
+    expect(get('.play-sidebar > p:last-child').textContent).toBe('Turns taken: 0');
+
+    const beforeInvalid = {
+      place: get('.play-place-name').textContent,
+      turns: get('.play-sidebar > p:last-child').textContent,
+    };
+    get<HTMLInputElement>('#play-command').value = 'unrecognised command';
+    get<HTMLFormElement>('.play-command').requestSubmit();
+    expect(get('.play-log').lastElementChild?.lastElementChild?.textContent).not.toBe('');
+    expect(get('.play-place-name').textContent).toBe(beforeInvalid.place);
+    expect(get('.play-sidebar > p:last-child').textContent).toBe(beforeInvalid.turns);
+
+    const route = findWinningCommands(named);
+    expect(route.length).toBeGreaterThan(0);
+    for (const command of route) {
+      get<HTMLInputElement>('#play-command').value = command;
+      get<HTMLFormElement>('.play-command').requestSubmit();
+    }
+    const ending = get<HTMLElement>('.play-ending');
+    expect(ending.hidden).toBe(false);
+    const expectedEndings: Record<adventureSettings.AdventureGenre, string> = {
+      'light-fantasy':
+        'The river guest joins the warning watch. Your promise brings help from both banks.',
+      'cosy-mystery':
+        'Because you asked first, Mrs Finch the organiser thanks you in her opening speech.',
+      'science-fiction':
+        'The supply ship docks safely. Pip the signaller finally takes off their headset.',
+    };
+    expect(get('.play-authored-ending').textContent).toBe(expectedEndings[genre]);
+
+    get<HTMLInputElement>('#play-command').value = 'undo';
+    get<HTMLFormElement>('.play-command').requestSubmit();
+    expect(ending.hidden).toBe(true);
   },
 );
 
